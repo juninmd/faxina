@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Faxina">
+  <title>Faxina</title>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="75%">
+      <stop offset="0" stop-color="#232b3a"/><stop offset="1" stop-color="#0e1117"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0.45" stop-color="#000"/><stop offset="0.62" stop-color="#e3b341"/><stop offset="1" stop-color="#e3b341" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <rect x="150" y="150" width="400" height="460" rx="36" fill="#4f7dd6"/>
+  <rect x="578" y="150" width="296" height="250" rx="36" fill="#c9a13b"/>
+  <rect x="578" y="428" width="296" height="182" rx="36" fill="#3f9f68"/>
+  <rect x="150" y="638" width="250" height="236" rx="36" fill="#8b5cd6"/>
+  <rect x="428" y="638" width="122" height="236" rx="30" fill="#c4506a"/>
+  <circle cx="712" cy="756" r="170" fill="url(#glow)"/>
+  <circle cx="712" cy="756" r="84" fill="#000"/>
+  <ellipse cx="712" cy="756" rx="150" ry="44" fill="none" stroke="#ffd48a" stroke-width="14" transform="rotate(-24 712 756)"/>
+</svg>
