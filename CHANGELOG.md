@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/juninmd/faxina/compare/v1.0.1...v1.0.2) (2026-09-27)
+
+
+### Bug Fixes
+
+* **ci:** build the updater manifest once from signed release assets ([8833f43](https://github.com/juninmd/faxina/commit/8833f43013222dff134b121962c7aa10932d56c7))
+
 ## [1.0.1](https://github.com/juninmd/faxina/compare/v1.0.0...v1.0.1) (2026-09-27)
 
 
