@@ -31,7 +31,7 @@ Faxina: Tauri 2 desktop disk cleaner. Rust backend (`src-tauri/`) scans, classif
 
 ## Release flow
 
-Conventional Commits on `main` → CI green → `release.yml` runs semantic-release (bumps `package.json`, writes `CHANGELOG.md`, tags `vX.Y.Z`, creates a draft) → tauri-action builds and signs every platform into that draft → the draft is published, which moves `releases/latest/download/latest.json` for the updater. The app version comes from `package.json` (`tauri.conf.json` → `"version": "../package.json"`); `Cargo.toml`'s version is not used. Never hand-edit `CHANGELOG.md` or the version.
+Conventional Commits on `main` → CI green → `release.yml` runs semantic-release (bumps `package.json`, writes `CHANGELOG.md`, tags `vX.Y.Z`, creates a draft) → tauri-action builds and signs every platform into that draft (with `uploadUpdaterJson: false`) → `scripts/updater-manifest.ts` writes one `latest.json` from the signed assets (parallel jobs used to overwrite each other's entries) → the draft is published, which moves `releases/latest/download/latest.json` for the updater. The app version comes from `package.json` (`tauri.conf.json` → `"version": "../package.json"`); `Cargo.toml`'s version is not used. Never hand-edit `CHANGELOG.md` or the version.
 
 ## Gotchas
 
