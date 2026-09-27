@@ -49,6 +49,8 @@ export function MapView({ scan, marked, onToggleMark }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      // A modal (delete confirmation) owns the keyboard; don't navigate the map behind it.
+      if (document.querySelector("dialog[open]")) return;
       const sel = selected;
       if (e.key === " " && sel && !sel.grouped) onToggleMark(sel);
       else if (e.key === "Enter" && sel?.isDir) open(sel.path);

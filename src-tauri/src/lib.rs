@@ -1,5 +1,6 @@
 mod category;
 mod commands;
+mod disks;
 mod dupes;
 mod guard;
 mod junk;
@@ -25,7 +26,8 @@ pub fn run() {
             commands::junk_clean,
             commands::find_duplicates,
             commands::cancel_duplicates,
-            commands::disk_info,
+            disks::disk_info,
+            disks::list_disks,
             commands::home_dir,
         ])
         .run(tauri::generate_context!())

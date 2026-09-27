@@ -24,7 +24,7 @@ Mapa visual do disco no estilo DaisyDisk, limpeza de caches no estilo CCleaner e
 
 | | |
 |---|---|
-| 🗺️ **Mapa do disco** | Treemap em blocos (estilo *disktree*) ou anéis concêntricos (estilo *DaisyDisk*). Cada cor é um tipo: cache, build, git, código, mídia, documentos, compactados, apps. Hachurado = **recuperável**. |
+| 🗺️ **Mapa do disco** | Analise a pasta pessoal, qualquer pasta ou um disco inteiro (C:, D:…) e troque a qualquer momento. Treemap em blocos (estilo *disktree*) ou anéis concêntricos (estilo *DaisyDisk*). Cada cor é um tipo: cache, build, git, código, mídia, documentos, compactados, apps. Hachurado = **recuperável**. |
 | 💡 **Vale uma olhada** | Lista automática do que dá para apagar sem dor: `node_modules`, `target/` de projetos Rust, `.next`, `__pycache__`, `.venv`, caches e arquivos gigantes parados há meses. |
 | 🧹 **Limpeza rápida** | Caches de Windows, navegadores (Chrome, Edge, Brave, Firefox), apps (VS Code, Discord, Spotify) e ferramentas de dev (npm, Yarn, pip, Bun, Cargo, Gradle, Go, NuGet). **Nunca** toca em cookies, senhas ou histórico. |
 | 👯 **Duplicatas** | Comparação por conteúdo em 3 etapas (tamanho → hash parcial → BLAKE3 completo). Mantém a cópia mais antiga e nunca deixa você marcar todas as cópias de um arquivo. |
@@ -147,7 +147,8 @@ PRs têm os commits validados pelo commitlint. Para publicar, o repositório pre
 ## ⚠️ Limitações conhecidas
 
 - Tamanhos são **aparentes** (tamanho do arquivo), não espaço alocado — arquivos esparsos ou comprimidos pelo NTFS podem ocupar menos.
-- No Windows, hard links não são detectados na busca de duplicatas (no macOS/Linux, sim).
+- No Windows, hard links não são detectados: na busca de duplicatas e no mapa, que conta cada link inteiro (o `C:\Windows\WinSxS` aparece maior do que ocupa).
+- Pastas chamadas só `cache`/`tmp`/`temp` só contam como cache dentro de dados de aplicativo (`AppData`, `~/.cache`, `~/Library`…); em `Documentos/Projeto/tmp` elas são tratadas como suas.
 - Arquivos pequenos (< 512 KB) aparecem agrupados e não podem ser marcados individualmente.
 - A limpeza rápida só mexe em pastas do usuário; nada que exija administrador (Windows Update, `C:\Windows\Temp`).
 

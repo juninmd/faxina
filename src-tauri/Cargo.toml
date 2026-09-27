@@ -37,7 +37,6 @@ sysinfo = { version = "0.39.6", default-features = false, features = ["disk"] }
 codegen-units = 1
 lto = true
 opt-level = 3
-panic = "abort"
 strip = true
 
 [dev-dependencies]

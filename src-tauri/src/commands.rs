@@ -48,14 +48,6 @@ pub struct DeleteReport {
     failed: Vec<Failure>,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DiskInfo {
-    mount: String,
-    total: u64,
-    free: u64,
-}
-
 fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -140,14 +132,20 @@ pub fn get_view(state: State<'_, AppState>, path: String, depth: u8) -> Result<V
 
 #[tauri::command]
 pub fn get_suggestions(state: State<'_, AppState>) -> Vec<Suggestion> {
-    lock(&state.scan)
-        .as_ref()
-        .map_or_else(Vec::new, |d| view::suggestions(&d.tree, &d.root, now(), 12))
+    lock(&state.scan).as_ref().map_or_else(Vec::new, |d| {
+        let mut s = view::suggestions(&d.tree, &d.root, now(), 24);
+        // A stale hiberfil.sys is huge and old, and still never ours to offer.
+        s.retain(|x| !guard::is_protected(Path::new(&x.path)));
+        s.truncate(12);
+        s
+    })
 }
 
 fn remove_one(path: &Path, permanent: bool) -> Result<(), String> {
     let result = if !permanent {
-        trash::delete(path).map_err(|e| e.to_string())
+        trash::delete(path).map_err(|e| {
+            format!("{e} (se este disco não tem Lixeira, marque \"Excluir permanentemente\")")
+        })
     } else if path.is_dir() {
         std::fs::remove_dir_all(path).map_err(|e| e.to_string())
     } else {
@@ -264,22 +262,6 @@ pub async fn find_duplicates(
 #[tauri::command]
 pub fn cancel_duplicates(state: State<'_, AppState>) {
     state.dup_cancel.store(true, Ordering::Relaxed);
-}
-
-#[tauri::command]
-pub fn disk_info(path: String) -> Option<DiskInfo> {
-    let disks = sysinfo::Disks::new_with_refreshed_list();
-    let target = Path::new(&path);
-    disks
-        .list()
-        .iter()
-        .filter(|d| target.starts_with(d.mount_point()))
-        .max_by_key(|d| d.mount_point().as_os_str().len())
-        .map(|d| DiskInfo {
-            mount: d.mount_point().to_string_lossy().into_owned(),
-            total: d.total_space(),
-            free: d.available_space(),
-        })
 }
 
 #[tauri::command]

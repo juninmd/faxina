@@ -67,5 +67,6 @@ export const api = {
   findDuplicates: (path: string, minSize: number) => invoke<DupGroup[]>("find_duplicates", { path, minSize }),
   cancelDuplicates: () => invoke<void>("cancel_duplicates"),
   diskInfo: (path: string) => invoke<DiskInfo | null>("disk_info", { path }),
+  listDisks: () => invoke<DiskInfo[]>("list_disks"),
   homeDir: () => invoke<string>("home_dir"),
 };

@@ -40,8 +40,30 @@ fn dunce(p: &Path) -> std::io::Result<PathBuf> {
     })
 }
 
-fn is_protected(p: &Path) -> bool {
-    if p.parent().is_none() {
+/// OS-owned entries at a drive root: paging, hibernation, restore points, the Recycle Bin.
+const DRIVE_ROOT_SYSTEM: &[&str] = &[
+    "pagefile.sys",
+    "hiberfil.sys",
+    "swapfile.sys",
+    "dumpstack.log",
+    "dumpstack.log.tmp",
+    "system volume information",
+    "$recycle.bin",
+    "$windows.~bt",
+    "$winreagent",
+    "recovery",
+    "boot",
+    "efi",
+    "config.msi",
+];
+
+pub fn is_protected(p: &Path) -> bool {
+    let Some(parent) = p.parent() else {
+        return true;
+    };
+    let at_drive_root = parent.parent().is_none();
+    let name = p.file_name().map(|n| n.to_string_lossy().to_lowercase());
+    if at_drive_root && name.is_some_and(|n| DRIVE_ROOT_SYSTEM.contains(&n.as_str())) {
         return true;
     }
     let exact: Vec<PathBuf> = [
@@ -164,5 +186,24 @@ mod tests {
         assert!(is_protected(home.parent().unwrap()));
         #[cfg(windows)]
         assert!(is_protected(Path::new(r"C:\Windows\System32")));
+    }
+
+    #[test]
+    fn drive_root_system_files_are_protected() {
+        let root = std::env::temp_dir()
+            .ancestors()
+            .last()
+            .unwrap()
+            .to_path_buf();
+        for n in [
+            "pagefile.sys",
+            "hiberfil.sys",
+            "System Volume Information",
+            "$Recycle.Bin",
+        ] {
+            assert!(is_protected(&root.join(n)), "{n}");
+        }
+        // Same names deeper in the tree are ordinary files.
+        assert!(!is_protected(&root.join("backup").join("pagefile.sys")));
     }
 }

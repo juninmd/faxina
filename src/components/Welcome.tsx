@@ -1,5 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
+import { useEffect, useState } from "react";
 import type { ScanTick } from "../hooks/useScan";
+import { api, type DiskInfo } from "../lib/api";
 import { formatBytes, formatCount } from "../lib/format";
 
 interface Props {
@@ -11,6 +13,12 @@ interface Props {
 }
 
 export function Welcome({ home, progress, error, onScan, onCancel }: Props) {
+  const [disks, setDisks] = useState<DiskInfo[]>([]);
+
+  useEffect(() => {
+    api.listDisks().then(setDisks, () => setDisks([]));
+  }, []);
+
   if (progress) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-6" role="status" aria-live="polite">
@@ -63,6 +71,42 @@ export function Welcome({ home, progress, error, onScan, onCancel }: Props) {
           Escolher pasta…
         </button>
       </div>
+      {disks.length > 0 && (
+        <section aria-label="Discos" className="w-full max-w-3xl">
+          <h2 className="mb-3 text-[11px] tracking-wider text-[var(--color-muted)] uppercase">
+            Ou analise um disco inteiro
+          </h2>
+          <ul className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
+            {disks.map((d) => {
+              const used = d.total - d.free;
+              return (
+                <li key={d.mount}>
+                  <button
+                    type="button"
+                    onClick={() => onScan(d.mount)}
+                    className="w-full rounded-xl border border-[var(--color-line)] bg-[var(--color-panel)] p-4 text-left hover:border-[var(--color-accent)]"
+                  >
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-lg font-semibold">💽 {d.mount}</span>
+                      <span className="text-xs text-[var(--color-muted)]">{formatBytes(d.total)}</span>
+                    </div>
+                    <div className="mt-3 h-1.5 rounded bg-[var(--color-panel-2)]">
+                      <div
+                        className="h-full rounded bg-[var(--color-accent)]"
+                        style={{ width: `${(used / d.total) * 100}%` }}
+                      />
+                    </div>
+                    <div className="mt-2 text-xs text-[var(--color-muted)]">{formatBytes(d.free)} livres</div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mt-2 text-xs text-[var(--color-muted)]">
+            Discos grandes levam alguns minutos; dá para cancelar a qualquer momento.
+          </p>
+        </section>
+      )}
       {error && <p className="text-sm text-[var(--color-danger)]">{error}</p>}
     </div>
   );

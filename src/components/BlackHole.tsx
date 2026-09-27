@@ -12,6 +12,7 @@ interface Props {
   /** Bytes freed; null while the deletion is still running (the hole keeps spinning). */
   freed: number | null;
   failed: number;
+  reason?: string;
   onDone: () => void;
 }
 
@@ -34,7 +35,9 @@ function spawn(sources: HoleSource[], cx: number, cy: number, w: number, h: numb
   const area = list.reduce((s, x) => s + x.rect.width * x.rect.height, 0) || 1;
   const out: Particle[] = [];
   for (const { rect, color } of list) {
-    const n = Math.max(24, Math.round((MAX_PARTICLES * rect.width * rect.height) / area));
+    // Hundreds of duplicate rows must not add up to tens of thousands of particles.
+    const floor = Math.min(24, Math.floor(MAX_PARTICLES / list.length));
+    const n = Math.max(floor, Math.round((MAX_PARTICLES * rect.width * rect.height) / area));
     for (let i = 0; i < n; i++) {
       const fx = Math.random();
       const x = rect.left + fx * rect.width;
@@ -54,7 +57,7 @@ function spawn(sources: HoleSource[], cx: number, cy: number, w: number, h: numb
   return out;
 }
 
-export function BlackHole({ sources, freed, failed, onDone }: Props) {
+export function BlackHole({ sources, freed, failed, reason, onDone }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const freedRef = useRef(freed);
   freedRef.current = freed;
@@ -222,7 +225,9 @@ export function BlackHole({ sources, freed, failed, onDone }: Props) {
           </span>
           <span className="mt-2 text-lg text-white/80">liberados ✨</span>
           {failed > 0 && (
-            <span className="mt-3 text-sm text-[var(--color-danger)]">{failed} item(ns) não puderam ser removidos</span>
+            <span className="mt-3 max-w-lg text-center text-sm text-[var(--color-danger)]">
+              {failed} item(ns) não puderam ser removidos{reason && `: ${reason}`}
+            </span>
           )}
         </div>
       )}
