@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { DiskInfo, Suggestion, ViewNode } from "../lib/api";
 import { formatAge, formatBytes, formatCount, splitBytes } from "../lib/format";
 import { KINDS, kindColor } from "../lib/kinds";
@@ -23,6 +24,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onToggleMark, onReveal }: Props) {
+  const [copied, setCopied] = useState("");
   const [num, unit] = splitBytes(selection.size);
   const share = scanTotal ? (selection.size / scanTotal) * 100 : 0;
   const worth = suggestions.reduce((s, x) => s + x.size, 0);
@@ -62,12 +64,20 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
             </button>
             <button
               type="button"
-              onClick={() => onReveal(selection.path)}
+              onClick={() => {
+                onReveal(selection.path);
+                setCopied(selection.path);
+                setTimeout(() => setCopied(""), 1500);
+              }}
               className="rounded-md border border-[var(--color-line)] px-3 py-1.5 text-sm hover:bg-[var(--color-panel-2)]"
               title="Copiar caminho"
+              aria-label="Copiar caminho"
             >
-              ⧉
+              <span aria-hidden="true">{copied === selection.path ? "✓" : "⧉"}</span>
             </button>
+            <span className="sr-only" role="status">
+              {copied && "Caminho copiado"}
+            </span>
           </div>
         )}
       </section>

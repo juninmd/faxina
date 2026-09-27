@@ -18,6 +18,7 @@ export function useScan() {
   const [disk, setDisk] = useState<DiskInfo | null>(null);
   const [error, setError] = useState("");
   const [elapsed, setElapsed] = useState(0);
+  const [scanning, setScanning] = useState("");
 
   useEffect(() => {
     const un = listen<ScanTick>("scan-progress", (e) => setProgress((p) => (p ? e.payload : p)));
@@ -30,6 +31,7 @@ export function useScan() {
     async (path: string) => {
       setError("");
       setProgress({ files: 0, bytes: 0 });
+      setScanning(path);
       const t0 = performance.now();
       try {
         const v = await api.startScan(path, depth);
@@ -80,6 +82,7 @@ export function useScan() {
 
   return {
     root,
+    scanning,
     total,
     view,
     depth,

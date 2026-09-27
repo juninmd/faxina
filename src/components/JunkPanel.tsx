@@ -1,3 +1,4 @@
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type JunkItem } from "../lib/api";
 import { formatBytes, formatCount } from "../lib/format";
@@ -15,13 +16,17 @@ export function JunkPanel({ swallow }: { swallow: Swallow }) {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError("");
     try {
       const list = await api.junkScan();
       setItems(list);
       setPicked(new Set(list.map((i) => i.id)));
+    } catch (e) {
+      setError(`Não foi possível listar os caches: ${e}`);
     } finally {
       setLoading(false);
     }
@@ -45,8 +50,13 @@ export function JunkPanel({ swallow }: { swallow: Swallow }) {
       return n;
     });
 
-  const clean = () => {
+  const clean = async () => {
     const ids = [...picked];
+    const ok = await confirm(
+      `${formatBytes(total)} de cache serão apagados direto, sem passar pela Lixeira. Os apps recriam esses arquivos quando precisarem.`,
+      { title: "Limpar caches?", kind: "warning", okLabel: "Limpar", cancelLabel: "Cancelar" },
+    );
+    if (!ok) return;
     swallow(
       ids.map((id) => `junk:${id}`),
       async () => {
@@ -73,10 +83,22 @@ export function JunkPanel({ swallow }: { swallow: Swallow }) {
           onClick={clean}
           className="shrink-0 rounded-lg bg-[var(--color-accent)] px-5 py-2.5 font-semibold text-black disabled:opacity-40"
         >
-          🧹 Limpar {formatBytes(total)}
+          <span aria-hidden="true">🧹 </span>Limpar {formatBytes(total)}
         </button>
       </header>
-      {note && <p className="text-sm text-[var(--color-muted)]">{note}</p>}
+      {note && (
+        <p className="text-sm text-[var(--color-muted)]" role="status">
+          {note}
+        </p>
+      )}
+      {error && (
+        <p className="text-sm text-[var(--color-danger)]" role="alert">
+          {error}{" "}
+          <button type="button" onClick={load} className="underline">
+            Tentar de novo
+          </button>
+        </p>
+      )}
       {loading && !items && <p className="animate-pulse text-[var(--color-muted)]">Procurando caches…</p>}
       {items?.length === 0 && <p className="text-[var(--color-muted)]">Tudo limpo por aqui. ✨</p>}
       {groups.map(([group, list]) => (

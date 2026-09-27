@@ -98,7 +98,7 @@ export function Treemap({ root, selected, marked, onSelect, onOpen, onToggleMark
               >
                 <span className="truncate font-medium text-white/90">{n.name}</span>
                 {(internal || h > 36) && (
-                  <span className="shrink-0 text-[11px] text-white/55 tabular-nums leading-4">
+                  <span className="shrink-0 text-[11px] text-white/75 tabular-nums leading-4">
                     {formatBytes(n.size)}
                   </span>
                 )}

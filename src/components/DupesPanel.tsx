@@ -1,7 +1,8 @@
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { confirm, open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import { api, type DupGroup } from "../lib/api";
+import { defaultPick, pruneDeleted } from "../lib/dupes";
 import { baseName, formatAge, formatBytes, formatCount } from "../lib/format";
 import type { Swallow } from "./types";
 
@@ -12,10 +13,8 @@ const MIN_SIZES = [
   { label: "≥ 100 MB", value: 100 * 1024 * 1024 },
 ];
 
-/** Every copy except the oldest one: the usual "keep the original" pick. */
-function defaultPick(groups: DupGroup[]): Set<string> {
-  return new Set(groups.flatMap((g) => g.files.slice(1).map((f) => f.path)));
-}
+/** Groups rendered per page: thousands of rows at once freeze the webview. */
+const PAGE = 50;
 
 export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; defaultRoot: string }) {
   const [root, setRoot] = useState(defaultRoot);
@@ -24,6 +23,7 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [hashed, setHashed] = useState<number | null>(null);
   const [error, setError] = useState("");
+  const [shown, setShown] = useState(PAGE);
 
   useEffect(() => setRoot((r) => r || defaultRoot), [defaultRoot]);
   useEffect(() => {
@@ -36,6 +36,7 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
   const search = async () => {
     setError("");
     setGroups(null);
+    setShown(PAGE);
     setHashed(0);
     try {
       const found = await api.findDuplicates(root, minSize);
@@ -59,20 +60,28 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
 
   const wasted = (groups ?? []).reduce((s, g) => s + g.files.filter((f) => picked.has(f.path)).length * g.size, 0);
 
-  const remove = () => {
+  const remove = async () => {
     const paths = [...picked];
+    const ok = await confirm(
+      `${formatCount(paths.length)} arquivos (${formatBytes(wasted)}) vão para a Lixeira. Uma cópia de cada grupo é mantida.`,
+      {
+        title: "Mandar duplicatas para a Lixeira?",
+        kind: "warning",
+        okLabel: "Mandar para a Lixeira",
+        cancelLabel: "Cancelar",
+      },
+    );
+    if (!ok) return;
+    let deleted: string[] = [];
     swallow(
       paths,
       async () => {
         const r = await api.deletePaths(paths, false);
+        deleted = r.deleted;
         return { freed: r.freed, failed: r.failed.length, reason: r.failed[0]?.error };
       },
       () => {
-        setGroups((gs) =>
-          (gs ?? [])
-            .map((g) => ({ ...g, files: g.files.filter((f) => !paths.includes(f.path)) }))
-            .filter((g) => g.files.length > 1),
-        );
+        setGroups((gs) => pruneDeleted(gs ?? [], deleted));
         setPicked(new Set());
       },
     );
@@ -96,7 +105,8 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
           className="max-w-md truncate rounded-md border border-[var(--color-line)] px-3 py-2 text-sm hover:bg-[var(--color-panel-2)]"
           title={root}
         >
-          📁 {root || "Escolher pasta"}
+          <span aria-hidden="true">📁 </span>
+          {root || "Escolher pasta"}
         </button>
         <select
           value={minSize}
@@ -134,14 +144,19 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
             onClick={remove}
             className="ml-auto rounded-md bg-[var(--color-danger)] px-4 py-2 text-sm font-semibold text-black"
           >
-            🕳️ Mandar {picked.size} para a Lixeira ({formatBytes(wasted)})
+            <span aria-hidden="true">🕳️ </span>Mandar {formatCount(picked.size)} para a Lixeira ({formatBytes(wasted)})
           </button>
         )}
       </div>
       {error && <p className="text-sm text-[var(--color-danger)]">{error}</p>}
       {groups?.length === 0 && <p className="text-[var(--color-muted)]">Nenhuma duplicata encontrada. 🎉</p>}
+      {!!groups?.length && (
+        <p className="text-sm text-[var(--color-muted)]" role="status">
+          {formatCount(groups.length)} grupos · a seleção vale para todos, inclusive os que ainda não apareceram abaixo.
+        </p>
+      )}
       <ul className="flex flex-col gap-3">
-        {groups?.map((g) => (
+        {groups?.slice(0, shown).map((g) => (
           <li key={g.hash} className="rounded-lg bg-[var(--color-panel)] p-3">
             <div className="mb-2 flex justify-between text-sm">
               <span className="truncate font-medium">{baseName(g.files[0].path)}</span>
@@ -172,6 +187,15 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
           </li>
         ))}
       </ul>
+      {groups && groups.length > shown && (
+        <button
+          type="button"
+          onClick={() => setShown((n) => n + PAGE)}
+          className="self-center rounded-md border border-[var(--color-line)] px-4 py-2 text-sm hover:bg-[var(--color-panel-2)]"
+        >
+          Mostrar mais {Math.min(PAGE, groups.length - shown)} (faltam {formatCount(groups.length - shown)})
+        </button>
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
-use std::collections::{HashMap, HashSet};
-use std::fs::{self, File};
+use std::collections::HashMap;
+use std::fs::File;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use rayon::prelude::*;
 use serde::Serialize;
 
-use crate::scan::{is_link, mtime};
+use crate::listing::{self, Links};
 
 const PARTIAL: usize = 64 * 1024;
 
@@ -40,43 +40,30 @@ pub struct DupProgress<'a> {
 
 type Candidate = (PathBuf, u64, u64);
 
-fn walk(
-    dir: &Path,
+struct Walk<'a> {
     min_size: u64,
-    cancel: &AtomicBool,
-    out: &mut Vec<Candidate>,
-    seen: &mut HashSet<(u64, u64)>,
-) {
-    if cancel.load(Ordering::Relaxed) {
+    cancel: &'a AtomicBool,
+    /// Off on volumes whose file ids are not trustworthy (FAT, exFAT).
+    ids: bool,
+    links: Links,
+}
+
+fn walk(dir: &Path, w: &Walk, out: &mut Vec<Candidate>) {
+    if w.cancel.load(Ordering::Relaxed) {
         return;
     }
-    let Ok(rd) = fs::read_dir(dir) else { return };
-    for e in rd.flatten() {
-        let Ok(m) = e.metadata() else { continue };
-        if is_link(&m) {
-            continue;
-        }
-        if m.is_dir() {
-            walk(&e.path(), min_size, cancel, out, seen);
-        } else if m.len() >= min_size && !hardlink_seen(&m, seen) {
-            out.push((e.path(), m.len(), mtime(&m)));
+    let Ok(entries) = listing::list(dir, w.ids) else {
+        return;
+    };
+    for e in entries {
+        let path = dir.join(&e.name);
+        if e.is_dir {
+            walk(&path, w, out);
+        // Hard links share storage, so deleting one frees nothing: count each file once.
+        } else if e.size >= w.min_size && e.id.is_none_or(|id| w.links.first(id)) {
+            out.push((path, e.size, e.modified));
         }
     }
-}
-
-/// Hard links share storage, so deleting one frees nothing: count each inode once.
-#[cfg(unix)]
-fn hardlink_seen(m: &fs::Metadata, seen: &mut HashSet<(u64, u64)>) -> bool {
-    use std::os::unix::fs::MetadataExt;
-    if m.nlink() < 2 {
-        return false;
-    }
-    !seen.insert((m.dev(), m.ino()))
-}
-
-#[cfg(not(unix))]
-fn hardlink_seen(_: &fs::Metadata, _: &mut HashSet<(u64, u64)>) -> bool {
-    false
 }
 
 fn hash_file(path: &Path, limit: Option<usize>) -> io::Result<String> {
@@ -124,13 +111,13 @@ fn refine(
 
 pub fn find(root: &Path, min_size: u64, p: &DupProgress) -> Vec<DupGroup> {
     let mut files = Vec::new();
-    walk(
-        root,
-        min_size.max(1),
-        p.cancel,
-        &mut files,
-        &mut HashSet::new(),
-    );
+    let w = Walk {
+        min_size: min_size.max(1),
+        cancel: p.cancel,
+        ids: listing::ids_supported(root),
+        links: Links::default(),
+    };
+    walk(root, &w, &mut files);
 
     let mut by_size: HashMap<u64, Vec<Candidate>> = HashMap::new();
     for f in files {
@@ -171,6 +158,7 @@ pub fn find(root: &Path, min_size: u64, p: &DupProgress) -> Vec<DupGroup> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     fn run(root: &Path, min: u64) -> Vec<DupGroup> {
         let cancel = AtomicBool::new(false);
@@ -199,6 +187,16 @@ mod tests {
         assert_eq!(g[0].wasted(), 10);
         // Written first (older or same second, shorter path): kept as the original.
         assert!(g[0].files[0].path.ends_with("a.jpg") && !g[0].files[0].path.contains("copy"));
+    }
+
+    #[test]
+    fn hard_links_are_not_duplicates() {
+        // Deleting one link frees nothing, so offering it would be a lie.
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        fs::write(r.join("a.bin"), b"linked bytes").unwrap();
+        fs::hard_link(r.join("a.bin"), r.join("b.bin")).unwrap();
+        assert!(run(r, 1).is_empty());
     }
 
     #[test]
