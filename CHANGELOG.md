@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.1.0](https://github.com/juninmd/faxina/compare/v1.0.2...v1.1.0) (2026-09-27)
+
+
+### Features
+
+* choose the drive to scan and harden deletion safety ([730fba5](https://github.com/juninmd/faxina/commit/730fba55036b42f6f1fb60f3e18e5f105f52e511))
+
 ## [1.0.2](https://github.com/juninmd/faxina/compare/v1.0.1...v1.0.2) (2026-09-27)
 
 
