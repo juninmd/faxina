@@ -6,7 +6,7 @@ type State =
   | { kind: "idle" }
   | { kind: "available"; update: Update }
   | { kind: "downloading"; pct: number }
-  | { kind: "error"; msg: string };
+  | { kind: "error"; msg: string; update: Update };
 
 /** Checks GitHub Releases once at startup; installing is always the user's call. */
 export function UpdateBanner() {
@@ -35,7 +35,7 @@ export function UpdateBanner() {
       });
       await relaunch();
     } catch (e) {
-      setState({ kind: "error", msg: String(e) });
+      setState({ kind: "error", msg: String(e), update });
     }
   };
 
@@ -47,7 +47,7 @@ export function UpdateBanner() {
       {state.kind === "available" && (
         <>
           <span>
-            ✨ Nova versão <b>{state.update.version}</b> disponível
+            <span aria-hidden="true">✨ </span>Nova versão <b>{state.update.version}</b> disponível
           </span>
           <button
             type="button"
@@ -62,7 +62,17 @@ export function UpdateBanner() {
         </>
       )}
       {state.kind === "downloading" && <span>Baixando atualização… {state.pct}%</span>}
-      {state.kind === "error" && <span>Falha ao atualizar: {state.msg}</span>}
+      {state.kind === "error" && (
+        <>
+          <span role="alert">Falha ao atualizar: {state.msg}</span>
+          <button type="button" onClick={() => install(state.update)} className="underline">
+            Tentar de novo
+          </button>
+          <button type="button" onClick={() => setState({ kind: "idle" })} className="underline">
+            Fechar
+          </button>
+        </>
+      )}
     </div>
   );
 }

@@ -147,7 +147,7 @@ PRs têm os commits validados pelo commitlint. Para publicar, o repositório pre
 ## ⚠️ Limitações conhecidas
 
 - Tamanhos são **aparentes** (tamanho do arquivo), não espaço alocado — arquivos esparsos ou comprimidos pelo NTFS podem ocupar menos.
-- No Windows, hard links não são detectados: na busca de duplicatas e no mapa, que conta cada link inteiro (o `C:\Windows\WinSxS` aparece maior do que ocupa).
+- Hard links contam uma vez só (no Windows, via FileId do NTFS; em FAT/exFAT não existem). O espaço fica com o primeiro caminho encontrado, então `WinSxS` e `System32` dividem o total de um jeito que pode variar entre análises.
 - Pastas chamadas só `cache`/`tmp`/`temp` só contam como cache dentro de dados de aplicativo (`AppData`, `~/.cache`, `~/Library`…); em `Documentos/Projeto/tmp` elas são tratadas como suas.
 - Arquivos pequenos (< 512 KB) aparecem agrupados e não podem ser marcados individualmente.
 - A limpeza rápida só mexe em pastas do usuário; nada que exija administrador (Windows Update, `C:\Windows\Temp`).

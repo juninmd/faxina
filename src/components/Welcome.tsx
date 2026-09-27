@@ -7,12 +7,13 @@ import { formatBytes, formatCount } from "../lib/format";
 interface Props {
   home: string;
   progress: ScanTick | null;
+  target: string;
   error: string;
   onScan: (path: string) => void;
   onCancel: () => void;
 }
 
-export function Welcome({ home, progress, error, onScan, onCancel }: Props) {
+export function Welcome({ home, progress, target, error, onScan, onCancel }: Props) {
   const [disks, setDisks] = useState<DiskInfo[]>([]);
 
   useEffect(() => {
@@ -21,8 +22,8 @@ export function Welcome({ home, progress, error, onScan, onCancel }: Props) {
 
   if (progress) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-6" role="status" aria-live="polite">
-        <div className="relative h-40 w-40">
+      <div className="flex flex-1 flex-col items-center justify-center gap-6">
+        <div className="relative h-40 w-40" aria-hidden="true">
           <div className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-[var(--color-accent)] border-r-[var(--color-accent)]/40" />
           <div className="absolute inset-5 animate-[spin_2.4s_linear_infinite_reverse] rounded-full border-4 border-transparent border-b-[#8b5cd6]" />
           <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -30,7 +31,14 @@ export function Welcome({ home, progress, error, onScan, onCancel }: Props) {
             <span className="text-xs text-[var(--color-muted)]">{formatCount(progress.files)} arquivos</span>
           </div>
         </div>
-        <p className="text-[var(--color-muted)]">Mapeando o disco…</p>
+        <div className="flex max-w-xl flex-col items-center gap-1 text-center">
+          <p className="text-[var(--color-muted)]" role="status">
+            Mapeando…
+          </p>
+          <p className="max-w-full truncate font-medium" title={target}>
+            {target}
+          </p>
+        </div>
         <button
           type="button"
           onClick={onCancel}
@@ -45,7 +53,9 @@ export function Welcome({ home, progress, error, onScan, onCancel }: Props) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-8 p-8 text-center">
       <div>
-        <div className="text-6xl">🧹</div>
+        <div className="text-6xl" aria-hidden="true">
+          🧹
+        </div>
         <h1 className="mt-4 text-4xl font-semibold tracking-tight">Onde está o seu espaço?</h1>
         <p className="mx-auto mt-3 max-w-lg text-[var(--color-muted)]">
           O Faxina mapeia uma pasta inteira, mostra o que é cache, build e duplicata — e some com o que você escolher.
@@ -87,7 +97,10 @@ export function Welcome({ home, progress, error, onScan, onCancel }: Props) {
                     className="w-full rounded-xl border border-[var(--color-line)] bg-[var(--color-panel)] p-4 text-left hover:border-[var(--color-accent)]"
                   >
                     <div className="flex items-baseline justify-between">
-                      <span className="text-lg font-semibold">💽 {d.mount}</span>
+                      <span className="text-lg font-semibold">
+                        <span aria-hidden="true">💽 </span>
+                        {d.mount}
+                      </span>
                       <span className="text-xs text-[var(--color-muted)]">{formatBytes(d.total)}</span>
                     </div>
                     <div className="mt-3 h-1.5 rounded bg-[var(--color-panel-2)]">

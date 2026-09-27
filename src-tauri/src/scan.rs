@@ -1,4 +1,4 @@
-use std::fs::{self, Metadata};
+use std::fs::Metadata;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::UNIX_EPOCH;
@@ -6,6 +6,7 @@ use std::time::UNIX_EPOCH;
 use rayon::prelude::*;
 
 use crate::category::{classify_dir, classify_file, hints_for, under_app_data, DirHints};
+use crate::listing::{self, Links};
 use crate::model::{Kind, Node};
 
 /// Files below this size are folded into one "small files" bucket per directory,
@@ -17,11 +18,13 @@ pub struct Progress {
     pub files: AtomicU64,
     pub bytes: AtomicU64,
     pub cancel: AtomicBool,
+    pub links: Links,
 }
 
 pub fn scan(root: &Path, progress: &Progress) -> Node {
     let name = root.to_string_lossy().into_owned();
-    let mut node = scan_dir(root, name, Kind::Other, progress);
+    let ids = listing::ids_supported(root);
+    let mut node = scan_dir(root, name, Kind::Other, ids, progress);
     node.kind = dominant_kind(&node.children);
     node
 }
@@ -47,7 +50,7 @@ pub fn is_link(meta: &Metadata) -> bool {
     meta.file_type().is_symlink()
 }
 
-fn scan_dir(path: &Path, name: String, forced: Kind, progress: &Progress) -> Node {
+fn scan_dir(path: &Path, name: String, forced: Kind, ids: bool, progress: &Progress) -> Node {
     let mut node = Node {
         name,
         size: 0,
@@ -62,7 +65,7 @@ fn scan_dir(path: &Path, name: String, forced: Kind, progress: &Progress) -> Nod
     if progress.cancel.load(Ordering::Relaxed) {
         return node;
     }
-    let Ok(entries) = fs::read_dir(path) else {
+    let Ok(entries) = listing::list(path, ids) else {
         return node;
     };
 
@@ -70,18 +73,17 @@ fn scan_dir(path: &Path, name: String, forced: Kind, progress: &Progress) -> Nod
     let mut file_names = Vec::new();
     let (mut small_size, mut small_count, mut small_mtime) = (0u64, 0u64, 0u64);
 
-    for entry in entries.flatten() {
-        let Ok(meta) = entry.metadata() else { continue };
-        if is_link(&meta) {
+    for entry in entries {
+        let entry_name = entry.name;
+        if entry.is_dir {
+            dirs.push((path.join(&entry_name), entry_name));
             continue;
         }
-        let entry_name = entry.file_name().to_string_lossy().into_owned();
-        if meta.is_dir() {
-            dirs.push((entry.path(), entry_name));
+        // Another link to this file was already counted: it takes no extra space.
+        if entry.id.is_some_and(|id| !progress.links.first(id)) {
             continue;
         }
-        let size = meta.len();
-        let modified = mtime(&meta);
+        let (size, modified) = (entry.size, entry.modified);
         progress.files.fetch_add(1, Ordering::Relaxed);
         progress.bytes.fetch_add(size, Ordering::Relaxed);
         if size >= SMALL_FILE {
@@ -113,7 +115,7 @@ fn scan_dir(path: &Path, name: String, forced: Kind, progress: &Progress) -> Nod
             } else {
                 forced
             };
-            let mut child = scan_dir(&p, n, inherited, progress);
+            let mut child = scan_dir(&p, n, inherited, ids, progress);
             if inherited == Kind::Other {
                 child.kind = dominant_kind(&child.children);
             }
@@ -214,6 +216,22 @@ mod tests {
         assert_eq!(p.kind, Kind::Build, "painted by what fills it");
         assert!(!p.reclaimable, "but never deletable as a whole");
         assert!(p.child("target").unwrap().reclaimable);
+    }
+
+    #[test]
+    fn hard_links_are_counted_once() {
+        // WinSxS and System32 share files this way; counting each link inflated C: by GBs.
+        let tmp = tempfile::tempdir().unwrap();
+        create_dir_all(tmp.path().join("a")).unwrap();
+        create_dir_all(tmp.path().join("b")).unwrap();
+        let big = SMALL_FILE as usize * 2;
+        write(tmp.path().join("a/lib.dll"), vec![0u8; big]).unwrap();
+        std::fs::hard_link(tmp.path().join("a/lib.dll"), tmp.path().join("b/lib.dll")).unwrap();
+
+        let p = Progress::default();
+        let tree = scan(tmp.path(), &p);
+        assert_eq!(tree.size, big as u64);
+        assert_eq!(p.bytes.load(Ordering::Relaxed), big as u64);
     }
 
     #[test]

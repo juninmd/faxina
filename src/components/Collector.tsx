@@ -51,7 +51,7 @@ export function Collector({ items, onClear, onUnmark, onDelete }: Props) {
           onClick={() => setConfirming(true)}
           className="rounded-lg bg-[var(--color-danger)] px-4 py-2 font-semibold text-black shadow-[0_0_24px_rgba(240,96,93,0.35)] hover:brightness-110"
         >
-          🕳️ Excluir {formatBytes(total)}
+          <span aria-hidden="true">🕳️ </span>Excluir {formatBytes(total)}
         </button>
       </div>
 

@@ -106,7 +106,7 @@ export default function App() {
           title="Animação de exclusão: seguir o sistema, sempre ou nunca"
           className="ml-auto rounded-md px-3 py-1.5 text-sm text-[var(--color-muted)] hover:text-white"
         >
-          ✨ Animações: {MOTION_LABELS[motion]}
+          <span aria-hidden="true">✨ </span>Animações: {MOTION_LABELS[motion]}
         </button>
         {tab === "map" && scan.view && (
           <button
@@ -117,7 +117,7 @@ export default function App() {
             }}
             className="rounded-md border border-[var(--color-line)] px-3 py-1.5 text-sm hover:bg-[var(--color-panel-2)]"
           >
-            💽 Trocar disco/pasta
+            <span aria-hidden="true">💽 </span>Trocar disco/pasta
           </button>
         )}
         {tab === "map" && scan.view && (
@@ -139,6 +139,7 @@ export default function App() {
             <Welcome
               home={home}
               progress={scan.progress}
+              target={scan.scanning}
               error={scan.error}
               onScan={scan.scan}
               onCancel={api.cancelScan}

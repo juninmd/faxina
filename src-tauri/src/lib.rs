@@ -5,6 +5,7 @@ mod dupes;
 mod guard;
 mod junk;
 mod junk_defs;
+mod listing;
 mod model;
 mod scan;
 mod view;
