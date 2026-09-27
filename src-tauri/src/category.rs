@@ -1,17 +1,14 @@
 use crate::model::Kind;
+use std::path::Path;
 
 const CACHE_DIRS: &[&str] = &[
     ".cache",
-    "cache",
-    "caches",
     "__pycache__",
     ".pytest_cache",
     ".mypy_cache",
     ".ruff_cache",
     ".parcel-cache",
     ".sass-cache",
-    "temp",
-    "tmp",
     "inetcache",
     "code cache",
     "gpucache",
@@ -21,6 +18,9 @@ const CACHE_DIRS: &[&str] = &[
     ".gradle",
     "deriveddata",
 ];
+/// Names too common to trust outside application data (`Documents/Projeto/tmp` is user work).
+const GENERIC_CACHE_DIRS: &[&str] = &["cache", "caches", "temp", "tmp"];
+const APP_DATA_DIRS: &[&str] = &["appdata", ".cache", ".local", ".config", "library"];
 const BUILD_DIRS: &[&str] = &[
     ".venv",
     "node_modules",
@@ -55,6 +55,15 @@ const LOG_EXT: &[&str] = &["log", "dmp", "tmp", "etl"];
 pub struct DirHints {
     pub has_cargo_toml: bool,
     pub has_build_manifest: bool,
+    pub under_app_data: bool,
+}
+
+/// Whether a path lies inside per-user application data, where generic cache names are safe.
+pub fn under_app_data(path: &Path) -> bool {
+    path.components().any(|c| {
+        let s = c.as_os_str().to_string_lossy().to_lowercase();
+        APP_DATA_DIRS.contains(&s.as_str())
+    })
 }
 
 pub fn classify_dir(name: &str, hints: DirHints) -> Option<Kind> {
@@ -62,7 +71,9 @@ pub fn classify_dir(name: &str, hints: DirHints) -> Option<Kind> {
     if lower == ".git" {
         return Some(Kind::Git);
     }
-    if CACHE_DIRS.contains(&lower.as_str()) {
+    if CACHE_DIRS.contains(&lower.as_str())
+        || (hints.under_app_data && GENERIC_CACHE_DIRS.contains(&lower.as_str()))
+    {
         return Some(Kind::Cache);
     }
     if BUILD_DIRS.contains(&lower.as_str()) {
@@ -139,6 +150,22 @@ mod tests {
             Some(Kind::Build)
         );
         assert_eq!(classify_dir("dist", DirHints::default()), None);
+    }
+
+    #[test]
+    fn generic_cache_names_count_only_inside_app_data() {
+        // "Documents/Projeto/tmp" may hold real work; "AppData/Local/Temp" does not.
+        for n in ["tmp", "Temp", "cache", "Caches"] {
+            assert_eq!(classify_dir(n, DirHints::default()), None, "{n}");
+        }
+        let app = DirHints {
+            under_app_data: true,
+            ..DirHints::default()
+        };
+        assert_eq!(classify_dir("Temp", app), Some(Kind::Cache));
+        assert!(under_app_data(Path::new("/home/u/.cache/pip")));
+        assert!(under_app_data(Path::new("C:/Users/u/AppData/Local")));
+        assert!(!under_app_data(Path::new("C:/Users/u/Documents/Projeto")));
     }
 
     #[test]

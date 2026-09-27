@@ -66,7 +66,7 @@ export default function App() {
       async () => {
         const r = await api.deletePaths(paths, permanent);
         setMarked((prev) => new Map([...prev].filter(([p]) => !r.deleted.includes(p))));
-        return { freed: r.freed, failed: r.failed.length };
+        return { freed: r.freed, failed: r.failed.length, reason: r.failed[0]?.error };
       },
       scan.refresh,
     );
@@ -111,6 +111,18 @@ export default function App() {
         {tab === "map" && scan.view && (
           <button
             type="button"
+            onClick={() => {
+              setMarked(new Map());
+              scan.reset();
+            }}
+            className="rounded-md border border-[var(--color-line)] px-3 py-1.5 text-sm hover:bg-[var(--color-panel-2)]"
+          >
+            💽 Trocar disco/pasta
+          </button>
+        )}
+        {tab === "map" && scan.view && (
+          <button
+            type="button"
             onClick={() => scan.scan(scan.root)}
             className="rounded-md border border-[var(--color-line)] px-3 py-1.5 text-sm hover:bg-[var(--color-panel-2)]"
           >
@@ -139,7 +151,15 @@ export default function App() {
       {tab === "map" && (
         <Collector items={items} onClear={() => setMarked(new Map())} onUnmark={unmark} onDelete={deleteMarked} />
       )}
-      {hole && <BlackHole sources={hole.sources} freed={hole.freed} failed={hole.failed} onDone={finish} />}
+      {hole && (
+        <BlackHole
+          sources={hole.sources}
+          freed={hole.freed}
+          failed={hole.failed}
+          reason={hole.reason}
+          onDone={finish}
+        />
+      )}
     </div>
   );
 }

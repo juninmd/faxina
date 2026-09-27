@@ -72,5 +72,27 @@ export function useScan() {
     if (view) api.getView(view.path, depth).then(setView, (e) => setError(String(e)));
   }, [depth]);
 
-  return { root, total, view, depth, setDepth, progress, suggestions, disk, error, elapsed, scan, open, up, refresh };
+  /** Back to the start screen to pick another disk or folder; the last root stays for Duplicatas. */
+  const reset = useCallback(() => {
+    setView(null);
+    setError("");
+  }, []);
+
+  return {
+    root,
+    total,
+    view,
+    depth,
+    setDepth,
+    progress,
+    suggestions,
+    disk,
+    error,
+    elapsed,
+    scan,
+    open,
+    up,
+    refresh,
+    reset,
+  };
 }

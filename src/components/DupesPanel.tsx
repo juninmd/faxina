@@ -65,7 +65,7 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
       paths,
       async () => {
         const r = await api.deletePaths(paths, false);
-        return { freed: r.freed, failed: r.failed.length };
+        return { freed: r.freed, failed: r.failed.length, reason: r.failed[0]?.error };
       },
       () => {
         setGroups((gs) =>

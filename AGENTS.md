@@ -27,6 +27,8 @@ Faxina: Tauri 2 desktop disk cleaner. Rust backend (`src-tauri/`) scans, classif
 - `Node.reclaimable` is set only by name rules or inheritance from a matching ancestor. Never derive it from the display `kind` (a folder *colored* Build still holds source code). Test: `dominant_color_does_not_make_a_folder_reclaimable`.
 - Every path from the webview goes through `guard::check` against the current scan/duplicate roots before removal.
 - Junk cleaning takes IDs, never paths; locations come only from `junk_defs.rs`. Never list cookies, logins, history or profile data (a test scans for those words).
+- Generic names (`cache`, `tmp`, `temp`) are Cache only under app data (`DirHints::under_app_data`); anywhere else they may be user work.
+- Drive-root OS entries (`pagefile.sys`, `hiberfil.sys`, `System Volume Information`, …) are protected in `guard.rs` and filtered out of suggestions.
 - Default delete target is the OS trash; permanent delete is an explicit opt-in.
 
 ## Release flow

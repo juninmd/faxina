@@ -5,7 +5,7 @@ use std::time::UNIX_EPOCH;
 
 use rayon::prelude::*;
 
-use crate::category::{classify_dir, classify_file, hints_for};
+use crate::category::{classify_dir, classify_file, hints_for, under_app_data, DirHints};
 use crate::model::{Kind, Node};
 
 /// Files below this size are folded into one "small files" bucket per directory,
@@ -100,7 +100,10 @@ fn scan_dir(path: &Path, name: String, forced: Kind, progress: &Progress) -> Nod
         file_names.push(entry_name);
     }
 
-    let hints = hints_for(&file_names);
+    let hints = DirHints {
+        under_app_data: under_app_data(path),
+        ..hints_for(&file_names)
+    };
     let subdirs: Vec<Node> = dirs
         .into_par_iter()
         .map(|(p, n)| {
