@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.2.0](https://github.com/juninmd/faxina/compare/v1.1.0...v1.2.0) (2026-09-27)
+
+
+### Features
+
+* count hard links once and polish the cleaning flows ([9b04597](https://github.com/juninmd/faxina/commit/9b045973734e55cb6a1e082a5bb46a8f7d9170e9))
+
 # [1.1.0](https://github.com/juninmd/faxina/compare/v1.0.2...v1.1.0) (2026-09-27)
 
 
