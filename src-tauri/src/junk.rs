@@ -19,7 +19,7 @@ pub struct JunkItem {
     pub paths: Vec<String>,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CleanReport {
     pub freed: u64,
@@ -140,38 +140,50 @@ pub fn scan_all() -> Vec<JunkItem> {
 
 /// Deletes the *contents* of each location; the folder itself stays so apps keep working.
 pub fn clean_dir(dir: &Path, min_age: Duration) -> CleanReport {
-    let mut report = CleanReport::default();
     let Ok(rd) = fs::read_dir(dir) else {
-        return report;
+        return CleanReport::default();
     };
-    for entry in rd.flatten() {
-        let path = entry.path();
-        let Ok(meta) = fs::symlink_metadata(&path) else {
-            continue;
-        };
-        if !old_enough(&meta, min_age) {
-            report.skipped += 1;
-            continue;
-        }
-        let (size, files) = if meta.is_dir() && !is_link(&meta) {
-            dir_size(&path)
-        } else {
-            (meta.len(), 1)
-        };
-        let result = if meta.is_dir() && !is_link(&meta) {
-            fs::remove_dir_all(&path)
-        } else {
-            fs::remove_file(&path)
-        };
-        match result {
-            Ok(()) => {
-                report.freed += size;
-                report.removed += files;
+    let skipped = CleanReport {
+        skipped: 1,
+        ..CleanReport::default()
+    };
+    let entries: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
+    entries
+        .par_iter()
+        .filter_map(|path| fs::symlink_metadata(path).ok().map(|m| (path, m)))
+        .map(|(path, meta)| {
+            if !old_enough(&meta, min_age) {
+                return skipped.clone();
             }
-            Err(_) => report.skipped += 1,
-        }
+            let tree = meta.is_dir() && !is_link(&meta);
+            let (size, files) = if tree {
+                dir_size(path)
+            } else {
+                (meta.len(), 1)
+            };
+            let result = if tree {
+                crate::remove::remove_tree(path)
+            } else {
+                fs::remove_file(path)
+            };
+            match result {
+                Ok(()) => CleanReport {
+                    freed: size,
+                    removed: files,
+                    skipped: 0,
+                },
+                Err(_) => skipped.clone(),
+            }
+        })
+        .reduce(CleanReport::default, merge)
+}
+
+fn merge(a: CleanReport, b: CleanReport) -> CleanReport {
+    CleanReport {
+        freed: a.freed + b.freed,
+        removed: a.removed + b.removed,
+        skipped: a.skipped + b.skipped,
     }
-    report
 }
 
 pub fn clean(ids: &[String]) -> CleanReport {
@@ -180,11 +192,7 @@ pub fn clean(ids: &[String]) -> CleanReport {
         .filter(|d| ids.iter().any(|id| id == d.id))
         .flat_map(|d| resolve(d).into_iter().map(move |p| (p, d.min_age)))
         .map(|(p, age)| clean_dir(&p, age))
-        .fold(CleanReport::default(), |a, b| CleanReport {
-            freed: a.freed + b.freed,
-            removed: a.removed + b.removed,
-            skipped: a.skipped + b.skipped,
-        })
+        .fold(CleanReport::default(), merge)
 }
 
 #[cfg(test)]

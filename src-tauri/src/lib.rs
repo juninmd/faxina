@@ -7,6 +7,7 @@ mod junk;
 mod junk_defs;
 mod listing;
 mod model;
+mod remove;
 mod scan;
 mod view;
 

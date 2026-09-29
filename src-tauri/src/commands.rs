@@ -10,7 +10,7 @@ use crate::dupes::{self, DupGroup, DupProgress};
 use crate::junk::{self, CleanReport, JunkItem};
 use crate::model::{Node, Suggestion, ViewNode};
 use crate::scan::{self, Progress};
-use crate::{guard, view};
+use crate::{guard, remove, view};
 
 const MAX_DUP_GROUPS: usize = 500;
 
@@ -141,17 +141,16 @@ pub fn get_suggestions(state: State<'_, AppState>) -> Vec<Suggestion> {
     })
 }
 
-fn remove_one(path: &Path, permanent: bool) -> Result<(), String> {
-    let result = if !permanent {
-        trash::delete(path).map_err(|e| {
-            format!("{e} (se este disco não tem Lixeira, marque \"Excluir permanentemente\")")
+fn disk_size(path: &Path) -> u64 {
+    std::fs::symlink_metadata(path)
+        .map(|m| {
+            if m.is_dir() {
+                junk::dir_size(path).0
+            } else {
+                m.len()
+            }
         })
-    } else if path.is_dir() {
-        std::fs::remove_dir_all(path).map_err(|e| e.to_string())
-    } else {
-        std::fs::remove_file(path).map_err(|e| e.to_string())
-    };
-    result.map_err(|e| format!("não foi possível remover: {e}"))
+        .unwrap_or(0)
 }
 
 #[tauri::command]
@@ -161,28 +160,48 @@ pub async fn delete_paths(
     permanent: bool,
 ) -> Result<DeleteReport, String> {
     let mut roots: Vec<PathBuf> = Vec::new();
-    if let Some(d) = lock(&state.scan).as_ref() {
-        roots.push(d.root.clone());
-    }
+    // The scan already knows each folder's size; walking it again before deleting doubled the work.
+    let known: Vec<Option<u64>> = {
+        let scan = lock(&state.scan);
+        if let Some(d) = scan.as_ref() {
+            roots.push(d.root.clone());
+        }
+        paths
+            .iter()
+            .map(|raw| {
+                let d = scan.as_ref()?;
+                let segs = view::relative(&d.root, Path::new(raw))?;
+                view::find(&d.tree, &segs).map(|n| n.size)
+            })
+            .collect()
+    };
     if let Some(r) = lock(&state.dup_root).as_ref() {
         roots.push(r.clone());
     }
     let outcomes = tauri::async_runtime::spawn_blocking(move || {
+        let sized: Vec<Result<(PathBuf, u64), String>> = paths
+            .iter()
+            .zip(known)
+            .map(|(raw, known)| {
+                let p = guard::check(Path::new(raw), &roots)?;
+                let size = known.unwrap_or_else(|| disk_size(&p));
+                Ok((p, size))
+            })
+            .collect();
+        let targets: Vec<PathBuf> = sized
+            .iter()
+            .filter_map(|s| s.as_ref().ok().map(|(p, _)| p.clone()))
+            .collect();
+        let mut removals = remove::remove_all(&targets, permanent).into_iter();
         paths
             .into_iter()
-            .map(|raw| {
-                let target = PathBuf::from(&raw);
-                let size = std::fs::symlink_metadata(&target)
-                    .map(|m| {
-                        if m.is_dir() {
-                            junk::dir_size(&target).0
-                        } else {
-                            m.len()
-                        }
-                    })
-                    .unwrap_or(0);
-                let result = guard::check(&target, &roots).and_then(|p| remove_one(&p, permanent));
-                (raw, size, result)
+            .zip(sized)
+            .map(|(raw, s)| match s {
+                Err(e) => (raw, 0, Err(e)),
+                Ok((_, size)) => {
+                    let r = removals.next().expect("one removal per guarded path");
+                    (raw, if r.nested { 0 } else { size }, r.result)
+                }
             })
             .collect::<Vec<_>>()
     })
