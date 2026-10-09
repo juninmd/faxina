@@ -1,15 +1,23 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, Read};
+use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Mutex;
 
 use rayon::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::listing::{self, Links};
 
+/// Bytes read for the cheap prefix/suffix probes before committing to a full hash.
 const PARTIAL: usize = 64 * 1024;
+/// `update_mmap_rayon` is only worth its overhead above this size (blake3 docs put the
+/// crossover around 128 KiB; files reaching a full hash are already past it).
+const MMAP_MIN: u64 = 256 * 1024;
+/// Upper bound on persisted hashes, so re-scanning many different folders cannot grow the cache
+/// file forever. Past this, the file is left as-is instead of being rewritten.
+const CACHE_CAP: usize = 300_000;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,45 +56,182 @@ struct Walk<'a> {
     links: Links,
 }
 
-fn walk(dir: &Path, w: &Walk, out: &mut Vec<Candidate>) {
+/// Parallel directory walk. Hard links share storage, so each file id is kept once; deleting a
+/// second link would free nothing.
+fn walk(dir: &Path, w: &Walk) -> Vec<Candidate> {
     if w.cancel.load(Ordering::Relaxed) {
-        return;
+        return Vec::new();
     }
     let Ok(entries) = listing::list(dir, w.ids) else {
-        return;
+        return Vec::new();
     };
+    let mut files = Vec::new();
+    let mut dirs = Vec::new();
     for e in entries {
         let path = dir.join(&e.name);
         if e.is_dir {
-            walk(&path, w, out);
-        // Hard links share storage, so deleting one frees nothing: count each file once.
+            dirs.push(path);
         } else if e.size >= w.min_size && e.id.is_none_or(|id| w.links.first(id)) {
-            out.push((path, e.size, e.modified));
+            files.push((path, e.size, e.modified));
+        }
+    }
+    let deeper: Vec<Vec<Candidate>> = dirs.into_par_iter().map(|d| walk(&d, w)).collect();
+    for d in deeper {
+        files.extend(d);
+    }
+    files
+}
+
+#[derive(Clone, Copy)]
+enum Mode {
+    /// Hash of the first `n` bytes.
+    Prefix(usize),
+    /// Hash of the last `n` bytes.
+    Tail(usize),
+    /// Hash of the whole file.
+    Full,
+}
+
+#[derive(Serialize, Deserialize)]
+struct CacheEntry {
+    size: u64,
+    modified: u64,
+    hash: String,
+}
+
+/// Hashes survive across runs as long as a file's size and mtime are unchanged, so re-scanning a
+/// big media library does not re-read every multi-GB file.
+struct HashCache {
+    path: Option<PathBuf>,
+    map: Mutex<HashMap<String, CacheEntry>>,
+    dirty: AtomicBool,
+}
+
+impl HashCache {
+    fn disabled() -> Self {
+        Self {
+            path: None,
+            map: Mutex::new(HashMap::new()),
+            dirty: AtomicBool::new(false),
+        }
+    }
+
+    fn open() -> Self {
+        // Tests must not touch the user's real cache directory.
+        if cfg!(test) {
+            return Self::disabled();
+        }
+        match dirs::cache_dir() {
+            Some(dir) => Self::at(dir.join("faxina").join("dupes-cache.json")),
+            None => Self::disabled(),
+        }
+    }
+
+    fn at(path: PathBuf) -> Self {
+        let map = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        Self {
+            path: Some(path),
+            map: Mutex::new(map),
+            dirty: AtomicBool::new(false),
+        }
+    }
+
+    fn get(&self, path: &Path, size: u64, modified: u64) -> Option<String> {
+        let guard = self.map.lock().unwrap_or_else(|e| e.into_inner());
+        let key = path.to_string_lossy();
+        match guard.get(key.as_ref()) {
+            Some(e) if e.size == size && e.modified == modified => Some(e.hash.clone()),
+            _ => None,
+        }
+    }
+
+    fn insert(&self, path: &Path, size: u64, modified: u64, hash: String) {
+        self.map.lock().unwrap_or_else(|e| e.into_inner()).insert(
+            path.to_string_lossy().into_owned(),
+            CacheEntry {
+                size,
+                modified,
+                hash,
+            },
+        );
+        self.dirty.store(true, Ordering::Relaxed);
+    }
+
+    fn save(&self) {
+        let Some(path) = &self.path else { return };
+        if !self.dirty.load(Ordering::Relaxed) {
+            return;
+        }
+        let map = self.map.lock().unwrap_or_else(|e| e.into_inner());
+        if map.len() > CACHE_CAP {
+            return;
+        }
+        let Ok(json) = serde_json::to_string(&*map) else {
+            return;
+        };
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, json).is_ok() {
+            let _ = std::fs::rename(&tmp, path);
         }
     }
 }
 
-fn hash_file(path: &Path, limit: Option<usize>) -> io::Result<String> {
+/// Hash of a file under `mode`, reusing the cache for full hashes.
+fn hash_file(
+    path: &Path,
+    mode: Mode,
+    size: u64,
+    modified: u64,
+    cache: &HashCache,
+) -> io::Result<String> {
+    if matches!(mode, Mode::Full) {
+        if let Some(hash) = cache.get(path, size, modified) {
+            return Ok(hash);
+        }
+    }
     let mut hasher = blake3::Hasher::new();
-    let mut f = File::open(path)?;
-    match limit {
-        Some(n) => {
+    match mode {
+        Mode::Full if size >= MMAP_MIN => {
+            if hasher.update_mmap_rayon(path).is_err() {
+                hasher = blake3::Hasher::new();
+                hasher.update_reader(File::open(path)?)?;
+            }
+        }
+        Mode::Full => {
+            hasher.update_reader(File::open(path)?)?;
+        }
+        Mode::Prefix(n) => {
+            let mut file = File::open(path)?;
             let mut buf = vec![0u8; n];
-            let read = f.read(&mut buf)?;
+            let read = file.read(&mut buf)?;
             hasher.update(&buf[..read]);
         }
-        None => {
-            hasher.update_reader(f)?;
+        Mode::Tail(n) => {
+            let mut file = File::open(path)?;
+            file.seek(SeekFrom::Start(size.saturating_sub(n as u64)))?;
+            hasher.update_reader(file)?;
         }
     }
-    Ok(hasher.finalize().to_hex().to_string())
+    let hash = hasher.finalize().to_hex().to_string();
+    if matches!(mode, Mode::Full) {
+        cache.insert(path, size, modified, hash.clone());
+    }
+    Ok(hash)
 }
 
-/// Splits each bucket by hash; buckets that end up with a single file are not duplicates.
+/// Splits each bucket by hash under `mode`; buckets that end up with a single file are not
+/// duplicates.
 fn refine(
     buckets: Vec<Vec<Candidate>>,
-    limit: Option<usize>,
+    mode: Mode,
     p: &DupProgress,
+    cache: &HashCache,
 ) -> Vec<(String, Vec<Candidate>)> {
     buckets
         .into_par_iter()
@@ -96,7 +241,7 @@ fn refine(
                 if p.cancel.load(Ordering::Relaxed) {
                     break;
                 }
-                if let Ok(h) = hash_file(&c.0, limit) {
+                if let Ok(h) = hash_file(&c.0, mode, c.1, c.2, cache) {
                     by_hash.entry(h).or_default().push(c);
                 }
                 p.done.fetch_add(1, Ordering::Relaxed);
@@ -110,14 +255,14 @@ fn refine(
 }
 
 pub fn find(root: &Path, min_size: u64, p: &DupProgress) -> Vec<DupGroup> {
-    let mut files = Vec::new();
+    let cache = HashCache::open();
     let w = Walk {
         min_size: min_size.max(1),
         cancel: p.cancel,
         ids: listing::ids_supported(root),
         links: Links::default(),
     };
-    walk(root, &w, &mut files);
+    let files = walk(root, &w);
 
     let mut by_size: HashMap<u64, Vec<Candidate>> = HashMap::new();
     for f in files {
@@ -125,13 +270,31 @@ pub fn find(root: &Path, min_size: u64, p: &DupProgress) -> Vec<DupGroup> {
     }
     let same_size: Vec<Vec<Candidate>> = by_size.into_values().filter(|v| v.len() > 1).collect();
 
-    let partial = refine(same_size, Some(PARTIAL), p);
-    // Small files are fully covered by the partial hash already.
-    let (small, big): (Vec<_>, Vec<_>) = partial
+    // Size -> prefix hash -> suffix hash -> full hash (fclones-style), the cheap probes first.
+    let prefix = refine(same_size, Mode::Prefix(PARTIAL), p, &cache);
+    let (small, big): (Vec<_>, Vec<_>) = prefix
         .into_iter()
         .partition(|(_, v)| v[0].1 <= PARTIAL as u64);
+
+    let suffix = refine(
+        big.into_iter().map(|(_, v)| v).collect(),
+        Mode::Tail(PARTIAL),
+        p,
+        &cache,
+    );
+    // Prefix + suffix cover the whole file once size <= 2*PARTIAL, so no full hash is needed.
+    let (covered, rest): (Vec<_>, Vec<_>) = suffix
+        .into_iter()
+        .partition(|(_, v)| v[0].1 <= (2 * PARTIAL) as u64);
+
     let mut groups = small;
-    groups.extend(refine(big.into_iter().map(|(_, v)| v).collect(), None, p));
+    groups.extend(covered);
+    groups.extend(refine(
+        rest.into_iter().map(|(_, v)| v).collect(),
+        Mode::Full,
+        p,
+        &cache,
+    ));
 
     let mut out: Vec<DupGroup> = groups
         .into_iter()
@@ -152,6 +315,7 @@ pub fn find(root: &Path, min_size: u64, p: &DupProgress) -> Vec<DupGroup> {
         })
         .collect();
     out.sort_unstable_by_key(|g| std::cmp::Reverse(g.wasted()));
+    cache.save();
     out
 }
 
@@ -210,6 +374,28 @@ mod tests {
     }
 
     #[test]
+    fn same_prefix_and_tail_different_middle_needs_the_full_hash() {
+        let tmp = tempfile::tempdir().unwrap();
+        let size = 2 * PARTIAL + 100; // middle gap larger than zero
+        let mut a = vec![7u8; size];
+        fs::write(tmp.path().join("a.bin"), &a).unwrap();
+        a[PARTIAL] = 9; // after the prefix, before the suffix
+        fs::write(tmp.path().join("b.bin"), &a).unwrap();
+        assert!(run(tmp.path(), 1).is_empty());
+    }
+
+    #[test]
+    fn identical_big_files_are_found() {
+        let tmp = tempfile::tempdir().unwrap();
+        let big = vec![3u8; MMAP_MIN as usize + 4096];
+        fs::write(tmp.path().join("a.bin"), &big).unwrap();
+        fs::write(tmp.path().join("b.bin"), &big).unwrap();
+        let g = run(tmp.path(), 1);
+        assert_eq!(g.len(), 1);
+        assert_eq!(g[0].files.len(), 2);
+    }
+
+    #[test]
     fn min_size_filters_and_empty_files_ignored() {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(tmp.path().join("x"), b"").unwrap();
@@ -221,5 +407,20 @@ mod tests {
             "empty files are never reported"
         );
         assert!(run(tmp.path(), 100).is_empty());
+    }
+
+    #[test]
+    fn hash_cache_round_trips_invalidating_on_change() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("map.json");
+        {
+            let c = HashCache::at(file.clone());
+            c.insert(Path::new("/x/y"), 10, 20, "abc".into());
+            c.save();
+        }
+        let c = HashCache::at(file);
+        assert_eq!(c.get(Path::new("/x/y"), 10, 20).as_deref(), Some("abc"));
+        assert_eq!(c.get(Path::new("/x/y"), 11, 20), None, "size changed");
+        assert_eq!(c.get(Path::new("/x/y"), 10, 21), None, "mtime changed");
     }
 }

@@ -26,8 +26,8 @@ Mapa visual do disco no estilo DaisyDisk, limpeza de caches no estilo CCleaner e
 |---|---|
 | 🗺️ **Mapa do disco** | Analise a pasta pessoal, qualquer pasta ou um disco inteiro (C:, D:…) e troque a qualquer momento. Treemap em blocos (estilo *disktree*) ou anéis concêntricos (estilo *DaisyDisk*). Cada cor é um tipo: cache, build, git, código, mídia, documentos, compactados, apps. Hachurado = **recuperável**. |
 | 💡 **Vale uma olhada** | Lista automática do que dá para apagar sem dor: `node_modules`, `target/` de projetos Rust, `.next`, `__pycache__`, `.venv`, caches e arquivos gigantes parados há meses. |
-| 🧹 **Limpeza rápida** | Caches de Windows, navegadores (Chrome, Edge, Brave, Firefox), apps (VS Code, Discord, Spotify) e ferramentas de dev (npm, Yarn, pip, Bun, Cargo, Gradle, Go, NuGet). **Nunca** toca em cookies, senhas ou histórico. |
-| 👯 **Duplicatas** | Comparação por conteúdo em 3 etapas (tamanho → hash parcial → BLAKE3 completo). Mantém a cópia mais antiga e nunca deixa você marcar todas as cópias de um arquivo. |
+| 🧹 **Limpeza rápida** | Caches de Windows, navegadores (Chrome, Edge, Brave, Vivaldi, Firefox, Thunderbird), apps (VS Code, Discord, Slack, Spotify), apps da Microsoft Store e ferramentas de dev (npm, Yarn, pnpm, pip, Bun, Cargo, Gradle, Rustup, Maven, go, NuGet). **Nunca** toca em cookies, senhas ou histórico. |
+| 👯 **Duplicatas** | Comparação por conteúdo em 4 etapas (tamanho → prefixo → sufixo → BLAKE3 completo, com memória mapeada em arquivos grandes). Mantém a cópia mais antiga e nunca deixa você marcar todas as cópias de um arquivo. |
 | 🕳️ **Buraco negro** | Ao excluir, os blocos se desintegram, espiralam para dentro de um buraco negro, que colapsa numa onda de choque com o total liberado. |
 | 🔄 **Auto-update** | O app verifica novas versões no GitHub Releases ao abrir; pacotes são assinados e você decide quando instalar. |
 
@@ -68,7 +68,7 @@ Baixe o instalador da [última versão](https://github.com/juninmd/faxina/releas
 - **Lixeira por padrão.** Exclusão permanente é opt-in, com confirmação.
 - **O Rust não confia na interface.** Todo caminho enviado para exclusão passa por um guarda: precisa ser absoluto, sem `..`, existir, estar **dentro** da pasta analisada (nunca a própria raiz) e fora de pastas protegidas (sistema, `Arquivos de Programas`, sua pasta pessoal e Documentos/Imagens/Downloads inteiros).
 - **Recuperável só por nome, nunca por cor.** Uma pasta cheia de `target/` é pintada de “Build”, mas só o `target/` é sugerido — o código-fonte ao lado fica.
-- **Limpeza rápida por ID.** A interface manda o ID do cache (ex.: `chrome`), e o backend resolve os caminhos de uma lista fixa. Apaga o *conteúdo* da pasta, não a pasta; arquivos em uso são pulados e contados. Em `%TEMP%`, só o que tem mais de 24 h.
+- **Limpeza rápida por ID.** A interface manda o ID do cache (ex.: `chrome`), e o backend resolve os caminhos de uma lista fixa. Cada regra mira a pasta inteira ou só arquivos que casam um padrão (ex.: `*.log`), e pode preservar nomes específicos (exclusões). Apaga o *conteúdo* da pasta, não a pasta; arquivos em uso são pulados e contados. Em `%TEMP%`, só o que tem mais de 24 h.
 - **Links simbólicos e junctions são ignorados** na análise, então nada é contado duas vezes nem “escapa” da pasta escolhida.
 
 ## ⌨️ Atalhos
@@ -96,8 +96,8 @@ flowchart LR
   CMD --> VIEW["view.rs<br/>poda + sugestões"]
   CMD --> GUARD{"guard.rs"}
   GUARD -- ok --> DEL["Lixeira (trash) ou remoção"]
-  CMD --> JUNK["junk.rs + junk_defs.rs<br/>caches conhecidos"]
-  CMD --> DUP["dupes.rs<br/>tamanho → parcial → BLAKE3"]
+  CMD --> JUNK["junk.rs + junk_defs.rs<br/>regras de cache (globs)"]
+  CMD --> DUP["dupes.rs<br/>tamanho → prefixo → sufixo → BLAKE3"]
   SCAN -. evento scan-progress .-> UI
 ```
 
@@ -151,6 +151,7 @@ PRs têm os commits validados pelo commitlint. Para publicar, o repositório pre
 - Pastas chamadas só `cache`/`tmp`/`temp` só contam como cache dentro de dados de aplicativo (`AppData`, `~/.cache`, `~/Library`…); em `Documentos/Projeto/tmp` elas são tratadas como suas.
 - Arquivos pequenos (< 512 KB) aparecem agrupados e não podem ser marcados individualmente.
 - A limpeza rápida só mexe em pastas do usuário; nada que exija administrador (Windows Update, `C:\Windows\Temp`).
+- A caça a duplicatas guarda os hashes em `%LOCALAPPDATA%\faxina\dupes-cache.json`; reanalisar a mesma pasta fica bem mais rápido. O hash só é reaproveitado quando tamanho **e** data de modificação não mudam.
 
 ## 🙏 Inspirações
 
