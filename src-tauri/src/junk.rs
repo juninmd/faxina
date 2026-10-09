@@ -5,8 +5,12 @@ use std::time::{Duration, SystemTime};
 use rayon::prelude::*;
 use serde::Serialize;
 
-use crate::junk_defs::{definitions, Base, JunkDef};
+use crate::junk_defs::{definitions, Base, JunkDef, Rule, Scope};
 use crate::scan::is_link;
+
+/// How deep we may descend into one cache tree. Guards against pathological nesting and links
+/// that somehow survive `real_dir`.
+const MAX_DEPTH: usize = 128;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,22 +47,69 @@ fn real_dir(p: &Path) -> bool {
     fs::symlink_metadata(p).is_ok_and(|m| m.is_dir() && !is_link(&m))
 }
 
-/// Expands `*` segments (e.g. `User Data/*/Cache`) into the directories that exist.
+/// Matches one path segment or file name against a glob with `*` and `?`.
+/// Winapp2-style partial globs (`Chrome*`, `*Cache*`) are the whole point.
+fn glob_match(pattern: &str, name: &str, case_insensitive: bool) -> bool {
+    let fold = |s: &str| -> Vec<char> {
+        if case_insensitive {
+            s.chars().flat_map(char::to_lowercase).collect()
+        } else {
+            s.chars().collect()
+        }
+    };
+    let pat = fold(pattern);
+    let txt = fold(name);
+    let (mut p, mut t) = (0usize, 0usize);
+    let (mut star, mut mark) = (usize::MAX, 0usize);
+    while t < txt.len() {
+        if p < pat.len() && (pat[p] == '?' || pat[p] == txt[t]) {
+            p += 1;
+            t += 1;
+        } else if p < pat.len() && pat[p] == '*' {
+            star = p;
+            p += 1;
+            mark = t;
+        } else if star != usize::MAX {
+            p = star + 1;
+            mark += 1;
+            t = mark;
+        } else {
+            return false;
+        }
+    }
+    while p < pat.len() && pat[p] == '*' {
+        p += 1;
+    }
+    p == pat.len()
+}
+
+fn excluded(rule: &Rule, name: &str, ci: bool) -> bool {
+    rule.excludes.iter().any(|e| glob_match(e, name, ci))
+}
+
+/// Expands `rel` segments (globs included, e.g. `Chrome*/User Data/*Cache*`) into existing dirs.
 pub fn expand(base: &Path, rel: &str) -> Vec<PathBuf> {
     if !real_dir(base) {
         return Vec::new();
     }
+    let ci = cfg!(windows);
     let mut current = vec![base.to_path_buf()];
     for seg in rel.split('/').filter(|s| !s.is_empty()) {
         current = current
             .into_iter()
             .flat_map(|dir| -> Vec<PathBuf> {
-                if seg == "*" {
+                if seg.contains(['*', '?']) {
                     fs::read_dir(&dir)
                         .map(|rd| {
                             rd.flatten()
                                 .map(|e| e.path())
-                                .filter(|p| real_dir(p))
+                                .filter(|p| {
+                                    let name = p
+                                        .file_name()
+                                        .map(|n| n.to_string_lossy().into_owned())
+                                        .unwrap_or_default();
+                                    glob_match(seg, &name, ci) && real_dir(p)
+                                })
                                 .collect()
                         })
                         .unwrap_or_default()
@@ -76,11 +127,12 @@ pub fn expand(base: &Path, rel: &str) -> Vec<PathBuf> {
     current
 }
 
-pub fn resolve(def: &JunkDef) -> Vec<PathBuf> {
+/// Directories one rule applies to, deduplicated.
+pub fn resolve(def: &JunkDef, rule: &Rule) -> Vec<PathBuf> {
     let Some(base) = base_dir(def.base) else {
         return Vec::new();
     };
-    let mut out: Vec<PathBuf> = def.rels.iter().flat_map(|rel| expand(&base, rel)).collect();
+    let mut out = expand(&base, rule.path);
     out.sort();
     out.dedup();
     out
@@ -91,7 +143,7 @@ pub fn dir_size(path: &Path) -> (u64, u64) {
         return (0, 0);
     };
     rd.flatten()
-        .filter_map(|e| e.metadata().ok().map(|m| (e.path(), m)))
+        .filter_map(|e| fs::symlink_metadata(e.path()).ok().map(|m| (e.path(), m)))
         .filter(|(_, m)| !is_link(m))
         .map(|(p, m)| {
             if m.is_dir() {
@@ -112,15 +164,63 @@ fn old_enough(meta: &fs::Metadata, min_age: Duration) -> bool {
             .is_some_and(|age| age >= min_age)
 }
 
+/// Size and file count of what a rule would remove from `dir`, before touching anything.
+pub fn measure(dir: &Path, rule: &Rule) -> (u64, u64) {
+    measure_tree(dir, rule, cfg!(windows), 0)
+}
+
+fn measure_tree(dir: &Path, rule: &Rule, ci: bool, depth: usize) -> (u64, u64) {
+    if depth > MAX_DEPTH {
+        return (0, 0);
+    }
+    let Ok(rd) = fs::read_dir(dir) else {
+        return (0, 0);
+    };
+    let (mut size, mut files) = (0u64, 0u64);
+    for entry in rd.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if excluded(rule, &name, ci) {
+            continue;
+        }
+        let Ok(meta) = fs::symlink_metadata(entry.path()) else {
+            continue;
+        };
+        let is_tree = meta.is_dir() && !is_link(&meta);
+        if is_tree {
+            if rule.scope == Scope::Contents || rule.recurse {
+                let (s, f) = measure_tree(&entry.path(), rule, ci, depth + 1);
+                size += s;
+                files += f;
+            }
+        } else if rule.scope == Scope::Files {
+            if rule.patterns.iter().any(|p| glob_match(p, &name, ci)) {
+                size += meta.len();
+                files += 1;
+            }
+        } else {
+            size += meta.len();
+            files += 1;
+        }
+    }
+    (size, files)
+}
+
 pub fn scan_all() -> Vec<JunkItem> {
     let mut items: Vec<JunkItem> = definitions()
         .par_iter()
         .filter_map(|def| {
-            let paths = resolve(def);
-            let (size, files) = paths
-                .iter()
-                .map(|p| dir_size(p))
-                .fold((0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
+            let mut paths = Vec::new();
+            let (mut size, mut files) = (0u64, 0u64);
+            for rule in &def.rules {
+                for p in resolve(def, rule) {
+                    let (s, f) = measure(&p, rule);
+                    size += s;
+                    files += f;
+                    paths.push(p);
+                }
+            }
+            paths.sort();
+            paths.dedup();
             (size > 0).then(|| JunkItem {
                 id: def.id,
                 label: def.label,
@@ -138,41 +238,77 @@ pub fn scan_all() -> Vec<JunkItem> {
     items
 }
 
-/// Deletes the *contents* of each location; the folder itself stays so apps keep working.
-pub fn clean_dir(dir: &Path, min_age: Duration) -> CleanReport {
-    let Ok(rd) = fs::read_dir(dir) else {
-        return CleanReport::default();
-    };
-    let skipped = CleanReport {
+/// Deletes what a rule points at inside `dir`; the folder itself stays so apps keep working.
+pub fn clean_dir(dir: &Path, rule: &Rule, min_age: Duration) -> CleanReport {
+    clean_tree(dir, rule, min_age, cfg!(windows), 0)
+}
+
+fn skipped() -> CleanReport {
+    CleanReport {
         skipped: 1,
         ..CleanReport::default()
+    }
+}
+
+fn clean_tree(dir: &Path, rule: &Rule, min_age: Duration, ci: bool, depth: usize) -> CleanReport {
+    if depth > MAX_DEPTH {
+        return CleanReport::default();
+    }
+    let Ok(rd) = fs::read_dir(dir) else {
+        return CleanReport::default();
     };
     let entries: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
     entries
         .par_iter()
         .filter_map(|path| fs::symlink_metadata(path).ok().map(|m| (path, m)))
         .map(|(path, meta)| {
-            if !old_enough(&meta, min_age) {
-                return skipped.clone();
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            if excluded(rule, &name, ci) {
+                return CleanReport::default();
             }
-            let tree = meta.is_dir() && !is_link(&meta);
-            let (size, files) = if tree {
-                dir_size(path)
+            let is_tree = meta.is_dir() && !is_link(&meta);
+            if is_tree {
+                match rule.scope {
+                    Scope::Contents if rule.excludes.is_empty() => {
+                        if !old_enough(&meta, min_age) {
+                            return skipped();
+                        }
+                        let (size, files) = measure_tree(path, rule, ci, depth + 1);
+                        match crate::remove::remove_tree(path) {
+                            Ok(()) => CleanReport {
+                                freed: size,
+                                removed: files,
+                                skipped: 0,
+                            },
+                            Err(_) => skipped(),
+                        }
+                    }
+                    Scope::Contents | Scope::Files if rule.recurse => {
+                        clean_tree(path, rule, min_age, ci, depth + 1)
+                    }
+                    _ => CleanReport::default(),
+                }
             } else {
-                (meta.len(), 1)
-            };
-            let result = if tree {
-                crate::remove::remove_tree(path)
-            } else {
-                fs::remove_file(path)
-            };
-            match result {
-                Ok(()) => CleanReport {
-                    freed: size,
-                    removed: files,
-                    skipped: 0,
-                },
-                Err(_) => skipped.clone(),
+                let matched = rule.scope == Scope::Contents
+                    || rule.patterns.iter().any(|p| glob_match(p, &name, ci));
+                if !matched {
+                    return CleanReport::default();
+                }
+                if !old_enough(&meta, min_age) {
+                    return skipped();
+                }
+                let size = meta.len();
+                match fs::remove_file(path) {
+                    Ok(()) => CleanReport {
+                        freed: size,
+                        removed: 1,
+                        skipped: 0,
+                    },
+                    Err(_) => skipped(),
+                }
             }
         })
         .reduce(CleanReport::default, merge)
@@ -190,14 +326,47 @@ pub fn clean(ids: &[String]) -> CleanReport {
     definitions()
         .iter()
         .filter(|d| ids.iter().any(|id| id == d.id))
-        .flat_map(|d| resolve(d).into_iter().map(move |p| (p, d.min_age)))
-        .map(|(p, age)| clean_dir(&p, age))
+        .flat_map(|d| d.rules.iter().map(move |r| (d, r)))
+        .flat_map(|(d, r)| resolve(d, r).into_iter().map(move |p| (p, r, d.min_age)))
+        .map(|(p, rule, age)| clean_dir(&p, rule, age))
         .fold(CleanReport::default(), merge)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::junk_defs::{matching, whole};
+
+    #[test]
+    fn glob_matches_partial_segments() {
+        assert!(glob_match("Chrome*", "Chrome Beta", false));
+        assert!(glob_match("*Cache*", "GrShaderCache", false));
+        assert!(glob_match("*cache*", "cache2", false));
+        assert!(glob_match("*Cache*", "Cache_Data", false));
+        assert!(!glob_match("*Cache*", "Network", false));
+        assert!(glob_match("Profile ?", "Profile 1", false));
+        assert!(glob_match("Cache", "Cache", false));
+        assert!(!glob_match("Cache", "Cache2", false));
+        assert!(glob_match("Chrome*", "chrome beta", true));
+        assert!(!glob_match("Chrome*", "chrome beta", false));
+    }
+
+    #[test]
+    fn expand_matches_partial_globs_and_profiles() {
+        let tmp = tempfile::tempdir().unwrap();
+        for p in ["Chrome", "Chrome Beta"] {
+            fs::create_dir_all(tmp.path().join(p).join("User Data/Default/Cache")).unwrap();
+        }
+        fs::create_dir_all(tmp.path().join("Chrome/User Data/GrShaderCache")).unwrap();
+        let found = expand(tmp.path(), "Chrome*/User Data/*Cache*");
+        let names: Vec<_> = found
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["GrShaderCache"]);
+        let nested = expand(tmp.path(), "Chrome*/User Data/*/*Cache*");
+        assert_eq!(nested.len(), 2, "Default/Cache under each channel");
+    }
 
     #[test]
     fn expand_matches_every_profile() {
@@ -261,17 +430,51 @@ mod tests {
         fs::create_dir_all(cache.join("sub")).unwrap();
         fs::write(cache.join("a.bin"), [0u8; 10]).unwrap();
         fs::write(cache.join("sub/b.bin"), [0u8; 5]).unwrap();
-        let r = clean_dir(&cache, Duration::ZERO);
+        let r = clean_dir(&cache, &whole(""), Duration::ZERO);
         assert_eq!((r.freed, r.removed, r.skipped), (15, 2, 0));
         assert!(cache.is_dir());
         assert_eq!(fs::read_dir(&cache).unwrap().count(), 0);
     }
 
     #[test]
+    fn files_rule_deletes_only_matching_names() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(tmp.path().join("sub")).unwrap();
+        fs::write(tmp.path().join("keep.db"), b"keep").unwrap();
+        fs::write(tmp.path().join("old.log"), b"log!").unwrap();
+        fs::write(tmp.path().join("sub/nested.log"), b"deep").unwrap();
+
+        let non_recursive = matching("", &["*.log"], false);
+        let r = clean_dir(tmp.path(), &non_recursive, Duration::ZERO);
+        assert_eq!((r.freed, r.removed), (4, 1));
+        assert!(tmp.path().join("keep.db").exists());
+        assert!(tmp.path().join("sub/nested.log").exists(), "no recursion");
+
+        let recursive = matching("", &["*.log"], true);
+        let r = clean_dir(tmp.path(), &recursive, Duration::ZERO);
+        assert_eq!((r.freed, r.removed), (4, 1));
+        assert!(tmp.path().join("keep.db").exists());
+    }
+
+    #[test]
+    fn excludes_preserve_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("remove.tmp"), b"xx").unwrap();
+        fs::write(tmp.path().join("keep.tmp"), b"yy").unwrap();
+        let rule = crate::junk_defs::excluding(whole(""), &["keep.tmp"]);
+        let (size, files) = measure(tmp.path(), &rule);
+        assert_eq!((size, files), (2, 1));
+        let r = clean_dir(tmp.path(), &rule, Duration::ZERO);
+        assert_eq!((r.freed, r.removed), (2, 1));
+        assert!(tmp.path().join("keep.tmp").exists());
+        assert!(!tmp.path().join("remove.tmp").exists());
+    }
+
+    #[test]
     fn fresh_files_survive_min_age() {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(tmp.path().join("new.tmp"), "x").unwrap();
-        let r = clean_dir(tmp.path(), Duration::from_secs(3600));
+        let r = clean_dir(tmp.path(), &whole(""), Duration::from_secs(3600));
         assert_eq!((r.removed, r.skipped), (0, 1));
         assert!(tmp.path().join("new.tmp").exists());
     }

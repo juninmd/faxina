@@ -7,12 +7,21 @@ const CACHE_DIRS: &[&str] = &[
     ".pytest_cache",
     ".mypy_cache",
     ".ruff_cache",
+    ".hypothesis",
+    ".pytype",
+    ".pyre",
     ".parcel-cache",
     ".sass-cache",
     "inetcache",
     "code cache",
     "gpucache",
     "shadercache",
+    "grshadercache",
+    "dawncache",
+    "graphitedawncache",
+    "service worker",
+    "media cache",
+    "cacheddata",
     "dxcache",
     "crashdumps",
     ".gradle",
@@ -23,14 +32,25 @@ const GENERIC_CACHE_DIRS: &[&str] = &["cache", "caches", "temp", "tmp"];
 const APP_DATA_DIRS: &[&str] = &["appdata", ".cache", ".local", ".config", "library"];
 const BUILD_DIRS: &[&str] = &[
     ".venv",
+    "venv",
+    ".tox",
+    ".nox",
+    ".eggs",
     "node_modules",
+    "bower_components",
+    ".pnpm-store",
     ".next",
     ".nuxt",
     ".turbo",
     ".svelte-kit",
     ".angular",
     ".terraform",
+    ".stack-work",
+    "htmlcov",
+    ".nyc_output",
 ];
+/// Build artifact folders whose name is too generic to trust without a matching manifest.
+const MANIFEST_BUILD_DIRS: &[&str] = &["pods", "carthage", "_build", ".dart_tool"];
 const MEDIA: &[&str] = &[
     "jpg", "jpeg", "png", "gif", "webp", "heic", "raw", "cr2", "nef", "psd", "mp4", "mkv", "mov",
     "avi", "webm", "mp3", "flac", "wav", "ogg", "m4a", "aac",
@@ -48,7 +68,7 @@ const ARCHIVES: &[&str] = &[
 const APPS: &[&str] = &[
     "exe", "msi", "dll", "so", "dylib", "app", "appimage", "deb", "rpm", "pak", "bin", "sys",
 ];
-const LOG_EXT: &[&str] = &["log", "dmp", "tmp", "etl"];
+const LOG_EXT: &[&str] = &["log", "dmp", "tmp", "temp", "etl"];
 
 /// Context of the parent directory that some rules need (e.g. `target` only counts next to Cargo.toml).
 #[derive(Default, Clone, Copy)]
@@ -82,8 +102,10 @@ pub fn classify_dir(name: &str, hints: DirHints) -> Option<Kind> {
     if lower == "target" && hints.has_cargo_toml {
         return Some(Kind::Build);
     }
-    if matches!(lower.as_str(), "dist" | "build" | "out" | "bin" | "obj")
-        && hints.has_build_manifest
+    if hints.has_build_manifest
+        && (matches!(lower.as_str(), "dist" | "build" | "out" | "bin" | "obj")
+            || MANIFEST_BUILD_DIRS.contains(&lower.as_str())
+            || lower.starts_with("cmake-build-"))
     {
         return Some(Kind::Build);
     }
@@ -123,7 +145,8 @@ pub fn hints_for(file_names: &[String]) -> DirHints {
                 h.has_build_manifest = true;
             }
             "package.json" | "pom.xml" | "build.gradle" | "build.gradle.kts" | "CMakeLists.txt"
-            | "pyproject.toml" | "go.mod" => h.has_build_manifest = true,
+            | "pyproject.toml" | "go.mod" | "Podfile" | "Cartfile" | "mix.exs" | "pubspec.yaml"
+            | "dune-project" | "build.sbt" => h.has_build_manifest = true,
             n if n.ends_with(".csproj") || n.ends_with(".sln") => h.has_build_manifest = true,
             _ => {}
         }
@@ -150,6 +173,43 @@ mod tests {
             Some(Kind::Build)
         );
         assert_eq!(classify_dir("dist", DirHints::default()), None);
+    }
+
+    #[test]
+    fn generic_build_dirs_need_a_matching_manifest() {
+        // A user folder called "Pods" in Documents is not an Xcode artifact.
+        for n in ["Pods", "Carthage", "_build", ".dart_tool"] {
+            assert_eq!(classify_dir(n, DirHints::default()), None, "{n}");
+        }
+        assert_eq!(
+            classify_dir("Pods", hints_for(&["Podfile".into()])),
+            Some(Kind::Build)
+        );
+        assert_eq!(
+            classify_dir("_build", hints_for(&["mix.exs".into()])),
+            Some(Kind::Build)
+        );
+        let cmake = hints_for(&["CMakeLists.txt".into()]);
+        assert_eq!(classify_dir("cmake-build-debug", cmake), Some(Kind::Build));
+        assert_eq!(classify_dir("cmake-build-debug", DirHints::default()), None);
+    }
+
+    #[test]
+    fn browser_cache_dirs_are_recognized() {
+        for n in [
+            "GrShaderCache",
+            "ShaderCache",
+            "DawnCache",
+            "Service Worker",
+            "Media Cache",
+            "Code Cache",
+        ] {
+            assert_eq!(
+                classify_dir(n, DirHints::default()),
+                Some(Kind::Cache),
+                "{n}"
+            );
+        }
     }
 
     #[test]

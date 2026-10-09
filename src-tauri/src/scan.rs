@@ -13,6 +13,10 @@ use crate::model::{Kind, Node};
 /// which keeps a multi-million-file scan within a few hundred MB of RAM.
 pub const SMALL_FILE: u64 = 512 * 1024;
 
+/// Hard cap on how deep a scan descends. A pathological tree (or a link that slipped past the
+/// reparse check) must not blow the stack.
+pub const MAX_DEPTH: usize = 128;
+
 #[derive(Default)]
 pub struct Progress {
     pub files: AtomicU64,
@@ -24,7 +28,7 @@ pub struct Progress {
 pub fn scan(root: &Path, progress: &Progress) -> Node {
     let name = root.to_string_lossy().into_owned();
     let ids = listing::ids_supported(root);
-    let mut node = scan_dir(root, name, Kind::Other, ids, progress);
+    let mut node = scan_dir(root, name, Kind::Other, ids, progress, 0);
     node.kind = dominant_kind(&node.children);
     node
 }
@@ -50,7 +54,14 @@ pub fn is_link(meta: &Metadata) -> bool {
     meta.file_type().is_symlink()
 }
 
-fn scan_dir(path: &Path, name: String, forced: Kind, ids: bool, progress: &Progress) -> Node {
+fn scan_dir(
+    path: &Path,
+    name: String,
+    forced: Kind,
+    ids: bool,
+    progress: &Progress,
+    depth: usize,
+) -> Node {
     let mut node = Node {
         name,
         size: 0,
@@ -62,7 +73,7 @@ fn scan_dir(path: &Path, name: String, forced: Kind, ids: bool, progress: &Progr
         reclaimable: forced.reclaimable(),
         children: Vec::new(),
     };
-    if progress.cancel.load(Ordering::Relaxed) {
+    if depth > MAX_DEPTH || progress.cancel.load(Ordering::Relaxed) {
         return node;
     }
     let Ok(entries) = listing::list(path, ids) else {
@@ -115,7 +126,7 @@ fn scan_dir(path: &Path, name: String, forced: Kind, ids: bool, progress: &Progr
             } else {
                 forced
             };
-            let mut child = scan_dir(&p, n, inherited, ids, progress);
+            let mut child = scan_dir(&p, n, inherited, ids, progress, depth + 1);
             if inherited == Kind::Other {
                 child.kind = dominant_kind(&child.children);
             }
