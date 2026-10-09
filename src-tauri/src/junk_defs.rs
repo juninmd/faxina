@@ -110,6 +110,7 @@ const DEV: &str = "Desenvolvimento";
 /// Caches every Chromium-family browser keeps next to its profiles. `root` is the browser data
 /// folder (the parent of `User Data`); `*Cache*` catches Cache, Code Cache, GPUCache, Media Cache
 /// and the top-level GrShaderCache/ShaderCache/DawnCache that Faxina used to miss.
+#[cfg(windows)]
 macro_rules! chromium_caches {
     ($name:ident, $root:literal) => {
         const $name: &[Rule] = &[
