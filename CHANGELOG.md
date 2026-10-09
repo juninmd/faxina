@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/juninmd/faxina/compare/v1.2.0...v1.2.1) (2026-09-29)
+
+
+### Performance Improvements
+
+* batch trash and parallelize permanent deletes ([26e0884](https://github.com/juninmd/faxina/commit/26e0884f60dbf4631088466abdb8cec1b4f844e5))
+
 # [1.2.0](https://github.com/juninmd/faxina/compare/v1.1.0...v1.2.0) (2026-09-27)
 
 
