@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.3.0](https://github.com/juninmd/faxina/compare/v1.2.1...v1.3.0) (2026-10-09)
+
+
+### Features
+
+* amplia cobertura de caches e acelera a busca de duplicatas ([#4](https://github.com/juninmd/faxina/issues/4)) ([458caed](https://github.com/juninmd/faxina/commit/458caed3b020fe6d24010777e1bc325d72fd6c7a))
+
 ## [1.2.1](https://github.com/juninmd/faxina/compare/v1.2.0...v1.2.1) (2026-09-29)
 
 
