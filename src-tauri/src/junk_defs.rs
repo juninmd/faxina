@@ -48,6 +48,7 @@ pub const fn whole(path: &'static str) -> Rule {
 }
 
 /// Deletes only files matching `patterns` (Winapp2 `FileKey=path|pattern|RECURSE`).
+#[cfg_attr(not(windows), allow(dead_code))]
 pub const fn matching(
     path: &'static str,
     patterns: &'static [&'static str],
@@ -122,9 +123,13 @@ macro_rules! chromium_caches {
     };
 }
 
+#[cfg(windows)]
 chromium_caches!(CHROME_CACHES, "Google/Chrome*");
+#[cfg(windows)]
 chromium_caches!(EDGE_CACHES, "Microsoft/Edge*");
+#[cfg(windows)]
 chromium_caches!(BRAVE_CACHES, "BraveSoftware/Brave-*");
+#[cfg(windows)]
 chromium_caches!(VIVALDI_CACHES, "Vivaldi");
 
 fn common() -> Vec<JunkDef> {
