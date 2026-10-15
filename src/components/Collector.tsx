@@ -49,7 +49,7 @@ export function Collector({ items, onClear, onUnmark, onDelete }: Props) {
         <button
           type="button"
           onClick={() => setConfirming(true)}
-          className="rounded-lg bg-[var(--color-danger)] px-4 py-2 font-semibold text-black shadow-[0_0_24px_rgba(240,96,93,0.35)] hover:brightness-110"
+          className="collector-delete rounded-lg bg-[var(--color-danger)] px-4 py-2 font-semibold text-black shadow-[0_0_24px_rgba(240,96,93,0.35)] hover:brightness-110"
         >
           <span aria-hidden="true">🕳️ </span>Excluir {formatBytes(total)}
         </button>
@@ -85,7 +85,7 @@ export function Collector({ items, onClear, onUnmark, onDelete }: Props) {
               setConfirming(false);
               onDelete(permanent);
             }}
-            className="rounded-md bg-[var(--color-danger)] px-4 py-2 text-sm font-semibold text-black"
+            className="collector-delete rounded-md bg-[var(--color-danger)] px-4 py-2 text-sm font-semibold text-black"
           >
             Excluir
           </button>

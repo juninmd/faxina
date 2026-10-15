@@ -48,7 +48,7 @@ export function MapView({ scan, marked, onToggleMark }: Props) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      if (e.target instanceof HTMLElement && e.target.closest("input, select, textarea, button")) return;
       // A modal (delete confirmation) owns the keyboard; don't navigate the map behind it.
       if (document.querySelector("dialog[open]")) return;
       const sel = selected;
