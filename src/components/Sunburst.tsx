@@ -77,7 +77,10 @@ export function Sunburst({ root, selected, marked, onSelect, onOpen, onUp, onTog
               aria-label={`${n.name}, ${formatBytes(n.size)}`}
               onFocus={() => onSelect(n)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && n.isDir) onOpen(n);
+                if (e.key === "Enter" && n.isDir) {
+                  e.stopPropagation();
+                  onOpen(n);
+                }
               }}
               onClick={() => onSelect(n)}
               onDoubleClick={() => n.isDir && onOpen(n)}
@@ -99,7 +102,13 @@ export function Sunburst({ root, selected, marked, onSelect, onOpen, onUp, onTog
           tabIndex={0}
           aria-label="Voltar um nível"
           onClick={onUp}
-          onKeyDown={(e) => e.key === "Enter" && onUp()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              onUp();
+            }
+          }}
         >
           <title>Voltar um nível</title>
         </circle>

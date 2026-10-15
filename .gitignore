@@ -26,3 +26,6 @@ dist-ssr
 # Updater signing keys never live in the repo
 *.key
 *.key.password
+
+# Local prototype assets
+prototypes/
