@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.4.0](https://github.com/juninmd/faxina/compare/v1.3.0...v1.4.0) (2026-10-15)
+
+
+### Features
+
+* integra redesign do prototipo com suporte a scroll e controles nativos ([#5](https://github.com/juninmd/faxina/issues/5)) ([fd43a06](https://github.com/juninmd/faxina/commit/fd43a060d3b1a939188da14c22381b6fe3c96b58))
+
 # [1.3.0](https://github.com/juninmd/faxina/compare/v1.2.1...v1.3.0) (2026-10-09)
 
 
