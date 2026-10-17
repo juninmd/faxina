@@ -27,8 +27,8 @@ advisory without that record is not allowed.
 pinned to it.
 
 Audit warnings that carry no advisory are tracked as ordinary dependency work:
-`proc-macro-error 1.0.4` is unmaintained (build-time proc-macro, no newer release exists) and
-`yoke-derive 0.8.3` is yanked, with 0.8.4 available.
+`proc-macro-error 1.0.4` is unmaintained (build-time proc-macro, and no newer release exists);
+`yoke-derive` moved off the yanked 0.8.3 to 0.8.4.
 
 Advisories reported by `bun audit` live in devDependencies (semantic-release, Tailwind/Vite).
 They run only in the build and release pipeline, are never shipped in the app bundle, and are
