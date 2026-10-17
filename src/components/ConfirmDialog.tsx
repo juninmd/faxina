@@ -57,7 +57,9 @@ export default function ConfirmDialog({
           <strong>
             Enviar à Lixeira <span className="badge green">Recomendado</span>
           </strong>
-          <small>Você pode restaurar pelo sistema. O espaço ainda não fica disponível.</small>
+          <small>
+            Você pode restaurar pelo sistema quando a Lixeira aceitar o item. O espaço ainda não fica disponível.
+          </small>
         </span>
       </label>
       <label className={`destination-option ${destination === "permanent" ? "chosen" : ""}`}>

@@ -3,7 +3,10 @@ import {
   BASE_RULES,
   createReport,
   DEFAULT_SETTINGS,
+  isCleanupDue,
   mergeRulesWithScan,
+  nextCleanup,
+  type Report,
   type Rule,
   readHistory,
   readSettings,
@@ -165,6 +168,7 @@ describe("domain logic", () => {
     expect(repTrash.trashed).toBe(1000);
     expect(repTrash.permanent).toBe(0);
     expect(repTrash.removed).toBe(1000);
+    expect(repTrash.observed).toBe(0);
     expect(repTrash.files).toBe(5);
 
     const repPerm = createReport(testRules, "permanent", 1000, 0, 5);
@@ -172,6 +176,7 @@ describe("domain logic", () => {
     expect(repPerm.trashed).toBe(0);
     expect(repPerm.permanent).toBe(1000);
     expect(repPerm.removed).toBe(1000);
+    expect(repPerm.observed).toBe(1000);
   });
 
   test("settings and history fallback gracefully when localStorage has invalid data", () => {
@@ -213,5 +218,43 @@ describe("domain logic", () => {
     ];
     expect(saveHistory(h)).toBe(true);
     expect(readHistory()).toEqual(h);
+  });
+
+  const reportAt = (iso: string): Report => ({
+    id: iso,
+    date: iso,
+    selected: 1,
+    removed: 1,
+    trashed: 0,
+    permanent: 1,
+    observed: 1,
+    skipped: 0,
+    files: 1,
+    destination: "permanent",
+  });
+  const DAY = 24 * 3600 * 1000;
+
+  test("the weekly reminder is due only after seven days", () => {
+    const settings = { ...DEFAULT_SETTINGS, schedule: true, frequency: "Semanal", time: "09:30" };
+    expect(nextCleanup({ ...settings, schedule: false }, [])).toBeNull();
+    expect(nextCleanup(settings, []), "no cleanup to count from").toBeNull();
+
+    const last = new Date("2026-10-01T12:00:00");
+    const history = [reportAt(last.toISOString())];
+    const next = nextCleanup(settings, history);
+    expect(next?.getHours()).toBe(9);
+    expect(next?.getMinutes()).toBe(30);
+
+    expect(isCleanupDue(settings, history, new Date(last.getTime() + DAY))).toBe(false);
+    expect(isCleanupDue(settings, history, new Date(last.getTime() + 8 * DAY))).toBe(true);
+  });
+
+  test("the monthly reminder waits thirty days and starts from the newest cleanup", () => {
+    const settings = { ...DEFAULT_SETTINGS, schedule: true, frequency: "Mensal", time: "18:00" };
+    const newest = new Date("2026-09-10T10:00:00");
+    const history = [reportAt(newest.toISOString()), reportAt("2026-01-10T10:00:00")];
+
+    expect(isCleanupDue(settings, history, new Date(newest.getTime() + 29 * DAY))).toBe(false);
+    expect(isCleanupDue(settings, history, new Date(newest.getTime() + 31 * DAY))).toBe(true);
   });
 });

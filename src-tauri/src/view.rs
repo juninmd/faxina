@@ -1,6 +1,8 @@
+use std::cmp::{Ordering, Reverse};
+use std::collections::BinaryHeap;
 use std::path::{Component, Path, PathBuf};
 
-use crate::model::{Kind, Node, Suggestion, ViewNode};
+use crate::model::{BigFile, Kind, Node, Suggestion, ViewNode};
 
 const MAX_CHILDREN: usize = 60;
 const SUGGEST_MIN: u64 = 50 * 1024 * 1024;
@@ -97,6 +99,85 @@ fn reason_for(node: &Node, now: u64) -> Option<String> {
         return Some(format!("arquivo grande parado há {months} meses"));
     }
     None
+}
+
+/// Biggest individually tracked files, largest first. Folded "small files" buckets are synthetic
+/// and not addressable, so they never appear here. Files rejected by `keep` (OS-owned ones) are
+/// dropped before the cut, or a whole-drive scan could spend its whole limit on them.
+pub fn biggest_files(
+    tree: &Node,
+    root: &Path,
+    limit: usize,
+    keep: impl Fn(&Path) -> bool,
+) -> Vec<BigFile> {
+    if limit == 0 {
+        return Vec::new();
+    }
+    // Bounded min-heap via Reverse: memory stays O(limit) even on a multi-million-file scan, and
+    // the scan mutex is not held while an unbounded vector is built and sorted.
+    let mut top: BinaryHeap<Reverse<Found>> = BinaryHeap::with_capacity(limit + 1);
+    collect_files(tree, root.to_path_buf(), limit, &keep, &mut top);
+    // `into_sorted_vec` is ascending for the heap order, and `Reverse` flips it: largest first.
+    top.into_sorted_vec()
+        .into_iter()
+        .map(|r| r.0.file)
+        .collect()
+}
+
+struct Found {
+    size: u64,
+    file: BigFile,
+}
+
+impl PartialEq for Found {
+    fn eq(&self, other: &Self) -> bool {
+        self.size == other.size
+    }
+}
+impl Eq for Found {}
+impl PartialOrd for Found {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Found {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.size.cmp(&other.size)
+    }
+}
+
+fn collect_files(
+    node: &Node,
+    path: PathBuf,
+    limit: usize,
+    keep: &dyn Fn(&Path) -> bool,
+    top: &mut BinaryHeap<Reverse<Found>>,
+) {
+    if node.grouped {
+        return;
+    }
+    if !node.is_dir {
+        let worth_it = top.len() < limit || node.size > top.peek().map_or(0, |r| r.0.size);
+        if worth_it && keep(&path) {
+            top.push(Reverse(Found {
+                size: node.size,
+                file: BigFile {
+                    path: path.to_string_lossy().into_owned(),
+                    name: node.name.clone(),
+                    size: node.size,
+                    modified: node.modified,
+                    kind: node.kind,
+                },
+            }));
+            if top.len() > limit {
+                top.pop();
+            }
+        }
+        return;
+    }
+    for c in &node.children {
+        collect_files(c, path.join(&c.name), limit, keep, top);
+    }
 }
 
 /// Drops the node at `segments` and subtracts its weight from every ancestor.
@@ -202,6 +283,46 @@ mod tests {
             Some(vec!["a".into(), "b".into()])
         );
         assert_eq!(relative(root, Path::new("/etc")), None);
+    }
+
+    #[test]
+    fn biggest_files_skips_grouped_buckets_and_sorts_by_size() {
+        let mut t = sample();
+        t.children
+            .push(Node::file("huge.iso".into(), 900 << 20, 0, Kind::Archives));
+        let mut grouped = Node::file("3 arquivos pequenos".into(), 300 << 20, 0, Kind::Other);
+        grouped.grouped = true;
+        t.children.push(grouped);
+
+        let found = biggest_files(&t, Path::new("/root"), 10, |_| true);
+        assert_eq!(
+            found.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
+            ["huge.iso", "big.bin", "a.ts"],
+            "the grouped bucket is not addressable and never shows up"
+        );
+        assert_eq!(
+            found[0].path,
+            Path::new("/root").join("huge.iso").to_string_lossy()
+        );
+        assert_eq!(biggest_files(&t, Path::new("/root"), 1, |_| true).len(), 1);
+        assert!(biggest_files(&t, Path::new("/root"), 0, |_| true).is_empty());
+    }
+
+    #[test]
+    fn biggest_files_filters_before_the_cut() {
+        // Regression: filtering after `truncate` emptied the list when the biggest entries were
+        // OS-owned (a whole-drive scan), because the limit was spent on paths then discarded.
+        let mut t = sample();
+        t.children
+            .push(Node::file("pagefile.sys".into(), 900 << 20, 0, Kind::Other));
+        t.children
+            .push(Node::file("movie.mkv".into(), 700 << 20, 0, Kind::Media));
+
+        let found = biggest_files(&t, Path::new("/root"), 2, |p| !p.ends_with("pagefile.sys"));
+        assert_eq!(
+            found.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
+            ["movie.mkv", "big.bin"]
+        );
     }
 
     #[test]

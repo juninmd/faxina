@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BigFiles } from "./components/BigFiles";
 import { BlackHole } from "./components/BlackHole";
 import ConfirmDialog from "./components/ConfirmDialog";
 import Coverage from "./components/Coverage";
@@ -13,6 +14,7 @@ import Updates from "./components/Updates";
 import {
   BASE_RULES,
   createReport,
+  isCleanupDue,
   mergeRulesWithScan,
   type Page,
   type Rule,
@@ -25,14 +27,16 @@ import {
 } from "./domain";
 import { useHole } from "./hooks/useHole";
 import { useScan } from "./hooks/useScan";
-import { api, type DiskInfo } from "./lib/api";
+import { api, type DeleteReport, type DiskInfo } from "./lib/api";
 import { formatBytes } from "./lib/format";
 import type { Mark } from "./lib/marks";
 import { getMotionPref, MOTION_LABELS, type MotionPref, setMotionPref } from "./lib/motion";
+import { platformName } from "./lib/platform";
 
 const NAV: { id: Page; label: string; icon: IconName; caption?: string }[] = [
   { id: "overview", label: "Visão geral", icon: "grid" },
   { id: "map", label: "Mapa do disco", icon: "grid" },
+  { id: "bigfiles", label: "Arquivos grandes", icon: "file" },
   { id: "review", label: "Revisar limpeza", icon: "spark" },
   { id: "report", label: "Resultados", icon: "file" },
   { id: "dupes", label: "Duplicatas", icon: "copy" },
@@ -144,6 +148,14 @@ export default function App() {
     );
   };
 
+  // Deletions made outside the map still land in the history and refresh the map's totals.
+  const recordDeleted = (r: DeleteReport) => {
+    const rep = createReport([], "trash", r.freed, r.failed.length, r.deleted.length);
+    setHistory((h) => [rep, ...h].slice(0, 12));
+    setNotice(`${formatBytes(r.freed)} enviados à Lixeira.`);
+    scan.refresh();
+  };
+
   const exclude = (id: string) => {
     const wasExcluded = settings.excluded.includes(id);
     const updated = wasExcluded ? settings.excluded.filter((x) => x !== id) : [...settings.excluded, id];
@@ -166,12 +178,18 @@ export default function App() {
     swallow(
       ids.map((id) => `junk:${id}`),
       async () => {
-        const r = await api.junkClean(ids);
+        const r = await api.junkClean(ids, destination === "permanent");
         const report = createReport(picked, destination, r.freed, r.skipped, r.removed);
         setHistory((h) => [report, ...h].slice(0, 12));
         setPage("report");
-        setNotice(`Limpeza concluída: ${formatBytes(r.freed)} liberados.`);
-        return { freed: r.freed, failed: 0 };
+        setNotice(
+          r.failed
+            ? `${formatBytes(r.freed)} processados, ${r.failed} item(ns) mantidos${r.reason ? `: ${r.reason}` : ""}.`
+            : `Limpeza concluída: ${formatBytes(r.freed)} ${
+                destination === "trash" ? "enviados à Lixeira" : "liberados"
+              }.`,
+        );
+        return { freed: r.freed, failed: r.failed, reason: r.reason ?? undefined };
       },
       loadJunk,
     );
@@ -179,6 +197,8 @@ export default function App() {
 
   const primaryDisk = disks[0] ?? null;
   const reclaimableAmount = totalSize(recommended(rules, settings));
+  // The routine is local: the app opens, looks at the history and nudges. No background service.
+  const cleanupDue = settings.reminder && isCleanupDue(settings, history);
 
   return (
     <div className="app-shell">
@@ -258,7 +278,7 @@ export default function App() {
             </button>
             <div className="topbar-status">
               <Icon name="shield" size={15} />
-              Protegido · Windows
+              Protegido · {platformName()}
             </div>
           </div>
         </header>
@@ -288,6 +308,7 @@ export default function App() {
                 reclaimable={reclaimableAmount}
                 scanned={scanned}
                 loading={junkLoading}
+                due={cleanupDue}
                 onScan={loadJunk}
                 onCancel={() => setJunkLoading(false)}
                 navigate={setPage}
@@ -304,6 +325,10 @@ export default function App() {
               onUnmark={unmark}
               onDeleteMarked={deleteMarked}
             />
+
+            {page === "bigfiles" && (
+              <BigFiles swallow={swallow} root={scan.root} onAnalyze={() => setPage("map")} onDeleted={recordDeleted} />
+            )}
 
             {page === "review" && (
               <Review
@@ -328,7 +353,13 @@ export default function App() {
             {page === "coverage" && <Coverage rules={rules} excluded={settings.excluded} onExclude={exclude} />}
 
             {page === "routine" && (
-              <Routine settings={settings} rules={rules} update={setSettings} storageError={storageError} />
+              <Routine
+                settings={settings}
+                rules={rules}
+                history={history}
+                update={setSettings}
+                storageError={storageError}
+              />
             )}
 
             {page === "updates" && <Updates />}

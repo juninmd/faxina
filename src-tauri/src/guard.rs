@@ -57,32 +57,76 @@ const DRIVE_ROOT_SYSTEM: &[&str] = &[
     "config.msi",
 ];
 
-pub fn is_protected(p: &Path) -> bool {
-    let Some(parent) = p.parent() else {
+/// OS-owned entry at a drive root, or anything inside it: `C:\$Recycle.Bin\<sid>\file` is as
+/// much the system's as `C:\$Recycle.Bin` itself.
+fn at_protected_drive_entry(p: &Path) -> bool {
+    let Some(root) = p.ancestors().last() else {
         return true;
     };
-    let at_drive_root = parent.parent().is_none();
-    let name = p.file_name().map(|n| n.to_string_lossy().to_lowercase());
-    if at_drive_root && name.is_some_and(|n| DRIVE_ROOT_SYSTEM.contains(&n.as_str())) {
-        return true;
+    let Ok(rest) = p.strip_prefix(root) else {
+        return false;
+    };
+    rest.components()
+        .next()
+        .and_then(|c| match c {
+            Component::Normal(s) => Some(s.to_string_lossy().to_lowercase()),
+            _ => None,
+        })
+        .is_some_and(|n| DRIVE_ROOT_SYSTEM.contains(&n.as_str()))
+}
+
+/// The protected-path rules, with the (filesystem-touching) directory lookups done once. A scan of
+/// a whole drive feeds millions of paths through this; recomputing them per path would be I/O bound.
+pub struct Protection {
+    exact: Vec<PathBuf>,
+    system: Vec<PathBuf>,
+}
+
+impl Protection {
+    pub fn new() -> Self {
+        let exact = [
+            dirs::home_dir(),
+            dirs::desktop_dir(),
+            dirs::document_dir(),
+            dirs::download_dir(),
+            dirs::picture_dir(),
+            dirs::audio_dir(),
+            dirs::video_dir(),
+        ]
+        .into_iter()
+        .flatten()
+        .filter_map(|d| dunce(&d).ok())
+        .collect();
+        Self {
+            exact,
+            system: system_dirs(),
+        }
     }
-    let exact: Vec<PathBuf> = [
-        dirs::home_dir(),
-        dirs::desktop_dir(),
-        dirs::document_dir(),
-        dirs::download_dir(),
-        dirs::picture_dir(),
-        dirs::audio_dir(),
-        dirs::video_dir(),
-    ]
-    .into_iter()
-    .flatten()
-    .filter_map(|d| dunce(&d).ok())
-    .collect();
-    if exact.iter().any(|d| d == p || d.starts_with(p)) {
-        return true;
+
+    pub fn is_protected(&self, p: &Path) -> bool {
+        // A volume root itself is never deletable.
+        if p.parent().is_none() {
+            return true;
+        }
+        if at_protected_drive_entry(p) {
+            return true;
+        }
+        // The known folders themselves, and anything that contains them (home, C:\).
+        if self.exact.iter().any(|d| d == p || d.starts_with(p)) {
+            return true;
+        }
+        self.system.iter().any(|d| p.starts_with(d))
     }
-    system_dirs().iter().any(|d| p.starts_with(d))
+}
+
+impl Default for Protection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub fn is_protected(p: &Path) -> bool {
+    Protection::new().is_protected(p)
 }
 
 fn system_dirs() -> Vec<PathBuf> {
@@ -205,5 +249,12 @@ mod tests {
         }
         // Same names deeper in the tree are ordinary files.
         assert!(!is_protected(&root.join("backup").join("pagefile.sys")));
+        // OS-owned folders protect their contents too: the Recycle Bin is not user space.
+        assert!(is_protected(
+            &root.join("$Recycle.Bin").join("S-1-5-21").join("$R.docx")
+        ));
+        assert!(is_protected(
+            &root.join("System Volume Information").join("tracking.log")
+        ));
     }
 }

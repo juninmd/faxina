@@ -292,32 +292,6 @@ small {
   gap: 7px;
   font-size: 0.69rem;
 }
-.demo-strip {
-  padding: 9px 40px;
-  min-height: 44px;
-  background: #191b20;
-  border-bottom: 1px solid #2d3037;
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 0.66rem;
-}
-.demo-strip strong {
-  color: #d6c795;
-  font-weight: 500;
-}
-.demo-strip label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  white-space: nowrap;
-}
-.demo-strip select {
-  padding: 3px 22px 3px 8px;
-  font-size: 0.65rem;
-}
 main {
   flex: 1 1 auto;
   min-height: 0;
@@ -691,12 +665,6 @@ main::-webkit-scrollbar-thumb:hover {
 .blue {
   background: var(--blue);
 }
-.lavender {
-  background: var(--purple);
-}
-.gray {
-  background: #59667e;
-}
 .dark {
   background: #69778d;
 }
@@ -837,23 +805,6 @@ main::-webkit-scrollbar-thumb:hover {
   font-weight: 650;
   font-size: 0.95rem;
   flex-shrink: 0;
-}
-.app-npm {
-  background: #442c33;
-  color: #f0a9b2;
-}
-.app-temp,
-.app-shaders {
-  background: #253b3e;
-  color: #9dd3d7;
-}
-.app-discord {
-  background: #34334b;
-  color: #c2bbed;
-}
-.app-offline {
-  background: #3b352b;
-  color: #e6c694;
 }
 .rule-name {
   flex: 1;
@@ -1525,36 +1476,6 @@ input[role="switch"]:checked::before {
   display: flex;
   padding: 5px;
 }
-.processing-overlay {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: #080b12e8;
-  z-index: 6;
-  padding: 25px;
-}
-.processing-card {
-  text-align: center;
-}
-.processing-card h2 {
-  margin-top: 30px;
-  font-size: 1.7rem;
-}
-.processing-card p {
-  color: var(--muted);
-  font-size: 0.8rem;
-  margin-top: 13px;
-}
-.mini-orbit {
-  margin: auto;
-  border: 2px solid #414047;
-  border-top-color: var(--yellow);
-  border-radius: 50%;
-  width: 80px;
-  height: 80px;
-  animation: spin 1s linear infinite;
-}
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -1619,9 +1540,6 @@ progress {
   }
   .topbar {
     padding: 0 25px;
-  }
-  .demo-strip {
-    padding: 10px 25px;
   }
   .orbit {
     width: 207px;
@@ -1772,16 +1690,6 @@ progress {
   }
   .topbar-status {
     display: none;
-  }
-  .demo-strip {
-    padding: 10px 20px;
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 9px;
-    font-size: 0.65rem;
-  }
-  .demo-strip label {
-    align-self: flex-end;
   }
   .content {
     padding: 27px 20px 0;
@@ -2002,12 +1910,6 @@ progress {
     flex: 1;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .mini-orbit {
-    animation: none;
-  }
-}
-
 /* The existing map components keep their Tailwind layout inside this isolated frame. */
 .content.map-page {
   max-width: none;
@@ -2038,18 +1940,6 @@ progress {
   flex-wrap: wrap;
   gap: 15px;
 }
-.map-example-note {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 0.67rem;
-  margin: 16px 0;
-}
-.map-example-note svg {
-  color: var(--green);
-  flex-shrink: 0;
-}
 .native-map-panel {
   overflow: hidden;
 }
@@ -2074,12 +1964,6 @@ progress {
 .native-map [role="treeitem"] {
   color: var(--text);
 }
-.map-footnote {
-  color: var(--muted);
-  font-size: 0.66rem;
-  line-height: 1.6;
-  margin: 15px 0;
-}
 .map-notice {
   padding: 12px 15px;
   border: 1px solid #536c5e;
@@ -2088,19 +1972,6 @@ progress {
   color: #d1e7d9;
   font-size: 0.73rem;
   margin-bottom: 15px;
-}
-.map-collector dialog {
-  width: min(440px, calc(100vw - 28px));
-}
-.map-collector .collector-delete {
-  color: #10141b;
-  font-weight: 600;
-}
-.map-collector > div {
-  flex-wrap: wrap;
-}
-.map-collector > div > div {
-  flex-basis: 100%;
 }
 .map-scan-state {
   min-height: 450px;
@@ -2177,13 +2048,6 @@ progress {
   }
   .native-map > div > div:first-child > div:first-child > div {
     font-size: 0.7rem;
-  }
-  .map-collector > div {
-    padding: 12px;
-    gap: 12px;
-  }
-  .map-collector > div > button {
-    font-size: 0.75rem;
   }
   .disk-map-screen.is-expanded {
     padding: 18px 12px;

@@ -1,6 +1,7 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Icon from "./Icon";
 
 export default function Updates() {
@@ -8,6 +9,11 @@ export default function Updates() {
   const [update, setUpdate] = useState<Update | null>(null);
   const [pct, setPct] = useState(0);
   const [errorMsg, setErrorMsg] = useState("");
+  const [version, setVersion] = useState("");
+
+  useEffect(() => {
+    getVersion().then(setVersion, () => setVersion(""));
+  }, []);
 
   const checkForUpdates = async () => {
     setState("checking");
@@ -62,7 +68,7 @@ export default function Updates() {
           <Icon name="download" size={54} />
         </span>
         <div>
-          <span className="eyebrow">FAXINA · VERSÃO ATUAL: v1.3.0</span>
+          <span className="eyebrow">FAXINA · {version ? `VERSÃO ATUAL: v${version}` : "VERIFICAÇÃO DE VERSÃO"}</span>
           <h2>
             {state === "checking"
               ? "Verificando se há atualizações…"

@@ -92,7 +92,20 @@ fn gone(p: &Path) -> bool {
     matches!(fs::symlink_metadata(p), Err(e) if e.kind() == io::ErrorKind::NotFound)
 }
 
-fn remove_permanent(path: &Path) -> io::Result<()> {
+/// Trashes a batch. When the shell reports a failure, each path is retried alone to learn its own
+/// error (a batch error names no path). Used by cache cleaning, which removes one directory at a
+/// time instead of paying one shell operation per entry.
+pub(crate) fn trash_paths(paths: &[PathBuf]) -> Vec<Result<(), String>> {
+    let refs: Vec<&Path> = paths.iter().map(|p| p.as_path()).collect();
+    trash_batch(
+        &refs,
+        |b| trash::delete_all(b).map_err(|e| e.to_string()),
+        |p| trash::delete(p).map_err(|e| e.to_string()),
+    )
+}
+
+/// Removes one path for good: a directory tree, a directory link, or a file.
+pub(crate) fn remove_permanent(path: &Path) -> io::Result<()> {
     let meta = fs::symlink_metadata(path)?;
     if meta.is_dir() && !is_link(&meta) {
         remove_tree(path)

@@ -82,3 +82,14 @@ pub struct Suggestion {
     pub kind: Kind,
     pub reason: String,
 }
+
+/// One individually tracked file, for the "biggest files" list.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BigFile {
+    pub path: String,
+    pub name: String,
+    pub size: u64,
+    pub modified: u64,
+    pub kind: Kind,
+}

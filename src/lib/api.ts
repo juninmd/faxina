@@ -23,6 +23,14 @@ export interface Suggestion {
   reason: string;
 }
 
+export interface BigFile {
+  path: string;
+  name: string;
+  size: number;
+  modified: number;
+  kind: Kind;
+}
+
 export interface DeleteReport {
   freed: number;
   deleted: string[];
@@ -42,6 +50,8 @@ export interface CleanReport {
   freed: number;
   removed: number;
   skipped: number;
+  failed: number;
+  reason?: string | null;
 }
 
 export interface DupGroup {
@@ -61,9 +71,10 @@ export const api = {
   cancelScan: () => invoke<void>("cancel_scan"),
   getView: (path: string, depth: number) => invoke<ViewNode>("get_view", { path, depth }),
   suggestions: () => invoke<Suggestion[]>("get_suggestions"),
+  largestFiles: (limit: number) => invoke<BigFile[]>("largest_files", { limit }),
   deletePaths: (paths: string[], permanent: boolean) => invoke<DeleteReport>("delete_paths", { paths, permanent }),
   junkScan: () => invoke<JunkItem[]>("junk_scan"),
-  junkClean: (ids: string[]) => invoke<CleanReport>("junk_clean", { ids }),
+  junkClean: (ids: string[], permanent: boolean) => invoke<CleanReport>("junk_clean", { ids, permanent }),
   findDuplicates: (path: string, minSize: number) => invoke<DupGroup[]>("find_duplicates", { path, minSize }),
   cancelDuplicates: () => invoke<void>("cancel_duplicates"),
   diskInfo: (path: string) => invoke<DiskInfo | null>("disk_info", { path }),

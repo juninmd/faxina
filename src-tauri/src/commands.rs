@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::dupes::{self, DupGroup, DupProgress};
 use crate::junk::{self, CleanReport, JunkItem};
-use crate::model::{Node, Suggestion, ViewNode};
+use crate::model::{BigFile, Node, Suggestion, ViewNode};
 use crate::scan::{self, Progress};
 use crate::{guard, remove, view};
 
@@ -141,6 +141,20 @@ pub fn get_suggestions(state: State<'_, AppState>) -> Vec<Suggestion> {
     })
 }
 
+/// Biggest files of the current scan, largest first. Empty until a scan has run.
+#[tauri::command]
+pub fn largest_files(state: State<'_, AppState>, limit: usize) -> Vec<BigFile> {
+    lock(&state.scan).as_ref().map_or_else(Vec::new, |d| {
+        // Same rule as the suggestions: OS-owned entries are never ours to offer. The filter runs
+        // before the cut, so a whole-drive scan still fills the list, and the protection lookups
+        // are computed once for the whole walk.
+        let protection = guard::Protection::new();
+        view::biggest_files(&d.tree, &d.root, limit.clamp(1, 1000), |p| {
+            !protection.is_protected(p)
+        })
+    })
+}
+
 fn disk_size(path: &Path) -> u64 {
     std::fs::symlink_metadata(path)
         .map(|m| {
@@ -235,8 +249,8 @@ pub async fn junk_scan() -> Result<Vec<JunkItem>, String> {
 }
 
 #[tauri::command]
-pub async fn junk_clean(ids: Vec<String>) -> Result<CleanReport, String> {
-    tauri::async_runtime::spawn_blocking(move || junk::clean(&ids))
+pub async fn junk_clean(ids: Vec<String>, permanent: bool) -> Result<CleanReport, String> {
+    tauri::async_runtime::spawn_blocking(move || junk::clean(&ids, permanent))
         .await
         .map_err(|e| e.to_string())
 }

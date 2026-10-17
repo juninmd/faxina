@@ -1,7 +1,7 @@
 import type { JunkItem } from "./lib/api";
 import { formatBytes, formatCount } from "./lib/format";
 
-export type Page = "overview" | "map" | "review" | "report" | "dupes" | "coverage" | "routine" | "updates";
+export type Page = "overview" | "map" | "bigfiles" | "review" | "report" | "dupes" | "coverage" | "routine" | "updates";
 
 export type Rule = {
   id: string;
@@ -484,6 +484,35 @@ export const gb = (value: number) => formatBytes(value);
 export const count = (value: number) => formatCount(value);
 export const totalSize = (rules: Rule[]) => rules.reduce((sum, r) => sum + r.size, 0);
 
+const CLEANUP_INTERVAL_DAYS: Record<string, number> = { Semanal: 7, Mensal: 30 };
+
+/**
+ * When the next routine cleanup is worth a nudge: the last cleanup in the history plus the chosen
+ * interval, moved to the chosen time of day. Null when the routine is off. The Faxina has no
+ * background service, so this is a reminder shown when the app opens, not a scheduled task.
+ */
+export function nextCleanup(settings: Settings, history: Report[]): Date | null {
+  if (!settings.schedule) return null;
+  const days = CLEANUP_INTERVAL_DAYS[settings.frequency] ?? 7;
+  const last = history
+    .map((r) => Date.parse(r.date))
+    .filter((t) => Number.isFinite(t))
+    .sort((a, b) => b - a)[0];
+  if (last === undefined) return null;
+  const [hour, minute] = settings.time.split(":").map(Number);
+  // Calendar addition in local time: adding fixed milliseconds across a DST change would move the
+  // reminder by an hour and can even flip the day.
+  const next = new Date(last);
+  next.setDate(next.getDate() + days);
+  next.setHours(hour || 0, minute || 0, 0, 0);
+  return next;
+}
+
+export function isCleanupDue(settings: Settings, history: Report[], now: Date = new Date()): boolean {
+  const next = nextCleanup(settings, history);
+  return next !== null && now.getTime() >= next.getTime();
+}
+
 export function recommended(rules: Rule[], settings: Settings) {
   return rules.filter((r) => r.size > 0 && !r.blocked && !r.busy && !r.caution && !settings.excluded.includes(r.id));
 }
@@ -508,7 +537,8 @@ export function createReport(
     removed,
     trashed: destination === "trash" ? removed : 0,
     permanent: destination === "permanent" ? removed : 0,
-    observed: removed,
+    // Only a permanent delete frees disk space; the trash still occupies the volume.
+    observed: destination === "permanent" ? removed : 0,
     skipped,
     files,
     destination,
