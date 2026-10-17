@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.5.0](https://github.com/juninmd/faxina/compare/v1.4.0...v1.5.0) (2026-10-17)
+
+
+### Features
+
+* **cleanup:** make rescans reliable and add a biggest-files view ([3868bc1](https://github.com/juninmd/faxina/commit/3868bc1a63d680a46ec11cbe02338c5f65cf5ced))
+
 # [1.4.0](https://github.com/juninmd/faxina/compare/v1.3.0...v1.4.0) (2026-10-15)
 
 
