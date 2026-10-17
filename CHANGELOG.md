@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/juninmd/faxina/compare/v1.5.0...v1.5.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **deps:** upgrade rustls to patch four TLS advisories ([#7](https://github.com/juninmd/faxina/issues/7)) ([e764828](https://github.com/juninmd/faxina/commit/e7648282b025232377de638e715db52e2c921af2))
+
 # [1.5.0](https://github.com/juninmd/faxina/compare/v1.4.0...v1.5.0) (2026-10-17)
 
 
