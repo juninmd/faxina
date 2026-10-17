@@ -1,6 +1,7 @@
 import type { Page } from "../domain";
 import { gb } from "../domain";
 import type { DiskInfo } from "../lib/api";
+import { platformName } from "../lib/platform";
 import Icon from "./Icon";
 
 export default function Overview({
@@ -8,6 +9,7 @@ export default function Overview({
   reclaimable,
   scanned,
   loading,
+  due,
   onScan,
   onCancel,
   navigate,
@@ -16,6 +18,7 @@ export default function Overview({
   reclaimable: number;
   scanned: boolean;
   loading: boolean;
+  due: boolean;
   onScan: () => void;
   onCancel: () => void;
   navigate: (page: Page) => void;
@@ -40,9 +43,21 @@ export default function Overview({
         </div>
         <span className="device">
           <span className="status-dot" />
-          Meu computador <small>Windows · Protegido</small>
+          Meu computador <small>{platformName()} · Protegido</small>
         </span>
       </div>
+      {due && (
+        <div className="callout amber-callout" role="status">
+          <Icon name="clock" />
+          <span>
+            <strong>Sua limpeza de rotina está na hora.</strong> O lembrete que você configurou em Minha rotina pediu
+            uma revisão.
+          </span>
+          <button type="button" className="button secondary" onClick={() => navigate("routine")}>
+            Ver rotina
+          </button>
+        </div>
+      )}
       <section className="overview-hero" aria-label="Diagnóstico do disco">
         <div className="orbit-area">
           <div className="orbit">

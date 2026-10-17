@@ -23,6 +23,7 @@ pub fn run() {
             commands::cancel_scan,
             commands::get_view,
             commands::get_suggestions,
+            commands::largest_files,
             commands::delete_paths,
             commands::junk_scan,
             commands::junk_clean,

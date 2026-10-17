@@ -35,7 +35,7 @@ export default function ReportPanel({
               </h2>
               <p>
                 {count(report.files)} arquivos processados.{" "}
-                {report.skipped ? `${report.skipped} item em uso foi mantido.` : "Nenhum item em uso foi removido."}
+                {report.skipped ? `${report.skipped} item(ns) mantido(s) por segurança.` : "Nenhum item foi mantido."}
               </p>
             </div>
           </section>

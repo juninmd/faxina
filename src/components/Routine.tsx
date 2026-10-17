@@ -1,17 +1,22 @@
-import type { Rule, Settings } from "../domain";
+import { nextCleanup, type Report, type Rule, type Settings } from "../domain";
 import Icon from "./Icon";
+
+const DATE = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" });
 
 export default function Routine({
   settings,
   rules,
+  history,
   update,
   storageError,
 }: {
   settings: Settings;
   rules: Rule[];
+  history: Report[];
   update: (s: Settings) => void;
   storageError: boolean;
 }) {
+  const next = nextCleanup(settings, history);
   return (
     <>
       <div className="page-heading compact">
@@ -33,14 +38,14 @@ export default function Routine({
           </div>
           <div className="setting-row">
             <div>
-              <strong>Agendamento</strong>
-              <p>Definir uma rotina periódica de lembrete de limpeza.</p>
+              <strong>Lembrete de limpeza</strong>
+              <p>Avisar quando o intervalo escolhido passar desde a sua última limpeza registrada.</p>
             </div>
             <input
               type="checkbox"
               role="switch"
               aria-checked={settings.schedule}
-              aria-label="Ativar agendamento"
+              aria-label="Ativar lembrete de limpeza"
               checked={settings.schedule}
               onChange={(e) => update({ ...settings, schedule: e.target.checked })}
             />
@@ -71,14 +76,14 @@ export default function Routine({
           </div>
           <div className="setting-row">
             <div>
-              <strong>Lembrar antes de limpar</strong>
-              <p>Pedir uma revisão antes de qualquer ação no sistema.</p>
+              <strong>Avisar na tela inicial</strong>
+              <p>Mostrar o lembrete na visão geral quando a rotina estiver na hora de revisar.</p>
             </div>
             <input
               type="checkbox"
               role="switch"
               aria-checked={settings.reminder}
-              aria-label="Lembrar antes de limpar"
+              aria-label="Avisar na tela inicial"
               checked={settings.reminder}
               onChange={(e) => update({ ...settings, reminder: e.target.checked })}
             />
@@ -86,10 +91,14 @@ export default function Routine({
           <div className="callout amber-callout">
             <Icon name="clock" />
             <span>
-              {settings.schedule
-                ? `Planejamento salvo: ${settings.frequency.toLowerCase()}, às ${settings.time}. `
-                : "Agendamento desativado. "}
-              Suas preferências de frequência e exclusões ficam salvas neste dispositivo.
+              {!settings.schedule
+                ? "Lembrete desativado. "
+                : !settings.reminder
+                  ? "Aviso na tela inicial desativado — o prazo continua calculado aqui. "
+                  : next
+                    ? `Próximo lembrete: ${DATE.format(next)}. `
+                    : "O primeiro lembrete será agendado após a sua próxima limpeza. "}
+              O Faxina não roda em segundo plano: o aviso aparece quando você abre o aplicativo.
             </span>
           </div>
         </section>

@@ -22,13 +22,15 @@ pub struct Progress {
     pub files: AtomicU64,
     pub bytes: AtomicU64,
     pub cancel: AtomicBool,
-    pub links: Links,
 }
 
 pub fn scan(root: &Path, progress: &Progress) -> Node {
     let name = root.to_string_lossy().into_owned();
     let ids = listing::ids_supported(root);
-    let mut node = scan_dir(root, name, Kind::Other, ids, progress, 0);
+    // The hard-link set belongs to one scan: keeping it on `Progress` made a second scan in the
+    // same session treat every file as already counted and report an empty tree.
+    let links = Links::default();
+    let mut node = scan_dir(root, name, Kind::Other, ids, &links, progress, 0);
     node.kind = dominant_kind(&node.children);
     node
 }
@@ -59,6 +61,7 @@ fn scan_dir(
     name: String,
     forced: Kind,
     ids: bool,
+    links: &Links,
     progress: &Progress,
     depth: usize,
 ) -> Node {
@@ -91,7 +94,7 @@ fn scan_dir(
             continue;
         }
         // Another link to this file was already counted: it takes no extra space.
-        if entry.id.is_some_and(|id| !progress.links.first(id)) {
+        if entry.id.is_some_and(|id| !links.first(id)) {
             continue;
         }
         let (size, modified) = (entry.size, entry.modified);
@@ -126,7 +129,7 @@ fn scan_dir(
             } else {
                 forced
             };
-            let mut child = scan_dir(&p, n, inherited, ids, progress, depth + 1);
+            let mut child = scan_dir(&p, n, inherited, ids, links, progress, depth + 1);
             if inherited == Kind::Other {
                 child.kind = dominant_kind(&child.children);
             }
@@ -243,6 +246,23 @@ mod tests {
         let tree = scan(tmp.path(), &p);
         assert_eq!(tree.size, big as u64);
         assert_eq!(p.bytes.load(Ordering::Relaxed), big as u64);
+    }
+
+    #[test]
+    fn rescanning_with_the_same_progress_is_stable() {
+        // The hard-link set is per scan: on NTFS every file has an id, and on Unix only linked
+        // files do, so the test creates a hard link to reproduce the leak on every platform.
+        let tmp = tempfile::tempdir().unwrap();
+        let big = SMALL_FILE as usize * 2;
+        write(tmp.path().join("a.bin"), vec![0u8; big]).unwrap();
+        std::fs::hard_link(tmp.path().join("a.bin"), tmp.path().join("b.bin")).unwrap();
+
+        let p = Progress::default();
+        let first = scan(tmp.path(), &p);
+        let second = scan(tmp.path(), &p);
+        assert_eq!(first.size, big as u64, "the pair counts once");
+        assert_eq!(second.size, first.size);
+        assert_eq!(second.files, first.files);
     }
 
     #[test]

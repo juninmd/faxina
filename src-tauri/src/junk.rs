@@ -28,8 +28,12 @@ pub struct JunkItem {
 pub struct CleanReport {
     pub freed: u64,
     pub removed: u64,
-    /// Entries in use by a running program (typical in %TEMP%) are left alone.
+    /// Entries left alone because they are younger than the rule's minimum age.
     pub skipped: u64,
+    /// Entries that could not be removed at all (permissions, bin quota, in use).
+    pub failed: u64,
+    /// First failure, so the UI can explain a zero-freed clean instead of guessing "in use".
+    pub reason: Option<String>,
 }
 
 pub fn base_dir(base: Base) -> Option<PathBuf> {
@@ -239,79 +243,131 @@ pub fn scan_all() -> Vec<JunkItem> {
 }
 
 /// Deletes what a rule points at inside `dir`; the folder itself stays so apps keep working.
-pub fn clean_dir(dir: &Path, rule: &Rule, min_age: Duration) -> CleanReport {
-    clean_tree(dir, rule, min_age, cfg!(windows), 0)
+/// `permanent` false sends every entry to the OS Recycle Bin instead.
+pub fn clean_dir(dir: &Path, rule: &Rule, min_age: Duration, permanent: bool) -> CleanReport {
+    clean_tree(dir, rule, min_age, cfg!(windows), permanent, 0)
 }
 
-fn skipped() -> CleanReport {
+fn failed(reason: &str) -> CleanReport {
     CleanReport {
-        skipped: 1,
+        failed: 1,
+        reason: Some(reason.to_string()),
         ..CleanReport::default()
     }
 }
 
-fn clean_tree(dir: &Path, rule: &Rule, min_age: Duration, ci: bool, depth: usize) -> CleanReport {
+fn clean_tree(
+    dir: &Path,
+    rule: &Rule,
+    min_age: Duration,
+    ci: bool,
+    permanent: bool,
+    depth: usize,
+) -> CleanReport {
     if depth > MAX_DEPTH {
         return CleanReport::default();
     }
     let Ok(rd) = fs::read_dir(dir) else {
         return CleanReport::default();
     };
-    let entries: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
-    entries
-        .par_iter()
-        .filter_map(|path| fs::symlink_metadata(path).ok().map(|m| (path, m)))
-        .map(|(path, meta)| {
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            if excluded(rule, &name, ci) {
-                return CleanReport::default();
-            }
-            let is_tree = meta.is_dir() && !is_link(&meta);
-            if is_tree {
-                match rule.scope {
-                    Scope::Contents if rule.excludes.is_empty() => {
-                        if !old_enough(&meta, min_age) {
-                            return skipped();
-                        }
-                        let (size, files) = measure_tree(path, rule, ci, depth + 1);
-                        match crate::remove::remove_tree(path) {
-                            Ok(()) => CleanReport {
-                                freed: size,
-                                removed: files,
-                                skipped: 0,
-                            },
-                            Err(_) => skipped(),
-                        }
+
+    // Plan first, remove second: the trash is one shell operation per directory, not per entry
+    // (each `trash::delete` costs ~20 ms on Windows and froze the cleaner on real temp folders).
+    let mut report = CleanReport::default();
+    let mut whole: Vec<PathBuf> = Vec::new();
+    let mut files: Vec<(PathBuf, u64)> = Vec::new();
+    let mut recurse: Vec<PathBuf> = Vec::new();
+    for (path, meta) in rd
+        .flatten()
+        .filter_map(|e| fs::symlink_metadata(e.path()).ok().map(|m| (e.path(), m)))
+    {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if excluded(rule, &name, ci) {
+            continue;
+        }
+        let is_tree = meta.is_dir() && !is_link(&meta);
+        if is_tree {
+            match rule.scope {
+                Scope::Contents if rule.excludes.is_empty() => {
+                    if old_enough(&meta, min_age) {
+                        whole.push(path);
+                    } else {
+                        report.skipped += 1;
                     }
-                    Scope::Contents | Scope::Files if rule.recurse => {
-                        clean_tree(path, rule, min_age, ci, depth + 1)
-                    }
-                    _ => CleanReport::default(),
                 }
+                Scope::Contents | Scope::Files if rule.recurse => recurse.push(path),
+                _ => {}
+            }
+        } else {
+            let matched = rule.scope == Scope::Contents
+                || rule.patterns.iter().any(|p| glob_match(p, &name, ci));
+            if !matched {
+                continue;
+            }
+            if old_enough(&meta, min_age) {
+                files.push((path, meta.len()));
             } else {
-                let matched = rule.scope == Scope::Contents
-                    || rule.patterns.iter().any(|p| glob_match(p, &name, ci));
-                if !matched {
-                    return CleanReport::default();
-                }
-                if !old_enough(&meta, min_age) {
-                    return skipped();
-                }
-                let size = meta.len();
-                match fs::remove_file(path) {
-                    Ok(()) => CleanReport {
-                        freed: size,
-                        removed: 1,
-                        skipped: 0,
-                    },
-                    Err(_) => skipped(),
-                }
+                report.skipped += 1;
             }
+        }
+    }
+
+    // Measure before removing; whole subtrees are measured in parallel.
+    let mut targets: Vec<(PathBuf, u64, u64)> = whole
+        .into_par_iter()
+        .map(|p| {
+            let (size, count) = measure_tree(&p, rule, ci, depth + 1);
+            (p, size, count)
         })
-        .reduce(CleanReport::default, merge)
+        .collect();
+    targets.extend(files.into_iter().map(|(p, size)| (p, size, 1)));
+    report = merge(report, remove_entries(&targets, permanent));
+
+    let nested: CleanReport = recurse
+        .into_par_iter()
+        .map(|p| clean_tree(&p, rule, min_age, ci, permanent, depth + 1))
+        .reduce(CleanReport::default, merge);
+    merge(report, nested)
+}
+
+/// Removes one directory's worth of entries, already measured: one shell batch for the trash, or
+/// parallel permanent deletes.
+fn remove_entries(items: &[(PathBuf, u64, u64)], permanent: bool) -> CleanReport {
+    if items.is_empty() {
+        return CleanReport::default();
+    }
+    if permanent {
+        return items
+            .par_iter()
+            .map(|(p, size, files)| {
+                match crate::remove::remove_permanent(p).map_err(|e| e.to_string()) {
+                    Ok(()) => CleanReport {
+                        freed: *size,
+                        removed: *files,
+                        ..CleanReport::default()
+                    },
+                    Err(reason) => failed(&reason),
+                }
+            })
+            .reduce(CleanReport::default, merge);
+    }
+    let paths: Vec<PathBuf> = items.iter().map(|(p, _, _)| p.clone()).collect();
+    let results = crate::remove::trash_paths(&paths);
+    items
+        .iter()
+        .zip(results)
+        .map(|((_, size, files), result)| match result {
+            Ok(()) => CleanReport {
+                freed: *size,
+                removed: *files,
+                ..CleanReport::default()
+            },
+            Err(reason) => failed(&reason),
+        })
+        .fold(CleanReport::default(), merge)
 }
 
 fn merge(a: CleanReport, b: CleanReport) -> CleanReport {
@@ -319,16 +375,18 @@ fn merge(a: CleanReport, b: CleanReport) -> CleanReport {
         freed: a.freed + b.freed,
         removed: a.removed + b.removed,
         skipped: a.skipped + b.skipped,
+        failed: a.failed + b.failed,
+        reason: a.reason.or(b.reason),
     }
 }
 
-pub fn clean(ids: &[String]) -> CleanReport {
+pub fn clean(ids: &[String], permanent: bool) -> CleanReport {
     definitions()
         .iter()
         .filter(|d| ids.iter().any(|id| id == d.id))
         .flat_map(|d| d.rules.iter().map(move |r| (d, r)))
         .flat_map(|(d, r)| resolve(d, r).into_iter().map(move |p| (p, r, d.min_age)))
-        .map(|(p, rule, age)| clean_dir(&p, rule, age))
+        .map(|(p, rule, age)| clean_dir(&p, rule, age, permanent))
         .fold(CleanReport::default(), merge)
 }
 
@@ -430,7 +488,7 @@ mod tests {
         fs::create_dir_all(cache.join("sub")).unwrap();
         fs::write(cache.join("a.bin"), [0u8; 10]).unwrap();
         fs::write(cache.join("sub/b.bin"), [0u8; 5]).unwrap();
-        let r = clean_dir(&cache, &whole(""), Duration::ZERO);
+        let r = clean_dir(&cache, &whole(""), Duration::ZERO, true);
         assert_eq!((r.freed, r.removed, r.skipped), (15, 2, 0));
         assert!(cache.is_dir());
         assert_eq!(fs::read_dir(&cache).unwrap().count(), 0);
@@ -445,13 +503,13 @@ mod tests {
         fs::write(tmp.path().join("sub/nested.log"), b"deep").unwrap();
 
         let non_recursive = matching("", &["*.log"], false);
-        let r = clean_dir(tmp.path(), &non_recursive, Duration::ZERO);
+        let r = clean_dir(tmp.path(), &non_recursive, Duration::ZERO, true);
         assert_eq!((r.freed, r.removed), (4, 1));
         assert!(tmp.path().join("keep.db").exists());
         assert!(tmp.path().join("sub/nested.log").exists(), "no recursion");
 
         let recursive = matching("", &["*.log"], true);
-        let r = clean_dir(tmp.path(), &recursive, Duration::ZERO);
+        let r = clean_dir(tmp.path(), &recursive, Duration::ZERO, true);
         assert_eq!((r.freed, r.removed), (4, 1));
         assert!(tmp.path().join("keep.db").exists());
     }
@@ -464,7 +522,7 @@ mod tests {
         let rule = crate::junk_defs::excluding(whole(""), &["keep.tmp"]);
         let (size, files) = measure(tmp.path(), &rule);
         assert_eq!((size, files), (2, 1));
-        let r = clean_dir(tmp.path(), &rule, Duration::ZERO);
+        let r = clean_dir(tmp.path(), &rule, Duration::ZERO, true);
         assert_eq!((r.freed, r.removed), (2, 1));
         assert!(tmp.path().join("keep.tmp").exists());
         assert!(!tmp.path().join("remove.tmp").exists());
@@ -474,14 +532,81 @@ mod tests {
     fn fresh_files_survive_min_age() {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(tmp.path().join("new.tmp"), "x").unwrap();
-        let r = clean_dir(tmp.path(), &whole(""), Duration::from_secs(3600));
+        let r = clean_dir(tmp.path(), &whole(""), Duration::from_secs(3600), true);
         assert_eq!((r.removed, r.skipped), (0, 1));
         assert!(tmp.path().join("new.tmp").exists());
     }
 
     #[test]
     fn unknown_ids_clean_nothing() {
-        let r = clean(&["../../etc".into()]);
+        let r = clean(&["../../etc".into()], true);
         assert_eq!(r.removed, 0);
+    }
+
+    #[cfg(target_os = "linux")]
+    struct EnvGuard {
+        previous: Option<std::ffi::OsString>,
+    }
+
+    /// Restores `XDG_DATA_HOME` even when the test panics. `set_var` is process-global, so the
+    /// window is kept as short as possible and no other test reads this variable.
+    #[cfg(target_os = "linux")]
+    impl EnvGuard {
+        fn set(value: &Path) -> Self {
+            let previous = std::env::var_os("XDG_DATA_HOME");
+            std::env::set_var("XDG_DATA_HOME", value);
+            Self { previous }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match self.previous.take() {
+                Some(v) => std::env::set_var("XDG_DATA_HOME", v),
+                None => std::env::remove_var("XDG_DATA_HOME"),
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn trash_mode_sends_entries_to_the_bin_and_keeps_the_folder() {
+        // Isolation: on Linux the `trash` crate puts files under $XDG_DATA_HOME/Trash, so a
+        // temporary data home keeps the test from touching the real Recycle Bin. Both the cache
+        // and the bin live in the same temp dir, which `trash` requires (same filesystem).
+        let tmp = tempfile::tempdir().unwrap();
+        let data = tmp.path().join("data");
+        fs::create_dir_all(&data).unwrap();
+        let cache = tmp.path().join("cache");
+        fs::create_dir_all(cache.join("sub")).unwrap();
+        fs::write(cache.join("a.bin"), [0u8; 10]).unwrap();
+        fs::write(cache.join("sub/b.bin"), [0u8; 5]).unwrap();
+
+        let _env = EnvGuard::set(&data);
+        let r = clean_dir(&cache, &whole(""), Duration::ZERO, false);
+
+        assert!(cache.is_dir(), "the cache folder itself must survive");
+        assert_eq!(
+            (r.freed, r.removed, r.skipped, r.failed),
+            (15, 2, 0, 0),
+            "both entries left: {r:?}"
+        );
+        assert_eq!(cache.read_dir().unwrap().count(), 0);
+        let bin = data.join("Trash").join("files");
+        assert_eq!(
+            fs::read_dir(&bin).unwrap().count(),
+            2,
+            "both entries really landed in the bin, not deleted for good"
+        );
+    }
+
+    #[test]
+    fn permanent_mode_does_not_touch_the_bin() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("a.tmp"), b"xx").unwrap();
+        let r = clean_dir(tmp.path(), &whole(""), Duration::ZERO, true);
+        assert_eq!((r.freed, r.removed, r.skipped), (2, 1, 0));
+        assert_eq!(tmp.path().read_dir().unwrap().count(), 0);
     }
 }
