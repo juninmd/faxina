@@ -13,8 +13,11 @@ installs them with your approval.
 ## Dependency advisories
 
 `src-tauri/Cargo.lock` and `bun.lock` are checked with `cargo audit` and `bun audit` when
-dependencies change. That check is a manual step today: CI runs fmt, clippy, tests and the
-frontend gates, but no audit gate. Every advisory is either fixed or recorded below with why it
+dependencies change. The same two commands also run in CI, in the `Dependency audit
+(informational)` job in `.github/workflows/ci.yml`, on every pull request and on pushes to `main`,
+so a new finding shows up without waiting for someone to remember. That job is deliberately not a
+gate (`continue-on-error` on the job and on each audit step), because the advisories below can
+stay open until upstream moves. Every advisory is either fixed or recorded below with why it
 cannot be fixed yet, its real exposure, an owner and a date to look at it again. Suppressing an
 advisory without that record is not allowed.
 
