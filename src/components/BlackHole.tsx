@@ -113,13 +113,18 @@ export function BlackHole({ sources, freed, failed, reason, onDone }: Props) {
         ctx.stroke();
         ctx.restore();
       }
+      // A second radial gradient instead of shadowBlur, which re-blurs the canvas every frame.
+      const rim = ctx.createRadialGradient(cx, cy, radius * 0.92, cx, cy, radius * 1.5);
+      rim.addColorStop(0, "rgba(255,170,60,0.7)");
+      rim.addColorStop(1, "rgba(255,170,60,0)");
+      ctx.fillStyle = rim;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius * 1.5, 0, Math.PI * 2);
+      ctx.fill();
       ctx.fillStyle = "#000";
-      ctx.shadowColor = "rgba(255,170,60,0.9)";
-      ctx.shadowBlur = 24;
       ctx.beginPath();
       ctx.arc(cx, cy, radius, 0, Math.PI * 2);
       ctx.fill();
-      ctx.shadowBlur = 0;
     };
 
     const tick = (now: number) => {
@@ -184,7 +189,8 @@ export function BlackHole({ sources, freed, failed, reason, onDone }: Props) {
           ctx.fillStyle = `rgba(255,${180 + Math.random() * 60},120,${Math.max(0, s.life)})`;
           ctx.fillRect(s.x, s.y, 2, 2);
         }
-        if (since > 2600) go("done");
+        // The counter settles after 1100 ms; the rest was dead air before the list came back.
+        if (since > 1800) go("done");
       }
       if (current !== "done") frame = requestAnimationFrame(tick);
     };

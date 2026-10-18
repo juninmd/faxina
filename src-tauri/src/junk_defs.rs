@@ -83,7 +83,7 @@ pub struct JunkDef {
 const DAY: Duration = Duration::from_secs(24 * 3600);
 const NOW: Duration = Duration::ZERO;
 
-fn def(
+pub(crate) fn def(
     id: &'static str,
     label: &'static str,
     group: &'static str,
@@ -100,12 +100,12 @@ fn def(
     }
 }
 
-const SYS: &str = "Sistema";
+pub(crate) const SYS: &str = "Sistema";
 #[cfg_attr(not(windows), allow(dead_code))]
 const WEB: &str = "Navegadores";
 #[cfg_attr(not(windows), allow(dead_code))]
-const APPS: &str = "Apps";
-const DEV: &str = "Desenvolvimento";
+pub(crate) const APPS: &str = "Apps";
+pub(crate) const DEV: &str = "Desenvolvimento";
 
 /// Caches every Chromium-family browser keeps next to its profiles. `root` is the browser data
 /// folder (the parent of `User Data`); `*Cache*` catches Cache, Code Cache, GPUCache, Media Cache
@@ -134,7 +134,7 @@ chromium_caches!(BRAVE_CACHES, "BraveSoftware/Brave-*");
 chromium_caches!(VIVALDI_CACHES, "Vivaldi");
 
 fn common() -> Vec<JunkDef> {
-    vec![
+    let mut v = vec![
         def(
             "bun",
             "Bun (cache de pacotes)",
@@ -191,7 +191,9 @@ fn common() -> Vec<JunkDef> {
             Base::Home,
             vec![whole(".local/share/pnpm/store"), whole(".pnpm-store")],
         ),
-    ]
+    ];
+    v.extend(crate::junk_tools_defs::definitions());
+    v
 }
 
 #[cfg(windows)]
@@ -322,6 +324,10 @@ pub fn definitions() -> Vec<JunkDef> {
                 whole("Code/CachedData"),
                 whole("Code/Code Cache"),
                 whole("Code/logs"),
+                whole("Code/CachedExtensionVSIXs"),
+                whole("Code/GPUCache"),
+                whole("Code/DawnGraphiteCache"),
+                whole("Code/DawnWebGPUCache"),
             ],
         ),
         def(

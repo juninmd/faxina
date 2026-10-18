@@ -39,8 +39,10 @@ export function useScan() {
         setRoot(path);
         setTotal(v.size);
         setView(v);
-        setSuggestions(await api.suggestions());
-        setDisk(await api.diskInfo(path));
+        // Independent reads: awaiting them one after the other kept the result screen waiting.
+        const [sug, info] = await Promise.all([api.suggestions(), api.diskInfo(path)]);
+        setSuggestions(sug);
+        setDisk(info);
       } catch (e) {
         setError(String(e));
       } finally {
@@ -64,9 +66,10 @@ export function useScan() {
     const current = view?.path ?? root;
     const next = await api.getView(current, depth).catch(() => api.getView(root, depth));
     setView(next);
-    setTotal((await api.getView(root, 0)).size);
-    setSuggestions(await api.suggestions());
-    setDisk(await api.diskInfo(root));
+    const [rootView, sug, info] = await Promise.all([api.getView(root, 0), api.suggestions(), api.diskInfo(root)]);
+    setTotal(rootView.size);
+    setSuggestions(sug);
+    setDisk(info);
   }, [root, view, depth]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-layout only when the depth changes
