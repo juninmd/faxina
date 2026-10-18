@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.2](https://github.com/juninmd/faxina/compare/v1.5.1...v1.5.2) (2026-10-18)
+
+
+### Performance Improvements
+
+* faster cold scans and recognise more dependency and cache folders ([#10](https://github.com/juninmd/faxina/issues/10)) ([e5750f7](https://github.com/juninmd/faxina/commit/e5750f711cba1cb9114e35cb99751012911adbe3))
+
 ## [1.5.1](https://github.com/juninmd/faxina/compare/v1.5.0...v1.5.1) (2026-10-17)
 
 
