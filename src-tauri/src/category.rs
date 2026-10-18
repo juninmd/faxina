@@ -1,4 +1,5 @@
 use crate::model::Kind;
+use std::borrow::Cow;
 use std::path::Path;
 
 const CACHE_DIRS: &[&str] = &[
@@ -26,6 +27,22 @@ const CACHE_DIRS: &[&str] = &[
     "crashdumps",
     ".gradle",
     "deriveddata",
+    ".ipynb_checkpoints",
+    ".import_linter_cache",
+    ".rpt2_cache",
+    ".nx",
+    ".vite",
+    ".astro",
+    ".docusaurus",
+    ".terragrunt-cache",
+    ".cxx",
+    ".externalnativebuild",
+    ".ccls-cache",
+    ".clangd",
+    ".bloop",
+    ".metals",
+    ".zig-cache",
+    "zig-cache",
 ];
 /// Names too common to trust outside application data (`Documents/Projeto/tmp` is user work).
 const GENERIC_CACHE_DIRS: &[&str] = &["cache", "caches", "temp", "tmp"];
@@ -48,9 +65,25 @@ const BUILD_DIRS: &[&str] = &[
     ".stack-work",
     "htmlcov",
     ".nyc_output",
+    "__pypackages__",
+    "jspm_packages",
+    ".output",
+    ".aws-sam",
+    "storybook-static",
+    "elm-stuff",
+    "dist-newstyle",
+    "zig-out",
 ];
 /// Build artifact folders whose name is too generic to trust without a matching manifest.
-const MANIFEST_BUILD_DIRS: &[&str] = &["pods", "carthage", "_build", ".dart_tool"];
+const MANIFEST_BUILD_DIRS: &[&str] = &[
+    "pods",
+    "carthage",
+    "_build",
+    ".dart_tool",
+    ".build",
+    ".swiftpm",
+    "coverage",
+];
 const MEDIA: &[&str] = &[
     "jpg", "jpeg", "png", "gif", "webp", "heic", "raw", "cr2", "nef", "psd", "mp4", "mkv", "mov",
     "avi", "webm", "mp3", "flac", "wav", "ogg", "m4a", "aac",
@@ -73,38 +106,54 @@ const LOG_EXT: &[&str] = &["log", "dmp", "tmp", "temp", "etl"];
 /// Context of the parent directory that some rules need (e.g. `target` only counts next to Cargo.toml).
 #[derive(Default, Clone, Copy)]
 pub struct DirHints {
-    pub has_cargo_toml: bool,
+    /// Cargo.toml, pom.xml or build.sbt: the tools whose output folder is called `target`.
+    pub has_target_manifest: bool,
     pub has_build_manifest: bool,
     pub under_app_data: bool,
 }
 
 /// Whether a path lies inside per-user application data, where generic cache names are safe.
 pub fn under_app_data(path: &Path) -> bool {
-    path.components().any(|c| {
-        let s = c.as_os_str().to_string_lossy().to_lowercase();
-        APP_DATA_DIRS.contains(&s.as_str())
-    })
+    path.components()
+        .any(|c| is_app_data_name(&c.as_os_str().to_string_lossy()))
+}
+
+/// Lets the scan carry the flag down one level at a time instead of re-reading the whole path.
+pub fn is_app_data_name(name: &str) -> bool {
+    APP_DATA_DIRS.contains(&lowercase(name).as_ref())
+}
+
+/// Most folder names are already lowercase ASCII, so the common case allocates nothing.
+fn lowercase(name: &str) -> Cow<'_, str> {
+    if name
+        .bytes()
+        .any(|b| b.is_ascii_uppercase() || !b.is_ascii())
+    {
+        Cow::Owned(name.to_lowercase())
+    } else {
+        Cow::Borrowed(name)
+    }
 }
 
 pub fn classify_dir(name: &str, hints: DirHints) -> Option<Kind> {
-    let lower = name.to_lowercase();
+    let lower = lowercase(name);
+    let lower = lower.as_ref();
     if lower == ".git" {
         return Some(Kind::Git);
     }
-    if CACHE_DIRS.contains(&lower.as_str())
-        || (hints.under_app_data && GENERIC_CACHE_DIRS.contains(&lower.as_str()))
+    if CACHE_DIRS.contains(&lower) || (hints.under_app_data && GENERIC_CACHE_DIRS.contains(&lower))
     {
         return Some(Kind::Cache);
     }
-    if BUILD_DIRS.contains(&lower.as_str()) {
+    if BUILD_DIRS.contains(&lower) {
         return Some(Kind::Build);
     }
-    if lower == "target" && hints.has_cargo_toml {
+    if lower == "target" && hints.has_target_manifest {
         return Some(Kind::Build);
     }
     if hints.has_build_manifest
-        && (matches!(lower.as_str(), "dist" | "build" | "out" | "bin" | "obj")
-            || MANIFEST_BUILD_DIRS.contains(&lower.as_str())
+        && (matches!(lower, "dist" | "build" | "out" | "bin" | "obj")
+            || MANIFEST_BUILD_DIRS.contains(&lower)
             || lower.starts_with("cmake-build-"))
     {
         return Some(Kind::Build);
@@ -136,17 +185,17 @@ pub fn classify_file(name: &str) -> Kind {
 }
 
 /// Hints derived from the file names inside a directory.
-pub fn hints_for(file_names: &[String]) -> DirHints {
+pub fn hints_for<'a>(file_names: impl IntoIterator<Item = &'a str>) -> DirHints {
     let mut h = DirHints::default();
     for n in file_names {
-        match n.as_str() {
-            "Cargo.toml" => {
-                h.has_cargo_toml = true;
+        match n {
+            "Cargo.toml" | "pom.xml" | "build.sbt" => {
+                h.has_target_manifest = true;
                 h.has_build_manifest = true;
             }
-            "package.json" | "pom.xml" | "build.gradle" | "build.gradle.kts" | "CMakeLists.txt"
+            "package.json" | "build.gradle" | "build.gradle.kts" | "CMakeLists.txt"
             | "pyproject.toml" | "go.mod" | "Podfile" | "Cartfile" | "mix.exs" | "pubspec.yaml"
-            | "dune-project" | "build.sbt" => h.has_build_manifest = true,
+            | "dune-project" | "Package.swift" | "build.zig" => h.has_build_manifest = true,
             n if n.ends_with(".csproj") || n.ends_with(".sln") => h.has_build_manifest = true,
             _ => {}
         }
@@ -160,16 +209,67 @@ mod tests {
 
     #[test]
     fn target_is_build_only_next_to_cargo_toml() {
-        let rust = hints_for(&["Cargo.toml".into()]);
+        let rust = hints_for(["Cargo.toml"]);
         assert_eq!(classify_dir("target", rust), Some(Kind::Build));
         // A folder literally named "target" in Documents is user data, never reclaimable.
         assert_eq!(classify_dir("target", DirHints::default()), None);
     }
 
     #[test]
+    fn target_also_follows_maven_and_sbt_manifests() {
+        for manifest in ["pom.xml", "build.sbt"] {
+            assert_eq!(
+                classify_dir("target", hints_for([manifest])),
+                Some(Kind::Build),
+                "{manifest}"
+            );
+        }
+        // package.json is a build manifest but its output is never called `target`.
+        assert_eq!(classify_dir("target", hints_for(["package.json"])), None);
+    }
+
+    #[test]
+    fn toolchain_dependency_and_cache_dirs_are_recognized() {
+        let none = DirHints::default();
+        for n in [
+            "__pypackages__",
+            "jspm_packages",
+            ".output",
+            "elm-stuff",
+            "dist-newstyle",
+            "zig-out",
+            "storybook-static",
+        ] {
+            assert_eq!(classify_dir(n, none), Some(Kind::Build), "{n}");
+        }
+        for n in [
+            ".ipynb_checkpoints",
+            ".nx",
+            ".vite",
+            ".astro",
+            ".terragrunt-cache",
+            ".cxx",
+            ".clangd",
+            ".zig-cache",
+        ] {
+            assert_eq!(classify_dir(n, none), Some(Kind::Cache), "{n}");
+        }
+    }
+
+    #[test]
+    fn swiftpm_and_coverage_need_a_manifest() {
+        for n in [".build", "coverage"] {
+            assert_eq!(classify_dir(n, DirHints::default()), None, "{n}");
+        }
+        let swift = hints_for(["Package.swift"]);
+        assert_eq!(classify_dir(".build", swift), Some(Kind::Build));
+        assert_eq!(classify_dir("Coverage", swift), Some(Kind::Build));
+    }
+
+    #[test]
     fn dist_needs_a_build_manifest() {
         assert_eq!(
-            classify_dir("dist", hints_for(&["package.json".into()])),
+            classify_dir("dist", hints_for(["package.json"])),
             Some(Kind::Build)
         );
         assert_eq!(classify_dir("dist", DirHints::default()), None);
@@ -182,14 +282,14 @@ mod tests {
             assert_eq!(classify_dir(n, DirHints::default()), None, "{n}");
         }
         assert_eq!(
-            classify_dir("Pods", hints_for(&["Podfile".into()])),
+            classify_dir("Pods", hints_for(["Podfile"])),
             Some(Kind::Build)
         );
         assert_eq!(
-            classify_dir("_build", hints_for(&["mix.exs".into()])),
+            classify_dir("_build", hints_for(["mix.exs"])),
             Some(Kind::Build)
         );
-        let cmake = hints_for(&["CMakeLists.txt".into()]);
+        let cmake = hints_for(["CMakeLists.txt"]);
         assert_eq!(classify_dir("cmake-build-debug", cmake), Some(Kind::Build));
         assert_eq!(classify_dir("cmake-build-debug", DirHints::default()), None);
     }
@@ -223,6 +323,7 @@ mod tests {
             ..DirHints::default()
         };
         assert_eq!(classify_dir("Temp", app), Some(Kind::Cache));
+        assert!(is_app_data_name("AppData") && !is_app_data_name("Documents"));
         assert!(under_app_data(Path::new("/home/u/.cache/pip")));
         assert!(under_app_data(Path::new("C:/Users/u/AppData/Local")));
         assert!(!under_app_data(Path::new("C:/Users/u/Documents/Projeto")));

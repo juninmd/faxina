@@ -5,7 +5,9 @@ use std::time::UNIX_EPOCH;
 
 use rayon::prelude::*;
 
-use crate::category::{classify_dir, classify_file, hints_for, under_app_data, DirHints};
+use crate::category::{
+    classify_dir, classify_file, hints_for, is_app_data_name, under_app_data, DirHints,
+};
 use crate::listing::{self, Links};
 use crate::model::{Kind, Node};
 
@@ -24,15 +26,39 @@ pub struct Progress {
     pub cancel: AtomicBool,
 }
 
+/// What every directory of one scan shares.
+struct Ctx<'a> {
+    ids: bool,
+    /// The hard-link set belongs to one scan: keeping it on `Progress` made a second scan in the
+    /// same session treat every file as already counted and report an empty tree.
+    links: Links,
+    progress: &'a Progress,
+}
+
 pub fn scan(root: &Path, progress: &Progress) -> Node {
     let name = root.to_string_lossy().into_owned();
-    let ids = listing::ids_supported(root);
-    // The hard-link set belongs to one scan: keeping it on `Progress` made a second scan in the
-    // same session treat every file as already counted and report an empty tree.
-    let links = Links::default();
-    let mut node = scan_dir(root, name, Kind::Other, ids, &links, progress, 0);
+    let ctx = Ctx {
+        ids: listing::ids_supported(root),
+        links: Links::default(),
+        progress,
+    };
+    let run = || scan_dir(root, name, Kind::Other, under_app_data(root), &ctx, 0);
+    // Directory listing waits on the disk, not the CPU: on a spinning drive a pool sized to the
+    // core count keeps too few requests in flight (a cold 15k-file tree took 16 s).
+    let mut node = match rayon::ThreadPoolBuilder::new()
+        .num_threads(io_threads())
+        .build()
+    {
+        Ok(pool) => pool.install(run),
+        Err(_) => run(),
+    };
     node.kind = dominant_kind(&node.children);
     node
+}
+
+fn io_threads() -> usize {
+    let cores = std::thread::available_parallelism().map_or(4, usize::from);
+    (cores * 4).clamp(16, 64)
 }
 
 pub fn mtime(meta: &Metadata) -> u64 {
@@ -60,9 +86,8 @@ fn scan_dir(
     path: &Path,
     name: String,
     forced: Kind,
-    ids: bool,
-    links: &Links,
-    progress: &Progress,
+    in_app_data: bool,
+    ctx: &Ctx,
     depth: usize,
 ) -> Node {
     let mut node = Node {
@@ -76,16 +101,26 @@ fn scan_dir(
         reclaimable: forced.reclaimable(),
         children: Vec::new(),
     };
-    if depth > MAX_DEPTH || progress.cancel.load(Ordering::Relaxed) {
+    if depth > MAX_DEPTH || ctx.progress.cancel.load(Ordering::Relaxed) {
         return node;
     }
-    let Ok(entries) = listing::list(path, ids) else {
+    let Ok(entries) = listing::list(path, ctx.ids) else {
         return node;
     };
 
+    let hints = DirHints {
+        under_app_data: in_app_data,
+        ..hints_for(
+            entries
+                .iter()
+                .filter(|e| !e.is_dir)
+                .map(|e| e.name.as_str()),
+        )
+    };
     let mut dirs = Vec::new();
-    let mut file_names = Vec::new();
     let (mut small_size, mut small_count, mut small_mtime) = (0u64, 0u64, 0u64);
+    // One atomic update per directory: a fetch_add per file made every core fight for the counter.
+    let (mut seen_files, mut seen_bytes) = (0u64, 0u64);
 
     for entry in entries {
         let entry_name = entry.name;
@@ -94,12 +129,12 @@ fn scan_dir(
             continue;
         }
         // Another link to this file was already counted: it takes no extra space.
-        if entry.id.is_some_and(|id| !links.first(id)) {
+        if entry.id.is_some_and(|id| !ctx.links.first(id)) {
             continue;
         }
         let (size, modified) = (entry.size, entry.modified);
-        progress.files.fetch_add(1, Ordering::Relaxed);
-        progress.bytes.fetch_add(size, Ordering::Relaxed);
+        seen_files += 1;
+        seen_bytes += size;
         if size >= SMALL_FILE {
             let kind = if forced == Kind::Other {
                 classify_file(&entry_name)
@@ -107,19 +142,16 @@ fn scan_dir(
                 forced
             };
             node.children
-                .push(Node::file(entry_name.clone(), size, modified, kind));
+                .push(Node::file(entry_name, size, modified, kind));
         } else {
             small_size += size;
             small_count += 1;
             small_mtime = small_mtime.max(modified);
         }
-        file_names.push(entry_name);
     }
+    ctx.progress.files.fetch_add(seen_files, Ordering::Relaxed);
+    ctx.progress.bytes.fetch_add(seen_bytes, Ordering::Relaxed);
 
-    let hints = DirHints {
-        under_app_data: under_app_data(path),
-        ..hints_for(&file_names)
-    };
     let subdirs: Vec<Node> = dirs
         .into_par_iter()
         .map(|(p, n)| {
@@ -129,7 +161,8 @@ fn scan_dir(
             } else {
                 forced
             };
-            let mut child = scan_dir(&p, n, inherited, ids, links, progress, depth + 1);
+            let child_in_app_data = in_app_data || is_app_data_name(&n);
+            let mut child = scan_dir(&p, n, inherited, child_in_app_data, ctx, depth + 1);
             if inherited == Kind::Other {
                 child.kind = dominant_kind(&child.children);
             }
@@ -211,6 +244,57 @@ mod tests {
         // Everything under a reclaimable folder inherits its kind.
         assert_eq!(target.child("debug").unwrap().kind, Kind::Build);
         assert!(tree.children.iter().any(|c| c.grouped && c.files == 2));
+    }
+
+    #[test]
+    fn maven_target_is_reclaimable_only_next_to_its_manifest() {
+        let tmp = tempfile::tempdir().unwrap();
+        for proj in ["maven", "plain"] {
+            create_dir_all(tmp.path().join(proj).join("target")).unwrap();
+        }
+        write(tmp.path().join("maven/pom.xml"), "<project/>").unwrap();
+
+        let tree = scan(tmp.path(), &Progress::default());
+
+        assert!(
+            tree.child("maven")
+                .unwrap()
+                .child("target")
+                .unwrap()
+                .reclaimable
+        );
+        assert!(
+            !tree
+                .child("plain")
+                .unwrap()
+                .child("target")
+                .unwrap()
+                .reclaimable
+        );
+    }
+
+    #[test]
+    fn generic_cache_names_are_trusted_below_an_app_data_folder() {
+        // The flag travels down one level per directory instead of being re-derived per path.
+        let tmp = tempfile::tempdir().unwrap();
+        create_dir_all(tmp.path().join("AppData/Local/Temp")).unwrap();
+        write(
+            tmp.path().join("AppData/Local/Temp/x.bin"),
+            vec![0u8; SMALL_FILE as usize],
+        )
+        .unwrap();
+
+        let tree = scan(tmp.path(), &Progress::default());
+
+        let temp = tree
+            .child("AppData")
+            .unwrap()
+            .child("Local")
+            .unwrap()
+            .child("Temp")
+            .unwrap();
+        assert_eq!(temp.kind, Kind::Cache);
+        assert!(temp.reclaimable);
     }
 
     #[test]
