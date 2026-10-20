@@ -43,6 +43,14 @@ const CACHE_DIRS: &[&str] = &[
     ".metals",
     ".zig-cache",
     "zig-cache",
+    ".serverless",
+    ".wrangler",
+    ".expo",
+    ".godot",
+    ".vs",
+    "deriveddatacache",
+    ".aider.tags.cache.v3",
+    ".aider.tags.cache.v4",
 ];
 /// Names too common to trust outside application data (`Documents/Projeto/tmp` is user work).
 const GENERIC_CACHE_DIRS: &[&str] = &["cache", "caches", "temp", "tmp"];
@@ -73,6 +81,7 @@ const BUILD_DIRS: &[&str] = &[
     "elm-stuff",
     "dist-newstyle",
     "zig-out",
+    "cdk.out",
 ];
 /// Build artifact folders whose name is too generic to trust without a matching manifest.
 const MANIFEST_BUILD_DIRS: &[&str] = &[
@@ -101,7 +110,19 @@ const ARCHIVES: &[&str] = &[
 const APPS: &[&str] = &[
     "exe", "msi", "dll", "so", "dylib", "app", "appimage", "deb", "rpm", "pak", "bin", "sys",
 ];
-const LOG_EXT: &[&str] = &["log", "dmp", "tmp", "temp", "etl"];
+// hprof: Java heap dumps (often GBs); crdownload: interrupted Chromium downloads.
+const LOG_EXT: &[&str] = &[
+    "log",
+    "dmp",
+    "tmp",
+    "temp",
+    "etl",
+    "hprof",
+    "crdownload",
+    "stackdump",
+];
+/// Files the OS or file managers regenerate on their own.
+const JUNK_FILES: &[&str] = &[".ds_store", "thumbs.db"];
 
 /// Context of the parent directory that some rules need (e.g. `target` only counts next to Cargo.toml).
 #[derive(Default, Clone, Copy)]
@@ -162,6 +183,9 @@ pub fn classify_dir(name: &str, hints: DirHints) -> Option<Kind> {
 }
 
 pub fn classify_file(name: &str) -> Kind {
+    if JUNK_FILES.iter().any(|j| name.eq_ignore_ascii_case(j)) {
+        return Kind::Cache;
+    }
     let ext = match name.rsplit_once('.') {
         Some((stem, ext)) if !stem.is_empty() => ext.to_lowercase(),
         _ => return Kind::Other,
@@ -239,6 +263,7 @@ mod tests {
             "dist-newstyle",
             "zig-out",
             "storybook-static",
+            "cdk.out",
         ] {
             assert_eq!(classify_dir(n, none), Some(Kind::Build), "{n}");
         }
@@ -251,6 +276,11 @@ mod tests {
             ".cxx",
             ".clangd",
             ".zig-cache",
+            ".serverless",
+            ".godot",
+            ".vs",
+            "DerivedDataCache",
+            ".aider.tags.cache.v3",
         ] {
             assert_eq!(classify_dir(n, none), Some(Kind::Cache), "{n}");
         }
@@ -347,6 +377,14 @@ mod tests {
     fn files_by_extension_case_insensitive() {
         assert_eq!(classify_file("Férias.JPG"), Kind::Media);
         assert_eq!(classify_file("crash.dmp"), Kind::Cache);
+        for n in [
+            "java_pid1.hprof",
+            "a.zip.crdownload",
+            ".DS_Store",
+            "Thumbs.db",
+        ] {
+            assert_eq!(classify_file(n), Kind::Cache, "{n}");
+        }
         assert_eq!(classify_file("main.rs"), Kind::Code);
         assert_eq!(classify_file(".bashrc"), Kind::Other);
         assert_eq!(classify_file("README"), Kind::Other);

@@ -43,6 +43,7 @@ pub fn base_dir(base: Base) -> Option<PathBuf> {
         Base::Roaming => dirs::data_dir(),
         Base::Cache => dirs::cache_dir(),
         Base::Temp => Some(std::env::temp_dir()),
+        Base::Config => dirs::config_dir(),
     }
 }
 

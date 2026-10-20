@@ -17,6 +17,8 @@ pub enum Base {
     Roaming,
     Cache,
     Temp,
+    /// `~/.config` on Linux, `Application Support` on macOS, Roaming on Windows (Electron's home).
+    Config,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +100,23 @@ pub(crate) fn def(
         rules,
         min_age: NOW,
     }
+}
+
+/// A definition that wipes the contents of every listed folder.
+pub(crate) fn caches(
+    id: &'static str,
+    label: &'static str,
+    group: &'static str,
+    base: Base,
+    paths: &[&'static str],
+) -> JunkDef {
+    def(
+        id,
+        label,
+        group,
+        base,
+        paths.iter().copied().map(whole).collect(),
+    )
 }
 
 pub(crate) const SYS: &str = "Sistema";
@@ -193,6 +212,9 @@ fn common() -> Vec<JunkDef> {
         ),
     ];
     v.extend(crate::junk_tools_defs::definitions());
+    v.extend(crate::junk_ai_defs::definitions());
+    v.extend(crate::junk_native_defs::definitions());
+    v.extend(crate::junk_apps_defs::definitions());
     v
 }
 
