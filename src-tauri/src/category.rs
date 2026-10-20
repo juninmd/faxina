@@ -43,6 +43,14 @@ const CACHE_DIRS: &[&str] = &[
     ".metals",
     ".zig-cache",
     "zig-cache",
+    ".serverless",
+    ".wrangler",
+    ".expo",
+    ".godot",
+    ".vs",
+    "deriveddatacache",
+    ".aider.tags.cache.v3",
+    ".aider.tags.cache.v4",
 ];
 /// Names too common to trust outside application data (`Documents/Projeto/tmp` is user work).
 const GENERIC_CACHE_DIRS: &[&str] = &["cache", "caches", "temp", "tmp"];
@@ -73,6 +81,7 @@ const BUILD_DIRS: &[&str] = &[
     "elm-stuff",
     "dist-newstyle",
     "zig-out",
+    "cdk.out",
 ];
 /// Build artifact folders whose name is too generic to trust without a matching manifest.
 const MANIFEST_BUILD_DIRS: &[&str] = &[
@@ -101,7 +110,19 @@ const ARCHIVES: &[&str] = &[
 const APPS: &[&str] = &[
     "exe", "msi", "dll", "so", "dylib", "app", "appimage", "deb", "rpm", "pak", "bin", "sys",
 ];
-const LOG_EXT: &[&str] = &["log", "dmp", "tmp", "temp", "etl"];
+// hprof: Java heap dumps (often GBs); crdownload: interrupted Chromium downloads.
+const LOG_EXT: &[&str] = &[
+    "log",
+    "dmp",
+    "tmp",
+    "temp",
+    "etl",
+    "hprof",
+    "crdownload",
+    "stackdump",
+];
+/// Files the OS or file managers regenerate on their own.
+const JUNK_FILES: &[&str] = &[".ds_store", "thumbs.db"];
 
 /// Context of the parent directory that some rules need (e.g. `target` only counts next to Cargo.toml).
 #[derive(Default, Clone, Copy)]
@@ -110,6 +131,12 @@ pub struct DirHints {
     pub has_target_manifest: bool,
     pub has_build_manifest: bool,
     pub under_app_data: bool,
+    /// Assets/ and ProjectSettings/ side by side: a Unity project, whose `Library` is a cache.
+    pub has_unity: bool,
+    /// A `.uproject` file: an Unreal project, whose `Intermediate` and `Binaries` are rebuilt.
+    pub has_unreal: bool,
+    /// mix.exs: the Elixir project whose `deps` folder `mix deps.get` refills.
+    pub has_mix: bool,
 }
 
 /// Whether a path lies inside per-user application data, where generic cache names are safe.
@@ -151,6 +178,12 @@ pub fn classify_dir(name: &str, hints: DirHints) -> Option<Kind> {
     if lower == "target" && hints.has_target_manifest {
         return Some(Kind::Build);
     }
+    if (hints.has_unity && lower == "library")
+        || (hints.has_unreal && matches!(lower, "intermediate" | "binaries"))
+        || (hints.has_mix && lower == "deps")
+    {
+        return Some(Kind::Build);
+    }
     if hints.has_build_manifest
         && (matches!(lower, "dist" | "build" | "out" | "bin" | "obj")
             || MANIFEST_BUILD_DIRS.contains(&lower)
@@ -162,6 +195,9 @@ pub fn classify_dir(name: &str, hints: DirHints) -> Option<Kind> {
 }
 
 pub fn classify_file(name: &str) -> Kind {
+    if JUNK_FILES.iter().any(|j| name.eq_ignore_ascii_case(j)) {
+        return Kind::Cache;
+    }
     let ext = match name.rsplit_once('.') {
         Some((stem, ext)) if !stem.is_empty() => ext.to_lowercase(),
         _ => return Kind::Other,
@@ -187,19 +223,28 @@ pub fn classify_file(name: &str) -> Kind {
 /// Hints derived from the file names inside a directory.
 pub fn hints_for<'a>(file_names: impl IntoIterator<Item = &'a str>) -> DirHints {
     let mut h = DirHints::default();
+    let (mut assets, mut settings) = (false, false);
     for n in file_names {
         match n {
+            "Assets" => assets = true,
+            "ProjectSettings" => settings = true,
+            "mix.exs" => {
+                h.has_mix = true;
+                h.has_build_manifest = true;
+            }
+            n if n.ends_with(".uproject") => h.has_unreal = true,
             "Cargo.toml" | "pom.xml" | "build.sbt" => {
                 h.has_target_manifest = true;
                 h.has_build_manifest = true;
             }
             "package.json" | "build.gradle" | "build.gradle.kts" | "CMakeLists.txt"
-            | "pyproject.toml" | "go.mod" | "Podfile" | "Cartfile" | "mix.exs" | "pubspec.yaml"
+            | "pyproject.toml" | "go.mod" | "Podfile" | "Cartfile" | "pubspec.yaml"
             | "dune-project" | "Package.swift" | "build.zig" => h.has_build_manifest = true,
             n if n.ends_with(".csproj") || n.ends_with(".sln") => h.has_build_manifest = true,
             _ => {}
         }
     }
+    h.has_unity = assets && settings;
     h
 }
 
@@ -239,6 +284,7 @@ mod tests {
             "dist-newstyle",
             "zig-out",
             "storybook-static",
+            "cdk.out",
         ] {
             assert_eq!(classify_dir(n, none), Some(Kind::Build), "{n}");
         }
@@ -251,9 +297,36 @@ mod tests {
             ".cxx",
             ".clangd",
             ".zig-cache",
+            ".serverless",
+            ".godot",
+            ".vs",
+            "DerivedDataCache",
+            ".aider.tags.cache.v3",
         ] {
             assert_eq!(classify_dir(n, none), Some(Kind::Cache), "{n}");
         }
+    }
+
+    #[test]
+    fn engine_and_elixir_folders_need_their_project_markers() {
+        let unity = hints_for(["Assets", "ProjectSettings", "Packages"]);
+        assert_eq!(classify_dir("Library", unity), Some(Kind::Build));
+        // A lone "Library" (or one beside only Assets) is the user's.
+        assert_eq!(classify_dir("Library", hints_for(["Assets"])), None);
+        assert_eq!(classify_dir("Library", DirHints::default()), None);
+        let unreal = hints_for(["Game.uproject", "Config"]);
+        for n in ["Intermediate", "Binaries"] {
+            assert_eq!(classify_dir(n, unreal), Some(Kind::Build), "{n}");
+        }
+        assert_eq!(
+            classify_dir("Intermediate", hints_for(["package.json"])),
+            None
+        );
+        assert_eq!(
+            classify_dir("deps", hints_for(["mix.exs"])),
+            Some(Kind::Build)
+        );
+        assert_eq!(classify_dir("deps", hints_for(["package.json"])), None);
     }
 
     #[test]
@@ -347,6 +420,14 @@ mod tests {
     fn files_by_extension_case_insensitive() {
         assert_eq!(classify_file("Férias.JPG"), Kind::Media);
         assert_eq!(classify_file("crash.dmp"), Kind::Cache);
+        for n in [
+            "java_pid1.hprof",
+            "a.zip.crdownload",
+            ".DS_Store",
+            "Thumbs.db",
+        ] {
+            assert_eq!(classify_file(n), Kind::Cache, "{n}");
+        }
         assert_eq!(classify_file("main.rs"), Kind::Code);
         assert_eq!(classify_file(".bashrc"), Kind::Other);
         assert_eq!(classify_file("README"), Kind::Other);

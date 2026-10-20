@@ -72,6 +72,24 @@ describe("domain logic", () => {
     expect(custom?.size).toBe(1024 * 500);
   });
 
+  test("opt-in items from the scan carry their warning and are never recommended", () => {
+    const items: JunkItem[] = [
+      {
+        id: "ollama-models",
+        label: "Modelos do Ollama",
+        group: "Desenvolvimento",
+        size: 1024 * 1024 * 1024 * 8,
+        files: 4,
+        paths: ["/home/u/.ollama/models"],
+        caution: "Modelos que você baixou. Voltam a ser baixados quando usar.",
+      },
+    ];
+    const merged = mergeRulesWithScan(items);
+    const ollama = merged.find((r) => r.id === "ollama-models");
+    expect(ollama?.caution).toContain("baixou");
+    expect(recommended(merged, DEFAULT_SETTINGS).some((r) => r.id === "ollama-models")).toBe(false);
+  });
+
   test("recommended filters out 0-size, blocked, busy, caution, and excluded items", () => {
     const testRules: Rule[] = [
       {

@@ -17,6 +17,8 @@ pub enum Base {
     Roaming,
     Cache,
     Temp,
+    /// `~/.config` on Linux, `Application Support` on macOS, Roaming on Windows (Electron's home).
+    Config,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +79,9 @@ pub struct JunkDef {
     pub base: Base,
     pub rules: Vec<Rule>,
     pub min_age: Duration,
+    /// Opt-in: the UI leaves it unticked and shows this warning. User-chosen downloads and
+    /// anything slow or costly to get back live here, never in the one-click clean.
+    pub caution: Option<&'static str>,
 }
 
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -97,7 +102,33 @@ pub(crate) fn def(
         base,
         rules,
         min_age: NOW,
+        caution: None,
     }
+}
+
+/// Marks a definition as opt-in with the warning the user sees before ticking it.
+pub(crate) fn opt_in(def: JunkDef, caution: &'static str) -> JunkDef {
+    JunkDef {
+        caution: Some(caution),
+        ..def
+    }
+}
+
+/// A definition that wipes the contents of every listed folder.
+pub(crate) fn caches(
+    id: &'static str,
+    label: &'static str,
+    group: &'static str,
+    base: Base,
+    paths: &[&'static str],
+) -> JunkDef {
+    def(
+        id,
+        label,
+        group,
+        base,
+        paths.iter().copied().map(whole).collect(),
+    )
 }
 
 pub(crate) const SYS: &str = "Sistema";
@@ -193,6 +224,10 @@ fn common() -> Vec<JunkDef> {
         ),
     ];
     v.extend(crate::junk_tools_defs::definitions());
+    v.extend(crate::junk_ai_defs::definitions());
+    v.extend(crate::junk_native_defs::definitions());
+    v.extend(crate::junk_apps_defs::definitions());
+    v.extend(crate::junk_optin_defs::definitions());
     v
 }
 
@@ -455,6 +490,21 @@ mod tests {
         ids.dedup();
         assert_eq!(ids.len(), defs.len());
         assert!(defs.iter().all(|d| !d.rules.is_empty()));
+    }
+
+    #[test]
+    fn opt_in_defs_carry_a_warning() {
+        let defs = definitions();
+        let warned: Vec<_> = defs.iter().filter(|d| d.caution.is_some()).collect();
+        assert!(warned.len() >= 8, "opt-in list went missing");
+        assert!(warned
+            .iter()
+            .all(|d| d.caution.is_some_and(|c| c.len() > 20)));
+        // The auto-selected ones stay free of user-chosen downloads.
+        assert!(defs
+            .iter()
+            .filter(|d| d.caution.is_none())
+            .all(|d| !d.id.contains("ollama") && !d.id.contains("lmstudio-models")));
     }
 
     #[test]

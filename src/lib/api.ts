@@ -44,6 +44,8 @@ export interface JunkItem {
   size: number;
   files: number;
   paths: string[];
+  /** Opt-in item: never ticked by default; this is the warning to show. */
+  caution?: string | null;
 }
 
 export interface CleanReport {
