@@ -346,6 +346,7 @@ export function mergeRulesWithScan(items: JunkItem[]): Rule[] {
       size: item.size,
       files: item.files,
       path: item.paths[0] || rule.path,
+      caution: item.caution ?? rule.caution,
     };
   });
 
@@ -360,7 +361,10 @@ export function mergeRulesWithScan(items: JunkItem[]): Rule[] {
         size: item.size,
         files: item.files,
         path: item.paths[0] || item.label,
-        consequence: "Caches e arquivos temporários que os aplicativos recriam sozinhos.",
+        consequence: item.caution
+          ? `${item.caution} Fica desmarcado até você escolher.`
+          : "Caches e arquivos temporários que os aplicativos recriam sozinhos.",
+        caution: item.caution ?? undefined,
       });
     }
   }

@@ -110,12 +110,8 @@ fn scan_dir(
 
     let hints = DirHints {
         under_app_data: in_app_data,
-        ..hints_for(
-            entries
-                .iter()
-                .filter(|e| !e.is_dir)
-                .map(|e| e.name.as_str()),
-        )
+        // Unity is told apart by its two sibling folders, so directories take part too.
+        ..hints_for(entries.iter().map(|e| e.name.as_str()))
     };
     let mut dirs = Vec::new();
     let (mut small_size, mut small_count, mut small_mtime) = (0u64, 0u64, 0u64);

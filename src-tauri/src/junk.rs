@@ -21,6 +21,7 @@ pub struct JunkItem {
     pub size: u64,
     pub files: u64,
     pub paths: Vec<String>,
+    pub caution: Option<&'static str>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -236,6 +237,7 @@ pub fn scan_all() -> Vec<JunkItem> {
                     .iter()
                     .map(|p| p.to_string_lossy().into_owned())
                     .collect(),
+                caution: def.caution,
             })
         })
         .collect();

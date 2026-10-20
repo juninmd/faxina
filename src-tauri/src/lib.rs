@@ -8,6 +8,7 @@ mod junk_ai_defs;
 mod junk_apps_defs;
 mod junk_defs;
 mod junk_native_defs;
+mod junk_optin_defs;
 mod junk_tools_defs;
 mod listing;
 mod model;
