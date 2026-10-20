@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.6.0](https://github.com/juninmd/faxina/compare/v1.5.2...v1.6.0) (2026-10-20)
+
+
+### Features
+
+* clean more AI, toolchain and app caches, with an opt-in mode ([#11](https://github.com/juninmd/faxina/issues/11)) ([646a51b](https://github.com/juninmd/faxina/commit/646a51b525b4a669d903b4738038fec5c1977ffd))
+
 ## [1.5.2](https://github.com/juninmd/faxina/compare/v1.5.1...v1.5.2) (2026-10-18)
 
 
