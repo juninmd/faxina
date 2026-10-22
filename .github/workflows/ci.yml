@@ -16,26 +16,11 @@ jobs:
   commits:
     name: Conventional commits
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      - run: bun install --frozen-lockfile
-      - run: bunx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }}
+    uses: juninmd/base-actions/.github/workflows/reusable-commit-lint.yml@main
 
   web:
     name: Frontend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      - run: bun install --frozen-lockfile
-      - run: bunx biome ci .
-      - run: bun run typecheck
-      - run: bun run test
-      - run: bun run build
+    uses: juninmd/base-actions/.github/workflows/reusable-validate.yml@main
 
   audit:
     name: Dependency audit (informational)
