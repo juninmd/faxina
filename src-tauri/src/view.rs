@@ -328,7 +328,7 @@ mod tests {
         assert_eq!(s.len(), 1);
         assert_eq!(s[0].name, "old/node_modules");
         assert_eq!(s[0].reason, "projeto parado há 13 meses");
-        assert!(s[0].path.ends_with("old/node_modules"));
+        assert!(Path::new(&s[0].path).ends_with("old/node_modules"));
     }
 
     #[test]
