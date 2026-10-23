@@ -20,6 +20,10 @@ Mapa visual do disco no estilo DaisyDisk, limpeza de caches no estilo CCleaner e
 
 ---
 
+**Índice:** [Funcionalidades](#-o-que-ele-faz) · [Telas](#-telas) · [Instalação](#-instalação) · [Uso](#-uso) · [Segurança](#-segurança-primeiro) · [Atalhos](#-atalhos) · [Arquitetura](#-como-funciona) · [Desenvolvimento](#-desenvolvimento) · [Testes e gates de CI](#-testes-e-gates-de-ci) · [Limitações](#-limitações-conhecidas)
+
+Para quem: quem tem o disco cheio e não sabe por quê. O Faxina mostra onde o espaço foi parar, sugere o que é seguro apagar (caches, `node_modules`, `target/`, duplicatas) e remove com a Lixeira como padrão.
+
 ## ✨ O que ele faz
 
 | | |
@@ -50,7 +54,7 @@ Mapa visual do disco no estilo DaisyDisk, limpeza de caches no estilo CCleaner e
 
 <sub>Capturas feitas sobre uma pasta de demonstração gerada por <code>scripts/demo-fixture.ts</code>.</sub>
 
-## ⬇️ Instalação
+## ⬇ Instalação
 
 Baixe o instalador da [última versão](https://github.com/juninmd/faxina/releases/latest):
 
@@ -64,6 +68,38 @@ Baixe o instalador da [última versão](https://github.com/juninmd/faxina/releas
 > [!NOTE]
 > Os binários ainda não têm assinatura de código da Microsoft/Apple. No Windows, o SmartScreen pede **Mais informações → Executar assim mesmo**; no macOS (assinatura ad-hoc), abra com **botão direito → Abrir** na primeira vez — se aparecer “danificado”, rode `xattr -cr /Applications/Faxina.app`. As *atualizações* são assinadas com a chave do updater do Tauri, então o app só aceita pacotes publicados por este repositório.
 
+## 🚀 Uso
+
+O Faxina é um app de janela (sem linha de comando). O fluxo básico:
+
+1. **Abra o app e escolha a área.** Pasta pessoal, outra pasta ou um disco inteiro (C:, D:…). A varredura mostra o progresso e, ao terminar, o mapa.
+2. **Navegue.** Enter ou duplo clique entra na pasta; Backspace volta; `t` alterna entre Blocos e Anéis.
+3. **Marque e exclua.** Espaço ou botão direito marca o bloco; confirme no diálogo (Lixeira por padrão). O contador mostra o espaço liberado.
+4. **Caches e duplicatas.** “Revisar limpeza” e “Duplicatas”, na barra lateral, trabalham por ID de cache e por conteúdo, nunca por caminho vindo da interface.
+
+Para experimentar sem tocar nos seus arquivos, gere uma pasta de demonstração (caches, builds e duplicatas falsos) e analise-a no app:
+
+```bash
+bun scripts/demo-fixture.ts ./demo
+# demo fixture ready at C:\...\demo
+ls ./demo
+# AppData  Documentos  Downloads  Fotos  Música  Projetos  Vídeos
+```
+
+O script recusa um destino que já existe, para nunca escrever sobre dados reais:
+
+```bash
+bun scripts/demo-fixture.ts ./demo
+# refusing to write into existing path: ./demo
+```
+
+Sem argumento, ele imprime o uso e sai com código 1:
+
+```bash
+bun scripts/demo-fixture.ts
+# usage: bun scripts/demo-fixture.ts <target-dir>
+```
+
 ## 🔒 Segurança primeiro
 
 - **Lixeira por padrão.** Exclusão permanente é opt-in, com confirmação — e a escolha do diálogo vale também para a limpeza de caches, não só para o mapa.
@@ -72,7 +108,7 @@ Baixe o instalador da [última versão](https://github.com/juninmd/faxina/releas
 - **Limpeza rápida por ID.** A interface manda o ID do cache (ex.: `chrome`), e o backend resolve os caminhos de uma lista fixa. Cada regra mira a pasta inteira ou só arquivos que casam um padrão (ex.: `*.log`), e pode preservar nomes específicos (exclusões). Apaga o *conteúdo* da pasta, não a pasta; arquivos em uso são pulados e contados. Em `%TEMP%`, só o que tem mais de 24 h.
 - **Links simbólicos e junctions são ignorados** na análise, então nada é contado duas vezes nem “escapa” da pasta escolhida.
 
-## ⌨️ Atalhos
+## ⌨ Atalhos
 
 | Tecla | Ação |
 |---|---|
@@ -106,21 +142,54 @@ flowchart LR
 - A interface recebe só a fatia visível (profundidade + até 60 filhos por pasta) e pede mais ao navegar.
 - Excluir atualiza a árvore em memória, sem precisar reanalisar.
 
-## 🛠️ Desenvolvimento
+## 🛠 Desenvolvimento
 
 Pré-requisitos: [Bun](https://bun.sh) ≥ 1.3, [Rust](https://rustup.rs) estável e os [pré-requisitos do Tauri](https://tauri.app/start/prerequisites/) do seu sistema.
+
+**Configuração:** o app não lê variáveis de ambiente para funcionar. Só o empacotamento assinado (`bun tauri build`) exige `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, porque o updater está ligado.
 
 ```bash
 bun install
 bun tauri dev            # app com hot reload
+bun run build            # tsc + vite build (gera dist/, que o Rust embute)
 
 bun run lint             # Biome
+bun run format           # Biome com correção
 bun run typecheck        # tsc
 bun run test             # testes do frontend (bun test)
 cd src-tauri && cargo test && cargo clippy --all-targets -- -D warnings
 
 bun scripts/demo-fixture.ts ./demo   # pasta falsa com caches, builds e duplicatas
 ```
+
+> [!NOTE]
+> Em um clone limpo, rode `bun run build` uma vez antes de `cargo test`: o Tauri embute `../dist` em tempo de compilação.
+
+Saída real dos gates do frontend:
+
+```text
+$ bun run test
+ 20 pass
+ 0 fail
+Ran 20 tests across 4 files.
+
+$ bun run lint
+Checked 50 files in 287ms. No fixes applied.
+
+$ bun run typecheck
+(sem saída: tipos ok)
+```
+
+## 🧪 Testes e gates de CI
+
+| Workflow | Job | O que checa |
+|---|---|---|
+| `ci.yml` | Conventional commits (só em PR) | Mensagens de commit no padrão Conventional Commits (commitlint, workflow reutilizável de `juninmd/base-actions`) |
+| `ci.yml` | Frontend | Validação de PR pelo workflow reutilizável `reusable-validate.yml` de `juninmd/base-actions` (instalação e checagens do projeto, mais auditoria de dependências) |
+| `ci.yml` | Rust (Ubuntu, Windows, macOS) | `bun run build`, depois `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` e `cargo test` em cada sistema |
+| `ci.yml` | Dependency audit | Informativo, não bloqueia: `bun audit` e `cargo audit`; achados abertos ficam registrados em [SECURITY.md](SECURITY.md) |
+| `security.yml` | Security Scan | Varredura de segurança (workflow reutilizável de `juninmd/base-actions`) no push para `main` e semanalmente |
+| `release.yml` | Release | Só roda depois de CI verde na `main`: semantic-release, build assinado por plataforma e publicação do `latest.json` |
 
 ### Releases e auto-update
 
@@ -145,7 +214,7 @@ flowchart LR
 
 PRs têm os commits validados pelo commitlint. Para publicar, o repositório precisa dos secrets `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (gerados com `bun tauri signer generate`); a chave pública fica em `src-tauri/tauri.conf.json`.
 
-## ⚠️ Limitações conhecidas
+## ⚠ Limitações conhecidas
 
 - Tamanhos são **aparentes** (tamanho do arquivo), não espaço alocado — arquivos esparsos ou comprimidos pelo NTFS podem ocupar menos.
 - Hard links contam uma vez só (no Windows, via FileId do NTFS; em FAT/exFAT não existem). O espaço fica com o primeiro caminho encontrado, então `WinSxS` e `System32` dividem o total de um jeito que pode variar entre análises.
