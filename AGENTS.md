@@ -17,6 +17,8 @@ Faxina: Tauri 2 desktop disk cleaner. Rust backend (`src-tauri/`) scans, classif
 
 `cargo` needs `../dist` to exist (`tauri::generate_context!` embeds it): run `bun run build` once before `cargo test` on a clean checkout.
 
+CI gates (`.github/workflows/ci.yml`): commitlint (PRs), reusable `validate` (frontend), `cargo fmt --check` + `clippy -D warnings` + `cargo test` on Ubuntu/Windows/macOS, and an informational `bun audit`/`cargo audit` job (`continue-on-error`; open advisories live in `SECURITY.md`). `security.yml` runs the shared security scan; `release.yml` only runs after green CI on `main`.
+
 ## Layout
 
 - `src-tauri/src/listing.rs` directory listing with file ids (Windows: one `FileIdBothDirectoryInfo` call per 64 KB of entries, NTFS only) so hard links count once; `scan.rs` parallel walk; `category.rs` name/extension rules; `view.rs` pruning, suggestions, biggest files, in-memory removal; `guard.rs` deletion checks; `junk.rs` + `junk_defs.rs` known caches (globs, file patterns, exclusions); `dupes.rs` duplicate finder; `commands.rs` the only Tauri surface.
