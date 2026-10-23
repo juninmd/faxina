@@ -141,6 +141,17 @@ pub fn get_suggestions(state: State<'_, AppState>) -> Vec<Suggestion> {
     })
 }
 
+/// `node_modules` of projects untouched for `months`, biggest first. Empty until a scan has run.
+#[tauri::command]
+pub fn get_stale_deps(state: State<'_, AppState>, months: u32) -> Vec<Suggestion> {
+    let min_secs = u64::from(months.clamp(1, 120)) * 30 * 24 * 3600;
+    lock(&state.scan).as_ref().map_or_else(Vec::new, |d| {
+        let mut s = view::stale_deps(&d.tree, &d.root, now(), min_secs, 50);
+        s.retain(|x| !guard::is_protected(Path::new(&x.path)));
+        s
+    })
+}
+
 /// Biggest files of the current scan, largest first. Empty until a scan has run.
 #[tauri::command]
 pub fn largest_files(state: State<'_, AppState>, limit: usize) -> Vec<BigFile> {

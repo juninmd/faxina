@@ -1,5 +1,5 @@
-import { useState } from "react";
-import type { DiskInfo, Suggestion, ViewNode } from "../lib/api";
+import { useEffect, useState } from "react";
+import { api, type DiskInfo, type Suggestion, type ViewNode } from "../lib/api";
 import { formatAge, formatBytes, formatCount, splitBytes } from "../lib/format";
 import { KINDS, kindColor } from "../lib/kinds";
 import type { Mark, Marks } from "../lib/marks";
@@ -25,6 +25,13 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onToggleMark, onReveal }: Props) {
   const [copied, setCopied] = useState("");
+  const [months, setMonths] = useState(6);
+  const [stale, setStale] = useState<Suggestion[]>([]);
+  // `suggestions` is re-read after every scan and deletion, so it doubles as the refresh signal.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refetch when the scan data changes
+  useEffect(() => {
+    api.staleDeps(months).then(setStale, () => setStale([]));
+  }, [months, suggestions]);
   const [num, unit] = splitBytes(selection.size);
   const share = scanTotal ? (selection.size / scanTotal) * 100 : 0;
   const worth = suggestions.reduce((s, x) => s + x.size, 0);
@@ -121,6 +128,55 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
             </li>
           ))}
         </ul>
+      </section>
+
+      <section aria-label="Projetos parados" className="border-t border-[var(--color-line)] pt-5">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-[11px] tracking-wider text-[var(--color-muted)] uppercase">node_modules parados</span>
+          <select
+            aria-label="Sem mexer há"
+            value={months}
+            onChange={(e) => setMonths(Number(e.target.value))}
+            className="rounded bg-[var(--color-panel-2)] px-2 py-0.5 text-xs"
+          >
+            {[1, 3, 6, 12, 24].map((m) => (
+              <option key={m} value={m}>
+                há {m} {m === 1 ? "mês" : "meses"}+
+              </option>
+            ))}
+          </select>
+        </div>
+        {stale.length === 0 ? (
+          <p className="mt-3 text-sm text-[var(--color-muted)]">Nenhum projeto parado nesse período.</p>
+        ) : (
+          <>
+            <div className="mt-2 text-sm text-[var(--color-accent)] tabular-nums">
+              {formatBytes(stale.reduce((s, x) => s + x.size, 0))} em {stale.length}
+            </div>
+            <ul className="mt-2 flex flex-col gap-1">
+              {stale.map((s) => (
+                <li key={s.path}>
+                  <button
+                    type="button"
+                    data-path={s.path}
+                    onClick={() => onToggleMark(s)}
+                    aria-pressed={marked.has(s.path)}
+                    className={`w-full rounded-md border-l-2 px-3 py-2 text-left hover:bg-[var(--color-panel-2)] ${marked.has(s.path) ? "bg-[var(--color-panel-2)]" : ""}`}
+                    style={{ borderColor: marked.has(s.path) ? "var(--color-danger)" : kindColor(s.kind) }}
+                  >
+                    <div className="flex justify-between gap-2 text-sm">
+                      <span className="truncate" title={s.path}>
+                        {s.name}
+                      </span>
+                      <span className="shrink-0 tabular-nums">{formatBytes(s.size)}</span>
+                    </div>
+                    <div className="mt-1 truncate text-xs text-[var(--color-muted)]">{s.reason}</div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </section>
 
       {disk && (
