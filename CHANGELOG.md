@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.7.0](https://github.com/juninmd/faxina/compare/v1.6.0...v1.7.0) (2026-10-23)
+
+
+### Features
+
+* list node_modules of projects idle for N months ([#14](https://github.com/juninmd/faxina/issues/14)) ([fe41097](https://github.com/juninmd/faxina/commit/fe410972cf59cfa162b00bbafc468317347ebbb3))
+
 # [1.6.0](https://github.com/juninmd/faxina/compare/v1.5.2...v1.6.0) (2026-10-20)
 
 
