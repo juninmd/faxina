@@ -76,6 +76,56 @@ fn collect(node: &Node, path: PathBuf, now: u64, out: &mut Vec<Suggestion>, is_r
     }
 }
 
+/// `node_modules` folders whose project has not been touched for `min_secs`, biggest first.
+/// A folder's own mtime only says when dependencies were installed, so the age comes from its
+/// siblings (the project's sources), ignoring other reclaimable folders such as `target`.
+pub fn stale_deps(
+    tree: &Node,
+    root: &Path,
+    now: u64,
+    min_secs: u64,
+    limit: usize,
+) -> Vec<Suggestion> {
+    let mut out = Vec::new();
+    collect_stale(tree, root.to_path_buf(), now, min_secs, &mut out);
+    out.sort_unstable_by_key(|n| Reverse(n.size));
+    out.truncate(limit);
+    out
+}
+
+fn collect_stale(node: &Node, path: PathBuf, now: u64, min_secs: u64, out: &mut Vec<Suggestion>) {
+    let project_modified = node
+        .children
+        .iter()
+        .filter(|c| !c.reclaimable)
+        .map(|c| c.modified)
+        .max()
+        .unwrap_or(0);
+    for c in &node.children {
+        if !c.is_dir || c.grouped {
+            continue;
+        }
+        let child_path = path.join(&c.name);
+        if c.name.eq_ignore_ascii_case("node_modules") && c.reclaimable {
+            // No siblings with a known mtime: nothing proves the project is idle.
+            if c.size >= SUGGEST_MIN && project_modified > 0 {
+                let idle = now.saturating_sub(project_modified);
+                if idle >= min_secs {
+                    out.push(Suggestion {
+                        path: child_path.to_string_lossy().into_owned(),
+                        name: format!("{}/{}", node.name, c.name),
+                        size: c.size,
+                        kind: c.kind,
+                        reason: format!("projeto parado há {} meses", idle / (30 * 24 * 3600)),
+                    });
+                }
+            }
+        } else if !c.reclaimable && c.size >= SUGGEST_MIN {
+            collect_stale(c, child_path, now, min_secs, out);
+        }
+    }
+}
+
 fn reason_for(node: &Node, now: u64) -> Option<String> {
     if node.size < SUGGEST_MIN {
         return None;
@@ -251,6 +301,34 @@ mod tests {
         assert_eq!(s.len(), 1);
         assert_eq!(s[0].name, "node_modules");
         assert_eq!(s[0].reason, "dependências reinstaláveis");
+    }
+
+    #[test]
+    fn stale_deps_use_project_sources_age_not_install_time() {
+        const DAY: u64 = 24 * 3600;
+        let now = 1000 * DAY;
+        let project = |name: &str, src_age_days: u64, nm_age_days: u64| {
+            let mut nm = dir(
+                "node_modules",
+                Kind::Build,
+                vec![Node::file("big.bin".into(), 80 << 20, 0, Kind::Build)],
+            );
+            nm.modified = now - nm_age_days * DAY;
+            let src = Node::file("a.ts".into(), 1 << 20, now - src_age_days * DAY, Kind::Code);
+            dir(name, Kind::Other, vec![nm, src])
+        };
+        // "old" installed yesterday but nobody touched the sources for a year.
+        let root = dir(
+            "/root",
+            Kind::Other,
+            vec![project("old", 400, 1), project("fresh", 5, 5)],
+        );
+
+        let s = stale_deps(&root, Path::new("/root"), now, 180 * DAY, 10);
+        assert_eq!(s.len(), 1);
+        assert_eq!(s[0].name, "old/node_modules");
+        assert_eq!(s[0].reason, "projeto parado há 13 meses");
+        assert!(Path::new(&s[0].path).ends_with("old/node_modules"));
     }
 
     #[test]

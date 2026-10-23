@@ -73,6 +73,7 @@ export const api = {
   cancelScan: () => invoke<void>("cancel_scan"),
   getView: (path: string, depth: number) => invoke<ViewNode>("get_view", { path, depth }),
   suggestions: () => invoke<Suggestion[]>("get_suggestions"),
+  staleDeps: (months: number) => invoke<Suggestion[]>("get_stale_deps", { months }),
   largestFiles: (limit: number) => invoke<BigFile[]>("largest_files", { limit }),
   deletePaths: (paths: string[], permanent: boolean) => invoke<DeleteReport>("delete_paths", { paths, permanent }),
   junkScan: () => invoke<JunkItem[]>("junk_scan"),
