@@ -1,5 +1,13 @@
 # Changelog
 
+# [1.9.0](https://github.com/juninmd/faxina/compare/v1.8.0...v1.9.0) (2026-10-24)
+
+
+### Features
+
+* add count-up numbers, grain and aurora hero, glowing CTA and staggered reveal ([#16](https://github.com/juninmd/faxina/issues/16)) ([776a4ce](https://github.com/juninmd/faxina/commit/776a4ceac57eec6633900514a9b9e0859c105cf3))
+* add count-up numbers, grain and aurora hero, glowing CTA and staggered reveal ([#17](https://github.com/juninmd/faxina/issues/17)) ([5f2bd3f](https://github.com/juninmd/faxina/commit/5f2bd3fbca456aee723afb3281014cc1e16e18b3))
+
 # [1.8.0](https://github.com/juninmd/faxina/compare/v1.7.0...v1.8.0) (2026-10-24)
 
 
