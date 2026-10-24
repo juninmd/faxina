@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.8.0](https://github.com/juninmd/faxina/compare/v1.7.0...v1.8.0) (2026-10-24)
+
+
+### Features
+
+* what grew since last scan, folder explanations and idle project cleanup ([#15](https://github.com/juninmd/faxina/issues/15)) ([cfeddc2](https://github.com/juninmd/faxina/commit/cfeddc2a5a88a431c7229de18a005b91d701970e))
+
 # [1.7.0](https://github.com/juninmd/faxina/compare/v1.6.0...v1.7.0) (2026-10-23)
 
 
