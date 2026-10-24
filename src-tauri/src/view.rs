@@ -76,9 +76,10 @@ fn collect(node: &Node, path: PathBuf, now: u64, out: &mut Vec<Suggestion>, is_r
     }
 }
 
-/// `node_modules` folders whose project has not been touched for `min_secs`, biggest first.
-/// A folder's own mtime only says when dependencies were installed, so the age comes from its
-/// siblings (the project's sources), ignoring other reclaimable folders such as `target`.
+/// Reclaimable build folders (`node_modules`, `target`, `.venv`, `.next`, ...) of projects that
+/// have not been touched for `min_secs`, biggest first. A folder's own mtime only says when it was
+/// generated, so the age comes from its siblings (the project's sources), ignoring other
+/// reclaimable folders. Caches are left to the suggestions: only project output counts here.
 pub fn stale_deps(
     tree: &Node,
     root: &Path,
@@ -106,7 +107,7 @@ fn collect_stale(node: &Node, path: PathBuf, now: u64, min_secs: u64, out: &mut 
             continue;
         }
         let child_path = path.join(&c.name);
-        if c.name.eq_ignore_ascii_case("node_modules") && c.reclaimable {
+        if c.reclaimable && c.kind == Kind::Build {
             // No siblings with a known mtime: nothing proves the project is idle.
             if c.size >= SUGGEST_MIN && project_modified > 0 {
                 let idle = now.saturating_sub(project_modified);
@@ -329,6 +330,30 @@ mod tests {
         assert_eq!(s[0].name, "old/node_modules");
         assert_eq!(s[0].reason, "projeto parado há 13 meses");
         assert!(Path::new(&s[0].path).ends_with("old/node_modules"));
+    }
+
+    #[test]
+    fn stale_projects_list_every_build_folder_but_not_caches() {
+        const DAY: u64 = 24 * 3600;
+        let now = 1000 * DAY;
+        let big = |kind| vec![Node::file("big.bin".into(), 80 << 20, 0, kind)];
+        let src = Node::file("main.rs".into(), 1 << 20, now - 400 * DAY, Kind::Code);
+        let project = dir(
+            "old",
+            Kind::Other,
+            vec![
+                dir("target", Kind::Build, big(Kind::Build)),
+                dir(".venv", Kind::Build, big(Kind::Build)),
+                dir(".cache", Kind::Cache, big(Kind::Cache)),
+                src,
+            ],
+        );
+        let root = dir("/root", Kind::Other, vec![project]);
+
+        let s = stale_deps(&root, Path::new("/root"), now, 180 * DAY, 10);
+        let mut names: Vec<_> = s.iter().map(|x| x.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["old/.venv", "old/target"]);
     }
 
     #[test]
