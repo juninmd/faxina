@@ -1,5 +1,5 @@
 import { hierarchy, treemap, treemapSquarify } from "d3-hierarchy";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useSize } from "../hooks/useSize";
 import type { ViewNode } from "../lib/api";
 import { formatBytes } from "../lib/format";
@@ -17,6 +17,14 @@ interface Props {
 
 const HEADER = 22;
 
+/** True when `path` is `focus`, inside it, or one of its parents: the tiles that stay lit. */
+export function related(path: string, focus: string): boolean {
+  if (path === focus) return true;
+  const sep = /[\\/]/;
+  const edge = (outer: string, inner: string) => inner.startsWith(outer) && sep.test(inner.charAt(outer.length));
+  return edge(focus, path) || edge(path, focus);
+}
+
 /** Space a directory keeps for itself: its size minus the children we were sent. */
 function ownValue(n: ViewNode): number {
   if (!n.children.length) return n.size;
@@ -25,6 +33,7 @@ function ownValue(n: ViewNode): number {
 
 export function Treemap({ root, selected, marked, onSelect, onOpen, onToggleMark }: Props) {
   const [ref, { width, height }] = useSize<HTMLDivElement>();
+  const [hover, setHover] = useState<string | null>(null);
 
   const nodes = useMemo(() => {
     if (width < 10 || height < 10) return [];
@@ -42,7 +51,12 @@ export function Treemap({ root, selected, marked, onSelect, onOpen, onToggleMark
   }, [root, width, height]);
 
   return (
-    <div ref={ref} className="relative h-full w-full overflow-hidden rounded-lg" role="tree">
+    <div
+      ref={ref}
+      className="relative h-full w-full overflow-hidden rounded-lg"
+      role="tree"
+      onMouseLeave={() => setHover(null)}
+    >
       {nodes.map((d) => {
         const n = d.data;
         const w = d.x1 - d.x0;
@@ -52,6 +66,7 @@ export function Treemap({ root, selected, marked, onSelect, onOpen, onToggleMark
         const isMarked = marked.has(n.path);
         const isSelected = selected === n.path;
         const showLabel = w > 54 && h > 20;
+        const dimmed = hover !== null && !related(n.path, hover);
         return (
           <div
             key={n.path}
@@ -77,6 +92,11 @@ export function Treemap({ root, selected, marked, onSelect, onOpen, onToggleMark
               outlineOffset: -2,
               zIndex: isSelected || isMarked ? 2 : undefined,
               cursor: n.grouped ? "default" : "pointer",
+              opacity: dimmed ? 0.4 : 1,
+            }}
+            onMouseOver={(e) => {
+              e.stopPropagation();
+              setHover(n.path);
             }}
             onClick={(e) => {
               e.stopPropagation();
