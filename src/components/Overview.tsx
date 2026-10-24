@@ -2,6 +2,7 @@ import type { Page } from "../domain";
 import { gb } from "../domain";
 import type { DiskInfo } from "../lib/api";
 import { platformName } from "../lib/platform";
+import CountUp from "./CountUp";
 import Icon from "./Icon";
 
 export default function Overview({
@@ -58,12 +59,14 @@ export default function Overview({
           </button>
         </div>
       )}
-      <section className="overview-hero" aria-label="Diagnóstico do disco">
+      <section className="overview-hero grain aurora" aria-label="Diagnóstico do disco">
         <div className="orbit-area">
           <div className="orbit">
             <div className="orbit-core">
               <span>DISCO {disk?.mount ? `· ${disk.mount}` : "LOCAL"}</span>
-              <strong>{gb(free)}</strong>
+              <strong>
+                <CountUp value={free} format={gb} />
+              </strong>
               <small>disponíveis de {gb(total)}</small>
             </div>
           </div>
@@ -95,7 +98,7 @@ export default function Overview({
                 : "Uma análise rápida encontra caches e temporários. Seus arquivos pessoais continuam no lugar."}
           </p>
           <div className="reclaim-number">
-            {loading ? "…" : scanned ? gb(reclaimable) : "—"}
+            {loading ? "…" : scanned ? <CountUp value={reclaimable} format={gb} /> : "—"}
             <span>
               {loading
                 ? "analisando caches do sistema"
@@ -114,7 +117,7 @@ export default function Overview({
             <div className="hero-actions">
               <button
                 type="button"
-                className="button primary"
+                className={`button primary ${scanned && reclaimable > 0 ? "glow-button" : ""}`}
                 onClick={scanned && reclaimable > 0 ? () => navigate("review") : onScan}
               >
                 <Icon name={scanned && reclaimable > 0 ? "arrow" : "search"} />
@@ -179,7 +182,7 @@ export default function Overview({
           </div>
         </button>
       </div>
-      <div className="principles">
+      <div className="principles stagger">
         <span>
           <Icon name="check" size={16} />
           Sem mexer em senhas ou histórico
