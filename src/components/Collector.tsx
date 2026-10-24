@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { formatBytes } from "../lib/format";
 import { kindColor } from "../lib/kinds";
 import type { Mark } from "../lib/marks";
+import CountUp from "./CountUp";
 
 interface Props {
   items: Mark[];
@@ -26,7 +27,15 @@ export function Collector({ items, onClear, onUnmark, onDelete }: Props) {
 
   return (
     <>
-      <div className="pop-in flex items-center gap-4 border-t border-[var(--color-line)] bg-[var(--color-panel)] px-5 py-3">
+      <div className="pop-in sticky bottom-3 z-10 mx-4 mb-3 flex items-center gap-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)]/90 px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.5)] backdrop-blur">
+        <div className="flex shrink-0 flex-col pr-1">
+          <span className="text-[10px] tracking-wider text-[var(--color-muted)] uppercase">
+            {items.length} {items.length === 1 ? "item" : "itens"}
+          </span>
+          <span className="text-lg font-semibold tabular-nums">
+            <CountUp value={total} format={formatBytes} />
+          </span>
+        </div>
         <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
           {items.slice(0, 12).map((m) => (
             <button
@@ -51,7 +60,7 @@ export function Collector({ items, onClear, onUnmark, onDelete }: Props) {
           onClick={() => setConfirming(true)}
           className="collector-delete rounded-lg bg-[var(--color-danger)] px-4 py-2 font-semibold text-black shadow-[0_0_24px_rgba(240,96,93,0.35)] hover:brightness-110"
         >
-          <span aria-hidden="true">🕳️ </span>Excluir {formatBytes(total)}
+          <span aria-hidden="true">🕳️ </span>Excluir seleção
         </button>
       </div>
 

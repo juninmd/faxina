@@ -37,6 +37,7 @@ body {
 
 .tile {
   transition:
+    opacity 160ms ease,
     filter 120ms ease,
     outline-color 120ms ease;
 }

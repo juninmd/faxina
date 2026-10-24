@@ -2,11 +2,12 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import type { useScan } from "../hooks/useScan";
 import { api, type DiskInfo } from "../lib/api";
-import { formatBytes, formatCount } from "../lib/format";
+import { formatBytes } from "../lib/format";
 import type { Mark } from "../lib/marks";
 import { Collector } from "./Collector";
 import Icon from "./Icon";
 import { MapView } from "./MapView";
+import ScanProgress from "./ScanProgress";
 
 export default function DiskMap({
   active,
@@ -123,27 +124,7 @@ export default function DiskMap({
       )}
 
       {scan.progress ? (
-        <div className="panel map-scan-state flex flex-col items-center justify-center gap-6 p-12 text-center">
-          <div className="relative h-32 w-32" aria-hidden="true">
-            <div className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-[var(--color-accent)] border-r-[var(--color-accent)]/40" />
-            <div className="absolute inset-4 animate-[spin_2.4s_linear_infinite_reverse] rounded-full border-4 border-transparent border-b-[#8b5cd6]" />
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-xl font-semibold tabular-nums">{formatBytes(scan.progress.bytes)}</span>
-              <span className="text-xs text-[var(--color-muted)]">{formatCount(scan.progress.files)} arquivos</span>
-            </div>
-          </div>
-          <div className="flex max-w-xl flex-col items-center gap-1 text-center">
-            <p className="text-sm text-[var(--color-muted)]" role="status">
-              Mapeando disco…
-            </p>
-            <p className="max-w-full truncate font-medium text-white" title={scan.scanning}>
-              {scan.scanning}
-            </p>
-          </div>
-          <button type="button" onClick={api.cancelScan} className="button secondary">
-            Cancelar mapeamento
-          </button>
-        </div>
+        <ScanProgress progress={scan.progress} path={scan.scanning} onCancel={api.cancelScan} />
       ) : scan.view ? (
         <div className="native-map panel native-map-panel flex flex-col">
           <MapView scan={scan} marked={marked} onToggleMark={onToggleMark} />
