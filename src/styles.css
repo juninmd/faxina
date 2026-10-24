@@ -82,3 +82,101 @@ body {
     transition-duration: 1ms !important;
   }
 }
+
+/* Fine film grain over a surface; the noise is an inline SVG, so no asset and no network. */
+.grain {
+  position: relative;
+  isolation: isolate;
+}
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.09;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Soft drifting color behind the hero, like a mesh gradient. */
+.aurora {
+  background:
+    radial-gradient(60% 80% at 15% 20%, rgb(227 179 65 / 0.1), transparent 70%),
+    radial-gradient(50% 70% at 90% 90%, rgb(101 143 222 / 0.12), transparent 70%), var(--surface);
+  background-size:
+    140% 140%,
+    140% 140%,
+    auto;
+  animation: aurora-drift 18s ease-in-out infinite alternate;
+}
+@keyframes aurora-drift {
+  from {
+    background-position:
+      0% 0%,
+      100% 100%,
+      0 0;
+  }
+  to {
+    background-position:
+      30% 20%,
+      70% 80%,
+      0 0;
+  }
+}
+
+/* A light that circles the button border: draws the eye to the one recommended action. */
+@property --glow-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.glow-button {
+  position: relative;
+}
+.glow-button::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  z-index: -1;
+  border-radius: inherit;
+  background: conic-gradient(from var(--glow-angle), transparent 0 70%, rgb(241 198 93 / 0.9) 90%, transparent);
+  filter: blur(3px);
+  animation: glow-spin 3.2s linear infinite;
+}
+@keyframes glow-spin {
+  to {
+    --glow-angle: 360deg;
+  }
+}
+
+/* Children rise in one after another; `--i` is the child's position. */
+.stagger > * {
+  animation: pop-in 360ms cubic-bezier(0.2, 0.9, 0.3, 1.1) backwards;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+.stagger > :nth-child(1) {
+  --i: 0;
+}
+.stagger > :nth-child(2) {
+  --i: 1;
+}
+.stagger > :nth-child(3) {
+  --i: 2;
+}
+.stagger > :nth-child(4) {
+  --i: 3;
+}
+.stagger > :nth-child(5) {
+  --i: 4;
+}
+.stagger > :nth-child(6) {
+  --i: 5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora,
+  .glow-button::before {
+    animation: none;
+  }
+}
