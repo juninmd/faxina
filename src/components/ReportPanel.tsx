@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { count, gb, type Page, type Report, shareSummary } from "../domain";
 import { formatBytes } from "../lib/format";
+import CountUp from "./CountUp";
 import Icon from "./Icon";
 
 export default function ReportPanel({
@@ -54,25 +55,33 @@ export default function ReportPanel({
               </p>
             </div>
           </section>
-          <div className="metric-grid">
+          <div className="metric-grid stagger">
             <div className="panel metric">
               <span>Selecionado</span>
-              <strong>{gb(report.selected)}</strong>
+              <strong>
+                <CountUp value={report.selected} format={gb} />
+              </strong>
               <small>Tamanho aparente estimado</small>
             </div>
             <div className="panel metric">
               <span>Enviado à Lixeira</span>
-              <strong>{gb(report.trashed)}</strong>
+              <strong>
+                <CountUp value={report.trashed} format={gb} />
+              </strong>
               <small>Ainda ocupa espaço no disco</small>
             </div>
             <div className="panel metric">
               <span>Excluído definitivamente</span>
-              <strong>{gb(report.permanent)}</strong>
+              <strong>
+                <CountUp value={report.permanent} format={gb} />
+              </strong>
               <small>Sem possibilidade de restaurar pela Lixeira</small>
             </div>
             <div className="panel metric emphasized">
               <span>Espaço liberado no disco</span>
-              <strong>+{gb(report.observed)}</strong>
+              <strong>
+                +<CountUp value={report.observed} format={gb} />
+              </strong>
               <small>Espaço liberado imediatamente</small>
             </div>
           </div>
