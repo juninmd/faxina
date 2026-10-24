@@ -7,6 +7,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::dupes::{self, DupGroup, DupProgress};
+use crate::history::{self, Growth};
 use crate::junk::{self, CleanReport, JunkItem};
 use crate::model::{BigFile, Node, Suggestion, ViewNode};
 use crate::scan::{self, Progress};
@@ -25,6 +26,7 @@ pub struct AppState {
     progress: Arc<Progress>,
     dup_root: Mutex<Option<PathBuf>>,
     dup_cancel: Arc<AtomicBool>,
+    growth: Mutex<Option<Growth>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -114,6 +116,16 @@ pub async fn start_scan(
         tree,
     };
     let v = view_of(&data, &root, depth)?;
+    let snap = history::snapshot(&data.tree, &root, now());
+    let growth = tauri::async_runtime::spawn_blocking(move || {
+        let mut store = history::load();
+        let growth = history::record(&mut store, snap);
+        history::save(&store);
+        growth
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    *lock(&state.growth) = growth;
     *lock(&state.scan) = Some(data);
     Ok(v)
 }
@@ -150,6 +162,12 @@ pub fn get_stale_deps(state: State<'_, AppState>, months: u32) -> Vec<Suggestion
         s.retain(|x| !guard::is_protected(Path::new(&x.path)));
         s
     })
+}
+
+/// What grew since the previous scan of the same folder. `None` on the first scan of a folder.
+#[tauri::command]
+pub fn get_growth(state: State<'_, AppState>) -> Option<Growth> {
+    lock(&state.growth).clone()
 }
 
 /// Biggest files of the current scan, largest first. Empty until a scan has run.

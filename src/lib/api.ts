@@ -62,6 +62,23 @@ export interface DupGroup {
   files: { path: string; modified: number }[];
 }
 
+export interface FolderGrowth {
+  path: string;
+  before: number;
+  /** False when the folder was too small to be saved last time: `before` is then an upper bound. */
+  beforeKnown: boolean;
+  after: number;
+  growth: number;
+}
+
+export interface Growth {
+  root: string;
+  previousAt: number;
+  /** Total now minus total then; negative when the folder shrank. */
+  delta: number;
+  grown: FolderGrowth[];
+}
+
 export interface DiskInfo {
   mount: string;
   total: number;
@@ -74,6 +91,7 @@ export const api = {
   getView: (path: string, depth: number) => invoke<ViewNode>("get_view", { path, depth }),
   suggestions: () => invoke<Suggestion[]>("get_suggestions"),
   staleDeps: (months: number) => invoke<Suggestion[]>("get_stale_deps", { months }),
+  growth: () => invoke<Growth | null>("get_growth"),
   largestFiles: (limit: number) => invoke<BigFile[]>("largest_files", { limit }),
   deletePaths: (paths: string[], permanent: boolean) => invoke<DeleteReport>("delete_paths", { paths, permanent }),
   junkScan: () => invoke<JunkItem[]>("junk_scan"),

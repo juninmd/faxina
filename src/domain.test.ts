@@ -13,6 +13,7 @@ import {
   recommended,
   saveHistory,
   saveSettings,
+  shareSummary,
   totalSize,
 } from "./domain";
 import type { JunkItem } from "./lib/api";
@@ -274,5 +275,22 @@ describe("domain logic", () => {
 
     expect(isCleanupDue(settings, history, new Date(newest.getTime() + 29 * DAY))).toBe(false);
     expect(isCleanupDue(settings, history, new Date(newest.getTime() + 31 * DAY))).toBe(true);
+  });
+});
+
+describe("shareSummary", () => {
+  const fmt = (b: number) => `${b} B`;
+  const base = createReport([], "trash", 0, 0, 0);
+
+  test("prefers the space actually freed", () => {
+    expect(shareSummary({ ...base, observed: 10, trashed: 5 }, fmt)).toBe("Liberei 10 B do meu disco com a Faxina.");
+  });
+
+  test("falls back to what went to the trash", () => {
+    expect(shareSummary({ ...base, observed: 0, trashed: 5 }, fmt)).toBe("Enviei 5 B à Lixeira com a Faxina.");
+  });
+
+  test("says nothing when nothing changed", () => {
+    expect(shareSummary({ ...base, observed: 0, trashed: 0 }, fmt)).toBeUndefined();
   });
 });
