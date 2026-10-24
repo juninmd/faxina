@@ -1,4 +1,6 @@
-import { count, gb, type Page, type Report } from "../domain";
+import { useState } from "react";
+import { count, gb, type Page, type Report, shareSummary } from "../domain";
+import { formatBytes } from "../lib/format";
 import Icon from "./Icon";
 
 export default function ReportPanel({
@@ -10,6 +12,19 @@ export default function ReportPanel({
   history: Report[];
   navigate: (p: Page) => void;
 }) {
+  const [copied, setCopied] = useState(false);
+  const summary = report ? shareSummary(report, formatBytes) : undefined;
+  const share = async () => {
+    if (!summary) return;
+    try {
+      await navigator.clipboard.writeText(summary);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  };
+
   return (
     <>
       <div className="page-heading compact">
@@ -69,9 +84,17 @@ export default function ReportPanel({
                 : "A exclusão permanente removeu os arquivos diretamente do disco, liberando espaço de armazenamento."}
             </span>
           </div>
-          <button type="button" className="button secondary" onClick={() => navigate("overview")}>
-            Voltar ao diagnóstico <Icon name="arrow" size={18} />
-          </button>
+          <div className="flex items-center gap-3">
+            <button type="button" className="button secondary" onClick={() => navigate("overview")}>
+              Voltar ao diagnóstico <Icon name="arrow" size={18} />
+            </button>
+            {summary && (
+              <button type="button" className="button secondary" onClick={share}>
+                <Icon name="copy" size={18} />
+                {copied ? "Resumo copiado!" : "Copiar resumo"}
+              </button>
+            )}
+          </div>
         </>
       ) : (
         <section className="panel empty-state">

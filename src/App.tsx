@@ -5,6 +5,7 @@ import ConfirmDialog from "./components/ConfirmDialog";
 import Coverage from "./components/Coverage";
 import DiskMap from "./components/DiskMap";
 import { DupesPanel } from "./components/DupesPanel";
+import Growth from "./components/Growth";
 import Icon, { type IconName } from "./components/Icon";
 import Overview from "./components/Overview";
 import ReportPanel from "./components/ReportPanel";
@@ -37,6 +38,7 @@ const NAV: { id: Page; label: string; icon: IconName; caption?: string }[] = [
   { id: "overview", label: "Visão geral", icon: "grid" },
   { id: "map", label: "Mapa do disco", icon: "grid" },
   { id: "bigfiles", label: "Arquivos grandes", icon: "file" },
+  { id: "growth", label: "O que cresceu", icon: "clock" },
   { id: "review", label: "Revisar limpeza", icon: "spark" },
   { id: "report", label: "Resultados", icon: "file" },
   { id: "dupes", label: "Duplicatas", icon: "copy" },
@@ -329,6 +331,8 @@ export default function App() {
             {page === "bigfiles" && (
               <BigFiles swallow={swallow} root={scan.root} onAnalyze={() => setPage("map")} onDeleted={recordDeleted} />
             )}
+
+            {page === "growth" && <Growth root={scan.root} onAnalyze={() => setPage("map")} />}
 
             {page === "review" && (
               <Review

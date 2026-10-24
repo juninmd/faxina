@@ -1,7 +1,17 @@
 import type { JunkItem } from "./lib/api";
 import { formatBytes, formatCount } from "./lib/format";
 
-export type Page = "overview" | "map" | "bigfiles" | "review" | "report" | "dupes" | "coverage" | "routine" | "updates";
+export type Page =
+  | "overview"
+  | "map"
+  | "bigfiles"
+  | "review"
+  | "report"
+  | "growth"
+  | "dupes"
+  | "coverage"
+  | "routine"
+  | "updates";
 
 export type Rule = {
   id: string;
@@ -403,6 +413,17 @@ export type Report = {
   files: number;
   destination: "trash" | "permanent";
 };
+
+/** Plain text a person can paste to share what a cleanup did; undefined when nothing was freed or moved. */
+export function shareSummary(report: Report, format: (bytes: number) => string): string | undefined {
+  if (report.observed > 0) {
+    return `Liberei ${format(report.observed)} do meu disco com a Faxina.`;
+  }
+  if (report.trashed > 0) {
+    return `Enviei ${format(report.trashed)} à Lixeira com a Faxina.`;
+  }
+  return undefined;
+}
 
 function getStorage(): Storage | null {
   try {

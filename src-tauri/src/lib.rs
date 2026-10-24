@@ -3,6 +3,7 @@ mod commands;
 mod disks;
 mod dupes;
 mod guard;
+mod history;
 mod junk;
 mod junk_ai_defs;
 mod junk_apps_defs;
@@ -29,6 +30,7 @@ pub fn run() {
             commands::get_view,
             commands::get_suggestions,
             commands::get_stale_deps,
+            commands::get_growth,
             commands::largest_files,
             commands::delete_paths,
             commands::junk_scan,

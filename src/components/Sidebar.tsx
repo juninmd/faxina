@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { api, type DiskInfo, type Suggestion, type ViewNode } from "../lib/api";
+import { assistantPrompt, explainFolder } from "../lib/folders";
 import { formatAge, formatBytes, formatCount, splitBytes } from "../lib/format";
 import { KINDS, kindColor } from "../lib/kinds";
 import type { Mark, Marks } from "../lib/marks";
+import { platformName } from "../lib/platform";
 
 interface Props {
   selection: ViewNode;
@@ -25,6 +27,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onToggleMark, onReveal }: Props) {
   const [copied, setCopied] = useState("");
+  const [promptCopied, setPromptCopied] = useState("");
   const [months, setMonths] = useState(6);
   const [stale, setStale] = useState<Suggestion[]>([]);
   // `suggestions` is re-read after every scan and deletion, so it doubles as the refresh signal.
@@ -35,6 +38,7 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
   const [num, unit] = splitBytes(selection.size);
   const share = scanTotal ? (selection.size / scanTotal) * 100 : 0;
   const worth = suggestions.reduce((s, x) => s + x.size, 0);
+  const info = explainFolder(selection.path);
   const maxSug = suggestions[0]?.size ?? 1;
 
   return (
@@ -87,7 +91,33 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
             </span>
           </div>
         )}
+        {selection.isDir && !selection.grouped && selection.children.length > 0 && (
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(assistantPrompt(selection, platformName()));
+                setPromptCopied(selection.path);
+                setTimeout(() => setPromptCopied(""), 2000);
+              } catch {
+                setPromptCopied("");
+              }
+            }}
+            className="mt-2 w-full rounded-md border border-[var(--color-line)] px-3 py-1.5 text-sm hover:bg-[var(--color-panel-2)]"
+            title="Copia o nome, o tamanho e os maiores itens da pasta para colar em um assistente de IA"
+          >
+            {promptCopied === selection.path ? "Texto copiado ✓" : "Copiar para um assistente"}
+          </button>
+        )}
       </section>
+
+      {info && (
+        <section aria-label="O que é isto" className="border-t border-[var(--color-line)] pt-5">
+          <div className="text-[11px] tracking-wider text-[var(--color-muted)] uppercase">O que é isto?</div>
+          <p className="mt-3 text-sm">{info.whatItIs}</p>
+          <p className="mt-2 text-sm text-[var(--color-muted)]">{info.ifRemoved}</p>
+        </section>
+      )}
 
       <section aria-label="Vale uma olhada" className="border-t border-[var(--color-line)] pt-5">
         <div className="flex items-baseline justify-between">
@@ -132,7 +162,7 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
 
       <section aria-label="Projetos parados" className="border-t border-[var(--color-line)] pt-5">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="text-[11px] tracking-wider text-[var(--color-muted)] uppercase">node_modules parados</span>
+          <span className="text-[11px] tracking-wider text-[var(--color-muted)] uppercase">Projetos parados</span>
           <select
             aria-label="Sem mexer há"
             value={months}

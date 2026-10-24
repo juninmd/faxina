@@ -21,7 +21,7 @@ CI gates (`.github/workflows/ci.yml`): commitlint (PRs), reusable `validate` (fr
 
 ## Layout
 
-- `src-tauri/src/listing.rs` directory listing with file ids (Windows: one `FileIdBothDirectoryInfo` call per 64 KB of entries, NTFS only) so hard links count once; `scan.rs` parallel walk; `category.rs` name/extension rules; `view.rs` pruning, suggestions, biggest files, in-memory removal; `guard.rs` deletion checks; `junk.rs` + `junk_defs.rs` known caches (globs, file patterns, exclusions); `dupes.rs` duplicate finder; `commands.rs` the only Tauri surface.
+- `src-tauri/src/listing.rs` directory listing with file ids (Windows: one `FileIdBothDirectoryInfo` call per 64 KB of entries, NTFS only) so hard links count once; `scan.rs` parallel walk; `category.rs` name/extension rules; `view.rs` pruning, suggestions, biggest files, in-memory removal; `guard.rs` deletion checks; `junk.rs` + `junk_defs.rs` known caches (globs, file patterns, exclusions); `dupes.rs` duplicate finder; `history.rs` per-root scan snapshots in the app data dir (`history.json`) and the "what grew" comparison (read-only); `commands.rs` the only Tauri surface.
 - `src/lib/api.ts` typed `invoke` wrappers (keep in sync with `commands.rs` serde shapes); `src/components/*` one component per file; `src/hooks/useHole.ts` drives the delete animation.
 
 ## Safety invariants (do not weaken)
