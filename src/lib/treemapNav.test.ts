@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { nextTile } from "./treemapNav";
+import { nextTile, ringPoint } from "./treemapNav";
 
 // Two columns: top-left, top-right, bottom-left.
 const grid = [
@@ -37,5 +37,16 @@ describe("nextTile", () => {
 
   test("a missing current tile yields null instead of throwing", () => {
     expect(nextTile([], 0, "ArrowRight")).toBeNull();
+  });
+});
+
+describe("ringPoint", () => {
+  test("angle 0 is straight up and angles grow clockwise", () => {
+    const top = ringPoint(0, 100);
+    expect(top.x).toBeCloseTo(0);
+    expect(top.y).toBeCloseTo(-100);
+    const right = ringPoint(Math.PI / 2, 100);
+    expect(right.x).toBeCloseTo(100);
+    expect(right.y).toBeCloseTo(0);
   });
 });
