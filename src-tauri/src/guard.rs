@@ -122,7 +122,8 @@ impl Protection {
         .collect();
         Self {
             exact,
-            system: system_dirs(),
+            // Credential stores stay protected even when a scan root contains them.
+            system: system_dirs().into_iter().chain(credential_dirs()).collect(),
         }
     }
 
@@ -150,6 +151,24 @@ impl Default for Protection {
 
 pub fn is_protected(p: &Path) -> bool {
     Protection::new().is_protected(p)
+}
+
+fn credential_dirs() -> Vec<PathBuf> {
+    let Some(home) = dirs::home_dir() else {
+        return Vec::new();
+    };
+    let home = dunce(&home).unwrap_or(home);
+    [
+        ".ssh",
+        ".gnupg",
+        ".aws",
+        ".azure",
+        ".kube",
+        ".config/gcloud",
+    ]
+    .iter()
+    .map(|rel| home.join(rel))
+    .collect()
 }
 
 fn system_dirs() -> Vec<PathBuf> {
@@ -253,6 +272,15 @@ mod tests {
         assert!(is_protected(home.parent().unwrap()));
         #[cfg(windows)]
         assert!(is_protected(Path::new(r"C:\Windows\System32")));
+    }
+
+    #[test]
+    fn credential_stores_are_protected_even_inside_a_scan_root() {
+        let home = dunce(&dirs::home_dir().unwrap()).unwrap();
+        assert!(is_protected(&home.join(".ssh")));
+        assert!(is_protected(&home.join(".ssh").join("id_ed25519")));
+        assert!(is_protected(&home.join(".aws").join("credentials")));
+        assert!(is_protected(&home.join(".config").join("gcloud")));
     }
 
     #[test]
