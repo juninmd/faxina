@@ -44,3 +44,15 @@ Conventional Commits on `main` → CI green → `release.yml` runs semantic-rele
 - Windows with "Animation effects" off reports `prefers-reduced-motion: reduce`; the black hole then runs its short form unless the user picks "Animações: sempre".
 - `window.__TAURI_INTERNALS__` is frozen; to drive the dev app over CDP (`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333`), call React props through the fiber instead of patching `invoke`. From Git Bash, pass Windows paths with `/` — MSYS rewrites backslashes in arguments.
 - Duplicate hashing of multi-GB files has no intra-file progress; the counter moves per file.
+
+<!-- base-actions-main-policy -->
+## GitHub Actions — padrão obrigatório (@main)
+
+- Referencie as actions internas sempre pelo branch, nunca por SHA:
+  - `uses: juninmd/base-actions/<action>@main`
+  - `uses: juninmd/base-actions/.github/workflows/<arquivo>.yml@main`
+- Não fixe `@<sha>` em `juninmd/base-actions`: a atualização é centralizada no
+  `main` e passa a valer no próximo run.
+- PRs cujos checks não iniciam por billing/spending limit são mesclados pelo bot central
+  `juninmd/base-actions/.github/workflows/auto-merge-billing-blocked.yml`.
+  Para impedir o merge automático de um PR, aplique a label `do-not-merge`.
