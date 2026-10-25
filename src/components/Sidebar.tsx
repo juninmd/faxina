@@ -31,6 +31,7 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
   const [copied, setCopied] = useState("");
   const [promptCopied, setPromptCopied] = useState("");
   const [promptFailed, setPromptFailed] = useState("");
+  const [pathFailed, setPathFailed] = useState("");
   const [months, setMonths] = useState(6);
   const [stale, setStale] = useState<Suggestion[]>([]);
   const [sugShown, setSugShown] = useState(PAGE);
@@ -84,6 +85,8 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
                 try {
                   await onReveal(selection.path);
                 } catch {
+                  setPathFailed(selection.path);
+                  setTimeout(() => setPathFailed(""), 2000);
                   return;
                 }
                 setCopied(selection.path);
@@ -93,10 +96,12 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
               title="Copiar caminho"
               aria-label="Copiar caminho"
             >
-              <span aria-hidden="true">{copied === selection.path ? "✓" : "⧉"}</span>
+              <span aria-hidden="true">
+                {copied === selection.path ? "✓" : pathFailed === selection.path ? "✕" : "⧉"}
+              </span>
             </button>
             <span className="sr-only" role="status">
-              {copied && "Caminho copiado"}
+              {pathFailed === selection.path ? "Não foi possível copiar o caminho" : copied && "Caminho copiado"}
             </span>
           </div>
         )}
