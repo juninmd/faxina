@@ -80,8 +80,12 @@ export function EmptyPanel({ swallow, defaultRoot }: { swallow: Swallow; default
         <button
           type="button"
           onClick={async () => {
-            const dir = await open({ directory: true, defaultPath: root });
-            if (typeof dir === "string") setRoot(dir);
+            try {
+              const dir = await open({ directory: true, defaultPath: root });
+              if (typeof dir === "string") setRoot(dir);
+            } catch (e) {
+              setError(String(e));
+            }
           }}
           className="max-w-md truncate rounded-md border border-[var(--color-line)] px-3 py-2 text-sm hover:bg-[var(--color-panel-2)]"
           title={root}
