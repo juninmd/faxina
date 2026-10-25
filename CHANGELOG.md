@@ -1,5 +1,23 @@
 # Changelog
 
+# [1.12.0](https://github.com/juninmd/faxina/compare/v1.11.0...v1.12.0) (2026-10-25)
+
+
+### Bug Fixes
+
+* **a11y:** expose sunburst controls and treemap mark state to assistive tech ([#38](https://github.com/juninmd/faxina/issues/38)) ([3afaa5f](https://github.com/juninmd/faxina/commit/3afaa5ff784568e0805835e834004a85d3b8c29e))
+* **dupes:** drop results when the folder or minimum size changes ([#43](https://github.com/juninmd/faxina/issues/43)) ([fd6973e](https://github.com/juninmd/faxina/commit/fd6973e9bb1f0e186c29b5d7866939200a38aaf3))
+* **dupes:** keep the hash cache writing once it passes its cap ([#37](https://github.com/juninmd/faxina/issues/37)) ([902f72d](https://github.com/juninmd/faxina/commit/902f72d1048e6cc04cac6ef2171da1db5c7937f2))
+* **empty:** report a link as dangling only when its target is missing ([#40](https://github.com/juninmd/faxina/issues/40)) ([da490c5](https://github.com/juninmd/faxina/commit/da490c5e147255373735eb4493bebdee7124fc42))
+* **safety:** reset the permanent-delete choice when the dialog closes or the destination changes ([#41](https://github.com/juninmd/faxina/issues/41)) ([d441b52](https://github.com/juninmd/faxina/commit/d441b525375f0bdebfd34e265ce85818d992fa1b)), closes [#54](https://github.com/juninmd/faxina/issues/54)
+* **ui:** stop showing invented disk capacity before the reading arrives ([#42](https://github.com/juninmd/faxina/issues/42)) ([6042ccd](https://github.com/juninmd/faxina/commit/6042ccd8e01b22e846800de17d14cba9eec8d361))
+* **ui:** tell the user when copying the assistant prompt fails ([#39](https://github.com/juninmd/faxina/issues/39)) ([35398a9](https://github.com/juninmd/faxina/commit/35398a98d0705320fa74943a246aa7973415c074))
+
+
+### Features
+
+* **a11y:** move between first-ring sunburst arcs with the arrow keys ([#55](https://github.com/juninmd/faxina/issues/55)) ([1e5e107](https://github.com/juninmd/faxina/commit/1e5e107ec7ed0d37a227a62e41c4253fb6ca5af2))
+
 # [1.11.0](https://github.com/juninmd/faxina/compare/v1.10.1...v1.11.0) (2026-10-25)
 
 
