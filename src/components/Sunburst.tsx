@@ -48,11 +48,12 @@ export function Sunburst({ root, selected, marked, onSelect, onOpen, onUp, onTog
 
   return (
     <div ref={ref} className="relative flex h-full w-full items-center justify-center">
+      {/* biome-ignore lint/a11y/useSemanticElements: an SVG group cannot be a fieldset */}
       <svg
         width={width}
         height={height}
         viewBox={`${-width / 2} ${-height / 2} ${width} ${height}`}
-        role="img"
+        role="group"
         aria-label="Mapa em anéis"
       >
         {arcs.map((d) => {
