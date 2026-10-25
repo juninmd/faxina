@@ -27,14 +27,18 @@ export function BigFiles({
   const [minSize, setMinSize] = useState(MIN_SIZES[0]);
   const [shown, setShown] = useState(PAGE);
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     setError("");
+    setBusy(true);
     try {
       setFiles(await api.largestFiles(1000));
       setPicked(new Set());
     } catch (e) {
       setError(String(e));
+    } finally {
+      setBusy(false);
     }
   }, []);
 
@@ -103,9 +107,11 @@ export function BigFiles({
         <button
           type="button"
           onClick={load}
-          className="rounded-md border border-[var(--color-line)] px-4 py-2 text-sm hover:bg-[var(--color-panel-2)]"
+          disabled={busy}
+          className="rounded-md border border-[var(--color-line)] px-4 py-2 text-sm hover:bg-[var(--color-panel-2)] disabled:opacity-50"
         >
-          <span aria-hidden="true">🔄 </span>Atualizar lista
+          <span aria-hidden="true">🔄 </span>
+          {busy ? "Atualizando…" : "Atualizar lista"}
         </button>
         {!!picked.size && (
           <button
