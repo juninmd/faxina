@@ -49,6 +49,12 @@ const CACHE_DIRS: &[&str] = &[
     ".godot",
     ".vs",
     "deriveddatacache",
+    ".xwin-cache",
+    ".metro",
+    ".swc",
+    ".elixir_ls",
+    ".elixir-tools",
+    ".lexical",
     ".aider.tags.cache.v3",
     ".aider.tags.cache.v4",
 ];
@@ -71,6 +77,7 @@ const BUILD_DIRS: &[&str] = &[
     ".angular",
     ".terraform",
     ".stack-work",
+    ".pixi",
     "htmlcov",
     ".nyc_output",
     "__pypackages__",
@@ -178,7 +185,7 @@ pub fn classify_dir(name: &str, hints: DirHints) -> Option<Kind> {
     if lower == "target" && hints.has_target_manifest {
         return Some(Kind::Build);
     }
-    if (hints.has_unity && lower == "library")
+    if (hints.has_unity && matches!(lower, "library" | "memorycaptures"))
         || (hints.has_unreal && matches!(lower, "intermediate" | "binaries"))
         || (hints.has_mix && lower == "deps")
     {
@@ -285,11 +292,18 @@ mod tests {
             "zig-out",
             "storybook-static",
             "cdk.out",
+            ".pixi",
         ] {
             assert_eq!(classify_dir(n, none), Some(Kind::Build), "{n}");
         }
         for n in [
             ".ipynb_checkpoints",
+            ".xwin-cache",
+            ".metro",
+            ".swc",
+            ".elixir_ls",
+            ".elixir-tools",
+            ".lexical",
             ".nx",
             ".vite",
             ".astro",
@@ -311,6 +325,8 @@ mod tests {
     fn engine_and_elixir_folders_need_their_project_markers() {
         let unity = hints_for(["Assets", "ProjectSettings", "Packages"]);
         assert_eq!(classify_dir("Library", unity), Some(Kind::Build));
+        assert_eq!(classify_dir("MemoryCaptures", unity), Some(Kind::Build));
+        assert_eq!(classify_dir("MemoryCaptures", DirHints::default()), None);
         // A lone "Library" (or one beside only Assets) is the user's.
         assert_eq!(classify_dir("Library", hints_for(["Assets"])), None);
         assert_eq!(classify_dir("Library", DirHints::default()), None);

@@ -30,6 +30,29 @@ pub fn check(target: &Path, allowed_roots: &[PathBuf]) -> Result<PathBuf, String
     Ok(canon)
 }
 
+/// A dangling link directly or deeply inside `root`. The link is judged by where it *lives* (its
+/// parent is canonicalized), never by what it points to, which no longer exists.
+pub fn check_dangling_link(link: &Path, root: &Path) -> Result<(), String> {
+    if link.components().any(|c| matches!(c, Component::ParentDir)) {
+        return Err("caminho inválido".into());
+    }
+    if !crate::empty::is_dangling(link) {
+        return Err("o link não está mais quebrado".into());
+    }
+    let parent = link.parent().ok_or("caminho inválido")?;
+    let (parent, root) = (
+        dunce(parent).map_err(|_| "caminho não existe mais".to_string())?,
+        dunce(root).map_err(|_| "pasta não encontrada".to_string())?,
+    );
+    if !parent.starts_with(&root) {
+        return Err("fora da área analisada".into());
+    }
+    if is_protected(&parent) {
+        return Err("pasta protegida do sistema".into());
+    }
+    Ok(())
+}
+
 fn dunce(p: &Path) -> std::io::Result<PathBuf> {
     let c = p.canonicalize()?;
     // Strip the Windows verbatim prefix so comparisons against plain paths work.
@@ -256,5 +279,26 @@ mod tests {
         assert!(is_protected(
             &root.join("System Volume Information").join("tracking.log")
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn only_dangling_links_inside_the_root_can_be_removed() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let broken = root.path().join("broken");
+        std::os::unix::fs::symlink(root.path().join("gone"), &broken).unwrap();
+        assert!(check_dangling_link(&broken, root.path()).is_ok());
+
+        // A working link points at real data: it is not this feature's to remove.
+        std::fs::write(root.path().join("real"), "x").unwrap();
+        let ok = root.path().join("ok");
+        std::os::unix::fs::symlink(root.path().join("real"), &ok).unwrap();
+        assert!(check_dangling_link(&ok, root.path()).is_err());
+
+        // Same dangling link, but living outside the searched root.
+        let stray = outside.path().join("broken");
+        std::os::unix::fs::symlink(outside.path().join("gone"), &stray).unwrap();
+        assert!(check_dangling_link(&stray, root.path()).is_err());
     }
 }

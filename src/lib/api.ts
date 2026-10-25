@@ -62,6 +62,11 @@ export interface DupGroup {
   files: { path: string; modified: number }[];
 }
 
+export interface EmptyItem {
+  path: string;
+  kind: "folder" | "link";
+}
+
 export interface FolderGrowth {
   path: string;
   before: number;
@@ -97,6 +102,8 @@ export const api = {
   junkScan: () => invoke<JunkItem[]>("junk_scan"),
   junkClean: (ids: string[], permanent: boolean) => invoke<CleanReport>("junk_clean", { ids, permanent }),
   findDuplicates: (path: string, minSize: number) => invoke<DupGroup[]>("find_duplicates", { path, minSize }),
+  findEmpty: (path: string) => invoke<EmptyItem[]>("find_empty", { path }),
+  deleteBrokenLinks: (paths: string[]) => invoke<DeleteReport>("delete_broken_links", { paths }),
   cancelDuplicates: () => invoke<void>("cancel_duplicates"),
   diskInfo: (path: string) => invoke<DiskInfo | null>("disk_info", { path }),
   listDisks: () => invoke<DiskInfo[]>("list_disks"),
