@@ -40,6 +40,13 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
     };
   }, []);
 
+  // Results belong to the folder and size they were searched with; a change makes them stale.
+  const resetResults = () => {
+    setGroups(null);
+    setPicked(new Set());
+    setError("");
+  };
+
   const search = async () => {
     setError("");
     setGroups(null);
@@ -106,8 +113,15 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
         <button
           type="button"
           onClick={async () => {
-            const dir = await open({ directory: true, defaultPath: root });
-            if (typeof dir === "string") setRoot(dir);
+            try {
+              const dir = await open({ directory: true, defaultPath: root });
+              if (typeof dir === "string") {
+                setRoot(dir);
+                resetResults();
+              }
+            } catch (e) {
+              setError(String(e));
+            }
           }}
           className="max-w-md truncate rounded-md border border-[var(--color-line)] px-3 py-2 text-sm hover:bg-[var(--color-panel-2)]"
           title={root}
@@ -117,7 +131,10 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
         </button>
         <select
           value={minSize}
-          onChange={(e) => setMinSize(Number(e.target.value))}
+          onChange={(e) => {
+            setMinSize(Number(e.target.value));
+            resetResults();
+          }}
           className="rounded-md border border-[var(--color-line)] bg-[var(--color-panel)] px-3 py-2 text-sm"
           aria-label="Tamanho mínimo"
         >
