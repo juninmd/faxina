@@ -48,6 +48,8 @@ export function useHole() {
       done: () => void | Promise<void>,
     ) => {
       after.current = done;
+      // A batch that never finished must not leave its rows hidden.
+      for (const f of fades.current) f.cancel();
       fades.current = [];
       setHole({ sources: collectSources(keys, fades.current), freed: null, failed: 0 });
       try {
