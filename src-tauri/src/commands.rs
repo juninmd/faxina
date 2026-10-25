@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -304,15 +304,12 @@ pub async fn find_duplicates(
     let cancel = state.dup_cancel.clone();
     cancel.store(false, Ordering::Relaxed);
     let groups = tauri::async_runtime::spawn_blocking(move || {
-        let progress = DupProgress {
-            done: AtomicU64::new(0),
-            cancel: &cancel,
-        };
+        let progress = DupProgress::new(&cancel);
         let finished = AtomicBool::new(false);
         std::thread::scope(|s| {
             s.spawn(|| {
                 while !finished.load(Ordering::Relaxed) {
-                    let _ = app.emit("dupes-progress", progress.done.load(Ordering::Relaxed));
+                    let _ = app.emit("dupes-progress", progress.tick());
                     std::thread::sleep(Duration::from_millis(150));
                 }
             });

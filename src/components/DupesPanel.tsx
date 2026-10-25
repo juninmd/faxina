@@ -6,6 +6,13 @@ import { defaultPick, pruneDeleted } from "../lib/dupes";
 import { baseName, formatAge, formatBytes, formatCount } from "../lib/format";
 import type { Swallow } from "./types";
 
+/** Progress sample from the backend: the stage now running and how far it is. */
+interface DupTick {
+  stage: number;
+  done: number;
+  total: number;
+}
+
 const MIN_SIZES = [
   { label: "≥ 100 KB", value: 100 * 1024 },
   { label: "≥ 1 MB", value: 1024 * 1024 },
@@ -21,13 +28,13 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
   const [minSize, setMinSize] = useState(MIN_SIZES[1].value);
   const [groups, setGroups] = useState<DupGroup[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [hashed, setHashed] = useState<number | null>(null);
+  const [tick, setTick] = useState<DupTick | null>(null);
   const [error, setError] = useState("");
   const [shown, setShown] = useState(PAGE);
 
   useEffect(() => setRoot((r) => r || defaultRoot), [defaultRoot]);
   useEffect(() => {
-    const un = listen<number>("dupes-progress", (e) => setHashed(e.payload));
+    const un = listen<DupTick>("dupes-progress", (e) => setTick(e.payload));
     return () => {
       un.then((f) => f());
     };
@@ -37,7 +44,7 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
     setError("");
     setGroups(null);
     setShown(PAGE);
-    setHashed(0);
+    setTick({ stage: 0, done: 0, total: 0 });
     try {
       const found = await api.findDuplicates(root, minSize);
       setGroups(found);
@@ -45,7 +52,7 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
     } catch (e) {
       setError(String(e));
     } finally {
-      setHashed(null);
+      setTick(null);
     }
   };
 
@@ -120,7 +127,7 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
             </option>
           ))}
         </select>
-        {hashed === null ? (
+        {tick === null ? (
           <button
             type="button"
             disabled={!root}
@@ -135,7 +142,9 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
             onClick={() => api.cancelDuplicates()}
             className="rounded-md border border-[var(--color-line)] px-4 py-2 text-sm"
           >
-            Cancelar ({formatCount(hashed)} comparados)
+            Cancelar (
+            {tick.total ? `etapa ${tick.stage}: ${formatCount(tick.done)} de ${formatCount(tick.total)}` : "preparando"}
+            )
           </button>
         )}
         {!!picked.size && (
