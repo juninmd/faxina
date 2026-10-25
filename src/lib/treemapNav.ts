@@ -32,3 +32,8 @@ export function nextTile(points: Point[], current: number, key: string): number 
   });
   return best;
 }
+
+/** Point on a ring: angle 0 is 12 o'clock and grows clockwise, the same convention as the sunburst arcs. */
+export function ringPoint(angle: number, radius: number): Point {
+  return { x: radius * Math.sin(angle), y: -radius * Math.cos(angle) };
+}

@@ -1,10 +1,11 @@
 import { hierarchy, partition } from "d3-hierarchy";
-import { useMemo, useState } from "react";
+import { type KeyboardEvent, useMemo, useState } from "react";
 import { useSize } from "../hooks/useSize";
 import type { ViewNode } from "../lib/api";
 import { formatBytes, splitBytes } from "../lib/format";
 import { kindColor } from "../lib/kinds";
 import type { Marks } from "../lib/marks";
+import { nextTile, type Point, ringPoint } from "../lib/treemapNav";
 
 interface Props {
   root: ViewNode;
@@ -42,6 +43,23 @@ export function Sunburst({ root, selected, marked, onSelect, onOpen, onUp, onTog
       .descendants()
       .filter((d) => d.depth > 0 && d.depth <= RINGS && d.x1 - d.x0 > 0.004);
   }, [root]);
+
+  // Arrow keys walk the first ring, the arcs in the tab order. Same geometry as `arc()`.
+  const moveFocus = (e: KeyboardEvent<SVGPathElement>) => {
+    const tiles = Array.from(
+      e.currentTarget.parentElement?.querySelectorAll<SVGPathElement>('path[role="button"][tabindex="0"]') ?? [],
+    );
+    const points: Point[] = arcs
+      .filter((d) => d.depth === 1)
+      .map((d) => {
+        const a = (d.x0 + d.x1) / 2;
+        return ringPoint(a, ((d.y0 + d.y1) / 2) * ring);
+      });
+    const next = nextTile(points, tiles.indexOf(e.currentTarget), e.key);
+    if (next === null) return;
+    e.preventDefault();
+    tiles[next]?.focus();
+  };
 
   const focus = hover ?? root;
   const [num, unit] = splitBytes(focus.size);
@@ -81,6 +99,7 @@ export function Sunburst({ root, selected, marked, onSelect, onOpen, onUp, onTog
                   e.stopPropagation();
                   onOpen(n);
                 }
+                if (d.depth === 1 && e.key.startsWith("Arrow")) moveFocus(e);
               }}
               onClick={() => onSelect(n)}
               onDoubleClick={() => n.isDir && onOpen(n)}
