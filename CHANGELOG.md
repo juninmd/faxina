@@ -1,5 +1,28 @@
 # Changelog
 
+# [1.11.0](https://github.com/juninmd/faxina/compare/v1.10.1...v1.11.0) (2026-10-25)
+
+
+### Bug Fixes
+
+* **history:** keep a damaged history file instead of overwriting it ([#51](https://github.com/juninmd/faxina/issues/51)) ([1c2fb8a](https://github.com/juninmd/faxina/commit/1c2fb8a2b541ea95edf9505cd956a7d1f4bdccc9))
+* release hole animation rows and stop dupes progress on panic ([#45](https://github.com/juninmd/faxina/issues/45)) ([97a6f8b](https://github.com/juninmd/faxina/commit/97a6f8bfd58eaf2819d4285949d11ad282e78a98))
+* **scan:** ignore stale folder responses and report open failures ([#50](https://github.com/juninmd/faxina/issues/50)) ([f36b779](https://github.com/juninmd/faxina/commit/f36b779e9a5d31c740276348e9f162616694a2e3))
+* **ui:** clear the report copy timer and report copy failures ([#44](https://github.com/juninmd/faxina/issues/44)) ([812a056](https://github.com/juninmd/faxina/commit/812a056136b8e8ba90571386df2058bcc623fd1d))
+* **ui:** keep junk selections when a setting changes ([#48](https://github.com/juninmd/faxina/issues/48)) ([47f85ac](https://github.com/juninmd/faxina/commit/47f85ac0a0b6af6dca0619e32317faae8fa1a820))
+* **ui:** reset the collector's confirm state when its list empties ([#49](https://github.com/juninmd/faxina/issues/49)) ([a4c03e7](https://github.com/juninmd/faxina/commit/a4c03e719121c97c4dc73513a5100a51dbf9bfc0))
+
+
+### Features
+
+* **a11y:** move between top-level treemap tiles with the arrow keys ([#47](https://github.com/juninmd/faxina/issues/47)) ([ab93c63](https://github.com/juninmd/faxina/commit/ab93c63465830a724386771093b854f4d7994af2))
+* **dupes:** show the hashing stage and its own total instead of a bare count ([#53](https://github.com/juninmd/faxina/issues/53)) ([48977d0](https://github.com/juninmd/faxina/commit/48977d087377169da376f366d0a723a91e072ac2))
+
+
+### Performance Improvements
+
+* **empty:** run broken-link removal off the async runtime ([#46](https://github.com/juninmd/faxina/issues/46)) ([fa3cef7](https://github.com/juninmd/faxina/commit/fa3cef7ab76cad500f1bce45db40ae52bc3a9c74))
+
 ## [1.10.1](https://github.com/juninmd/faxina/compare/v1.10.0...v1.10.1) (2026-10-25)
 
 
