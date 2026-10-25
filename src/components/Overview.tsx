@@ -171,18 +171,18 @@ export default function Overview({
             </span>
           </div>
         </section>
-        <button type="button" className="panel safety-link" onClick={() => navigate("review")}>
+        <section className="panel safety-link">
           <span className="icon-tile green">
             <Icon name="shield" size={24} />
           </span>
           <div>
             <h2>Limpar sem perder o que importa</h2>
             <p>Veja o que protegemos e ajuste suas exclusões.</p>
-            <span>
+            <button type="button" className="button secondary" onClick={() => navigate("review")}>
               Conhecer as proteções <Icon name="arrow" size={16} />
-            </span>
+            </button>
           </div>
-        </button>
+        </section>
       </div>
       <div className="principles stagger">
         <span>
