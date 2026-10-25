@@ -15,6 +15,12 @@ export default function ConfirmDialog({
   const [destination, setDestination] = useState<Report["destination"]>("trash");
   const [acknowledged, setAcknowledged] = useState(false);
 
+  // Every switch needs a fresh acknowledgement, so an earlier tick never carries over.
+  const choose = (next: Report["destination"]) => {
+    setDestination(next);
+    setAcknowledged(false);
+  };
+
   useEffect(() => {
     const dialog = ref.current;
     const previous = document.activeElement;
@@ -47,12 +53,7 @@ export default function ConfirmDialog({
       <h2 id="confirm-title">Como você quer limpar?</h2>
       <p>{gb(amount)} selecionados para limpeza.</p>
       <label className={`destination-option ${destination === "trash" ? "chosen" : ""}`}>
-        <input
-          type="radio"
-          name="destination"
-          checked={destination === "trash"}
-          onChange={() => setDestination("trash")}
-        />
+        <input type="radio" name="destination" checked={destination === "trash"} onChange={() => choose("trash")} />
         <span>
           <strong>
             Enviar à Lixeira <span className="badge green">Recomendado</span>
@@ -67,7 +68,7 @@ export default function ConfirmDialog({
           type="radio"
           name="destination"
           checked={destination === "permanent"}
-          onChange={() => setDestination("permanent")}
+          onChange={() => choose("permanent")}
         />
         <span>
           <strong>Excluir permanentemente</strong>
