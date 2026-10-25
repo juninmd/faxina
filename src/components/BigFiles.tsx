@@ -120,6 +120,11 @@ export function BigFiles({
 
       {error && <p className="text-sm text-[var(--color-danger)]">{error}</p>}
 
+      {files === null && !error && (
+        <p className="text-[var(--color-muted)]" role="status">
+          Carregando a lista de arquivos…
+        </p>
+      )}
       {files?.length === 0 && (
         <div className="panel flex flex-col items-start gap-3 p-6">
           <p className="text-[var(--color-muted)]">
