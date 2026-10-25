@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.10.1](https://github.com/juninmd/faxina/compare/v1.10.0...v1.10.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **ui:** honest copy feedback and big-files loading; perf: cheaper scan metadata ([#32](https://github.com/juninmd/faxina/issues/32)) ([47117ed](https://github.com/juninmd/faxina/commit/47117ed2ee5078f62f07fb24fc91775014d47c42))
+
+
+### Performance Improvements
+
+* **ui:** page the sidebar suggestion and stale-project lists ([#34](https://github.com/juninmd/faxina/issues/34)) ([c4a8c36](https://github.com/juninmd/faxina/commit/c4a8c3697ce639c504797f2b58519381c830be7d))
+
 # [1.10.0](https://github.com/juninmd/faxina/compare/v1.9.0...v1.10.0) (2026-10-25)
 
 
