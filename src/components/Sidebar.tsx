@@ -25,11 +25,15 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+const PAGE = 20;
+
 export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onToggleMark, onReveal }: Props) {
   const [copied, setCopied] = useState("");
   const [promptCopied, setPromptCopied] = useState("");
   const [months, setMonths] = useState(6);
   const [stale, setStale] = useState<Suggestion[]>([]);
+  const [sugShown, setSugShown] = useState(PAGE);
+  const [staleShown, setStaleShown] = useState(PAGE);
   // `suggestions` is re-read after every scan and deletion, so it doubles as the refresh signal.
   // biome-ignore lint/correctness/useExhaustiveDependencies: refetch when the scan data changes
   useEffect(() => {
@@ -132,7 +136,7 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
           <p className="mt-3 text-sm text-[var(--color-muted)]">Nada óbvio para limpar aqui. 🎉</p>
         )}
         <ul className="mt-3 flex flex-col gap-1">
-          {suggestions.map((s) => (
+          {suggestions.slice(0, sugShown).map((s) => (
             <li key={s.path}>
               <button
                 type="button"
@@ -162,6 +166,16 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
             </li>
           ))}
         </ul>
+        {suggestions.length > sugShown && (
+          <button
+            type="button"
+            onClick={() => setSugShown((n) => n + PAGE)}
+            className="mt-2 w-full rounded-md border border-[var(--color-line)] px-3 py-1.5 text-sm hover:bg-[var(--color-panel-2)]"
+          >
+            Mostrar mais {Math.min(PAGE, suggestions.length - sugShown)} (faltam{" "}
+            {formatCount(suggestions.length - sugShown)})
+          </button>
+        )}
       </section>
 
       <section aria-label="Projetos parados" className="border-t border-[var(--color-line)] pt-5">
@@ -188,7 +202,7 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
               {formatBytes(stale.reduce((s, x) => s + x.size, 0))} em {stale.length}
             </div>
             <ul className="mt-2 flex flex-col gap-1">
-              {stale.map((s) => (
+              {stale.slice(0, staleShown).map((s) => (
                 <li key={s.path}>
                   <button
                     type="button"
@@ -209,6 +223,16 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
                 </li>
               ))}
             </ul>
+            {stale.length > staleShown && (
+              <button
+                type="button"
+                onClick={() => setStaleShown((n) => n + PAGE)}
+                className="mt-2 w-full rounded-md border border-[var(--color-line)] px-3 py-1.5 text-sm hover:bg-[var(--color-panel-2)]"
+              >
+                Mostrar mais {Math.min(PAGE, stale.length - staleShown)} (faltam{" "}
+                {formatCount(stale.length - staleShown)})
+              </button>
+            )}
           </>
         )}
       </section>
