@@ -15,6 +15,11 @@ interface Props {
 export function Collector({ items, onClear, onUnmark, onDelete }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [permanent, setPermanent] = useState(false);
+  // Cancelling must not leave "sem Lixeira" ticked for the next open.
+  const closeConfirm = () => {
+    setConfirming(false);
+    setPermanent(false);
+  };
   const dialog = useRef<HTMLDialogElement>(null);
   const total = items.reduce((s, m) => s + m.size, 0);
 
@@ -66,7 +71,7 @@ export function Collector({ items, onClear, onUnmark, onDelete }: Props) {
 
       <dialog
         ref={dialog}
-        onClose={() => setConfirming(false)}
+        onClose={closeConfirm}
         className="m-auto w-[440px] rounded-xl border border-[var(--color-line)] bg-[var(--color-panel)] p-6 text-[var(--color-text)] backdrop:bg-black/60"
       >
         <h2 className="text-lg font-semibold">
@@ -83,7 +88,7 @@ export function Collector({ items, onClear, onUnmark, onDelete }: Props) {
         <div className="mt-6 flex justify-end gap-2">
           <button
             type="button"
-            onClick={() => setConfirming(false)}
+            onClick={closeConfirm}
             className="rounded-md px-4 py-2 text-sm hover:bg-[var(--color-panel-2)]"
           >
             Cancelar
