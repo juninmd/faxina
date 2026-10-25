@@ -118,6 +118,13 @@ pub(crate) fn remove_permanent(path: &Path) -> io::Result<()> {
 
 /// Removes a link itself (file or directory flavor), never what it points to.
 pub(crate) fn remove_link(path: &Path) -> io::Result<()> {
+    // The link was validated earlier; it may have been replaced by a regular file since.
+    if !crate::scan::is_link(&fs::symlink_metadata(path)?) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "não é mais um link",
+        ));
+    }
     fs::remove_file(path).or_else(|_| fs::remove_dir(path))
 }
 
@@ -241,5 +248,14 @@ mod tests {
         remove_tree(&dir).unwrap();
         assert!(!dir.exists());
         assert!(outside.join("keep.txt").exists());
+    }
+
+    #[test]
+    fn remove_link_never_deletes_a_regular_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("replaced.txt");
+        fs::write(&file, b"user work").unwrap();
+        assert!(remove_link(&file).is_err(), "a regular file is not a link");
+        assert_eq!(fs::read(&file).unwrap(), b"user work");
     }
 }
