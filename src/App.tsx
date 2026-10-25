@@ -84,11 +84,15 @@ export default function App() {
     settingsRef.current = settings;
   }, [settings]);
 
+  // Each analysis takes a ticket; cancelling takes a new one, so the abandoned result is dropped.
+  const junkTicket = useRef(0);
   const loadJunk = useCallback(async () => {
+    const mine = ++junkTicket.current;
     setJunkLoading(true);
     setScanError(false);
     try {
       const items = await api.junkScan();
+      if (mine !== junkTicket.current) return;
       const merged = mergeRulesWithScan(items);
       setRules(merged);
       setScanned(true);
@@ -100,9 +104,9 @@ export default function App() {
         rec.length ? "Análise concluída. Revise os itens para liberar espaço." : "Análise concluída: tudo limpo!",
       );
     } catch {
-      setScanError(true);
+      if (mine === junkTicket.current) setScanError(true);
     } finally {
-      setJunkLoading(false);
+      if (mine === junkTicket.current) setJunkLoading(false);
     }
   }, []);
 
@@ -320,7 +324,10 @@ export default function App() {
                 loading={junkLoading}
                 due={cleanupDue}
                 onScan={loadJunk}
-                onCancel={() => setJunkLoading(false)}
+                onCancel={() => {
+                  junkTicket.current += 1;
+                  setJunkLoading(false);
+                }}
                 navigate={setPage}
               />
             )}
