@@ -257,7 +257,8 @@ fn hash_file(
         }
         Mode::Prefix(n) => {
             let mut file = File::open(path)?;
-            let mut buf = vec![0u8; n];
+            // A file shorter than the probe needs only its own bytes: zeroing the full probe per small file was wasted work.
+            let mut buf = vec![0u8; n.min(size as usize)];
             let read = file.read(&mut buf)?;
             hasher.update(&buf[..read]);
         }
