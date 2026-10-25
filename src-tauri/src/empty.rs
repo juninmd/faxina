@@ -26,7 +26,8 @@ pub struct EmptyItem {
 
 /// Link whose target no longer exists. Re-checked right before removal: it may have been fixed.
 pub fn is_dangling(path: &Path) -> bool {
-    fs::symlink_metadata(path).is_ok_and(|m| is_link(&m)) && fs::metadata(path).is_err()
+    fs::symlink_metadata(path).is_ok_and(|m| is_link(&m))
+        && fs::metadata(path).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
 }
 
 /// Folders holding no file at all (only other empty folders) and dangling links under `root`.
@@ -134,5 +135,24 @@ mod tests {
         let found = find(t.path());
         assert_eq!(paths(&found, EmptyKind::Link), ["broken"]);
         assert!(paths(&found, EmptyKind::Folder).is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_target_is_not_reported_as_dangling() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let tmp = tempfile::tempdir().unwrap();
+        let locked = tmp.path().join("locked");
+        std::fs::create_dir(&locked).unwrap();
+        std::fs::write(locked.join("target"), b"x").unwrap();
+        let link = tmp.path().join("link");
+        symlink(locked.join("target"), &link).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let dangling = is_dangling(&link);
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(
+            !dangling,
+            "a link whose target exists must never be deleted"
+        );
     }
 }
