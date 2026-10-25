@@ -89,7 +89,7 @@ export function Treemap({ root, selected, marked, onSelect, onOpen, onToggleMark
             data-color={color}
             role="treeitem"
             aria-selected={isSelected}
-            aria-label={`${n.name}, ${formatBytes(n.size)}`}
+            aria-label={`${n.name}, ${formatBytes(n.size)}${isMarked ? ", marcado para excluir" : ""}`}
             tabIndex={d.depth === 1 ? 0 : -1}
             onFocus={() => onSelect(n)}
             onKeyDown={(e) => {
