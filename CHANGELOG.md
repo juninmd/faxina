@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.12.3](https://github.com/juninmd/faxina/compare/v1.12.2...v1.12.3) (2026-10-25)
+
+
+### Bug Fixes
+
+* **remove:** try every entry of a folder even after one fails ([#66](https://github.com/juninmd/faxina/issues/66)) ([e66e552](https://github.com/juninmd/faxina/commit/e66e5526b5b65c6cfdf81818fc94e836148fc2a8))
+* **ui:** ignore stale responses when the depth changes ([#64](https://github.com/juninmd/faxina/issues/64)) ([802dcb2](https://github.com/juninmd/faxina/commit/802dcb24bd1bc423258e0fe1cfb6a523d2848e73))
+
+
+### Performance Improvements
+
+* **ui:** page the empty-folder list instead of rendering every row ([#65](https://github.com/juninmd/faxina/issues/65)) ([78d21d6](https://github.com/juninmd/faxina/commit/78d21d679e0139b15e7443fedb13496c9b4685c9))
+
 ## [1.12.2](https://github.com/juninmd/faxina/compare/v1.12.1...v1.12.2) (2026-10-25)
 
 
