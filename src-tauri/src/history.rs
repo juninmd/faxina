@@ -155,10 +155,21 @@ fn store_path() -> Option<PathBuf> {
 
 /// A missing or damaged file just means "no history yet".
 pub fn load() -> Vec<Snapshot> {
-    store_path()
-        .and_then(|p| std::fs::read(p).ok())
-        .and_then(|b| serde_json::from_slice(&b).ok())
-        .unwrap_or_default()
+    store_path().map(|p| load_from(&p)).unwrap_or_default()
+}
+
+fn load_from(path: &Path) -> Vec<Snapshot> {
+    let Ok(bytes) = std::fs::read(path) else {
+        return Vec::new();
+    };
+    match serde_json::from_slice(&bytes) {
+        Ok(store) => store,
+        Err(_) => {
+            // Keep the damaged file: the next save would otherwise overwrite it without a trace.
+            let _ = std::fs::rename(path, path.with_extension("json.corrupt"));
+            Vec::new()
+        }
+    }
 }
 
 pub fn save(store: &[Snapshot]) {
@@ -257,5 +268,26 @@ mod tests {
         assert_eq!(store.iter().filter(|s| s.root == "/other").count(), 1);
         let last = record(&mut store, snap("/r", 99, 1, &[])).expect("previous exists");
         assert_eq!(last.previous_at, 22);
+    }
+
+    #[test]
+    fn a_damaged_store_is_kept_aside_not_overwritten() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("history.json");
+        std::fs::write(&path, b"{ not json").unwrap();
+        assert!(load_from(&path).is_empty());
+        assert!(!path.exists(), "the damaged file is moved away");
+        assert_eq!(
+            std::fs::read(path.with_extension("json.corrupt")).unwrap(),
+            b"{ not json"
+        );
+    }
+
+    #[test]
+    fn a_missing_store_is_empty_and_leaves_nothing_behind() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("history.json");
+        assert!(load_from(&path).is_empty());
+        assert!(!path.with_extension("json.corrupt").exists());
     }
 }
