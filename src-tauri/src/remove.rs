@@ -131,17 +131,21 @@ pub(crate) fn remove_link(path: &Path) -> io::Result<()> {
 /// Fans out one level so a single huge folder (node_modules) still uses every core.
 pub fn remove_tree(dir: &Path) -> io::Result<()> {
     let entries: Vec<fs::DirEntry> = fs::read_dir(dir)?.collect::<io::Result<_>>()?;
-    entries.par_iter().try_for_each(|e| {
-        let path = e.path();
-        if e.file_type()?.is_dir() {
-            // std never follows links or junctions below this point.
-            fs::remove_dir_all(path)
-        } else {
-            // A directory link needs remove_dir; neither call ever recurses.
-            fs::remove_file(&path).or_else(|_| fs::remove_dir(&path))
-        }
-    })?;
+    // Every entry is tried: one locked file must not stop its removable siblings.
+    let results: Vec<io::Result<()>> = entries.par_iter().map(remove_entry).collect();
+    results.into_iter().collect::<io::Result<()>>()?;
     fs::remove_dir(dir)
+}
+
+fn remove_entry(e: &fs::DirEntry) -> io::Result<()> {
+    let path = e.path();
+    if e.file_type()?.is_dir() {
+        // std never follows links or junctions below this point.
+        fs::remove_dir_all(path)
+    } else {
+        // A directory link needs remove_dir; neither call ever recurses.
+        fs::remove_file(&path).or_else(|_| fs::remove_dir(&path))
+    }
 }
 
 #[cfg(test)]
@@ -257,5 +261,73 @@ mod tests {
         fs::write(&file, b"user work").unwrap();
         assert!(remove_link(&file).is_err(), "a regular file is not a link");
         assert_eq!(fs::read(&file).unwrap(), b"user work");
+    }
+
+    /// Keeps `dir/inner.txt` undeletable while alive: an open handle without share-delete on
+    /// Windows, a read-only folder on Unix.
+    struct Lock {
+        #[cfg(windows)]
+        _file: fs::File,
+        #[cfg(unix)]
+        dir: PathBuf,
+    }
+
+    impl Lock {
+        fn new(dir: &Path) -> Self {
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::OpenOptionsExt;
+                // FILE_SHARE_READ only: deleting the file while this handle is open fails.
+                let file = fs::OpenOptions::new()
+                    .read(true)
+                    .share_mode(1)
+                    .open(dir.join("inner.txt"))
+                    .unwrap();
+                Self { _file: file }
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(dir, fs::Permissions::from_mode(0o555)).unwrap();
+                Self {
+                    dir: dir.to_path_buf(),
+                }
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for Lock {
+        fn drop(&mut self) {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&self.dir, fs::Permissions::from_mode(0o755));
+        }
+    }
+
+    #[test]
+    fn remove_tree_keeps_removing_siblings_after_a_locked_entry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (dir, locked) = (
+            tmp.path().join("dir"),
+            tmp.path().join("dir").join("locked"),
+        );
+        fs::create_dir_all(&locked).unwrap();
+        fs::write(locked.join("inner.txt"), b"x").unwrap();
+        // Many siblings: rayon may stop handing out work once one entry fails.
+        for i in 0..500 {
+            fs::write(dir.join(format!("ok{i}.txt")), b"x").unwrap();
+        }
+        let lock = Lock::new(&locked);
+        let result = remove_tree(&dir);
+        drop(lock);
+        assert!(result.is_err(), "a locked entry must be reported");
+        let left = (0..500)
+            .filter(|i| dir.join(format!("ok{i}.txt")).exists())
+            .count();
+        assert_eq!(left, 0, "every removable sibling must still go");
+        assert!(
+            locked.join("inner.txt").exists(),
+            "the locked file must stay"
+        );
     }
 }
