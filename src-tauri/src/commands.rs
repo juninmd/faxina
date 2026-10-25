@@ -347,20 +347,24 @@ pub async fn delete_broken_links(
     paths: Vec<String>,
 ) -> Result<DeleteReport, String> {
     let root = lock(&state.empty_root).clone();
-    let mut report = DeleteReport::default();
-    for raw in paths {
-        let p = Path::new(&raw);
-        let outcome = match root.as_deref() {
-            Some(r) if p.is_absolute() => guard::check_dangling_link(p, r)
-                .and_then(|()| remove::remove_link(p).map_err(|e| e.to_string())),
-            _ => Err("fora da área analisada".into()),
-        };
-        match outcome {
-            Ok(()) => report.deleted.push(raw),
-            Err(error) => report.failed.push(Failure { path: raw, error }),
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut report = DeleteReport::default();
+        for raw in paths {
+            let p = Path::new(&raw);
+            let outcome = match root.as_deref() {
+                Some(r) if p.is_absolute() => guard::check_dangling_link(p, r)
+                    .and_then(|()| remove::remove_link(p).map_err(|e| e.to_string())),
+                _ => Err("fora da área analisada".into()),
+            };
+            match outcome {
+                Ok(()) => report.deleted.push(raw),
+                Err(error) => report.failed.push(Failure { path: raw, error }),
+            }
         }
-    }
-    Ok(report)
+        report
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
