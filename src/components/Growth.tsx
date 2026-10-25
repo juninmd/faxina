@@ -6,20 +6,30 @@ import Icon from "./Icon";
 export default function Growth({ root, onAnalyze }: { root: string; onAnalyze: () => void }) {
   const [growth, setGrowth] = useState<GrowthData | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new scan root means a new comparison
   useEffect(() => {
+    // A reply for a scan root the user has already left must not replace the current one.
+    let current = true;
     setLoaded(false);
+    setFailed(false);
     api.growth().then(
       (g) => {
+        if (!current) return;
         setGrowth(g);
         setLoaded(true);
       },
       () => {
+        if (!current) return;
         setGrowth(null);
+        setFailed(true);
         setLoaded(true);
       },
     );
+    return () => {
+      current = false;
+    };
   }, [root]);
 
   const maxGrowth = growth?.grown[0]?.growth ?? 1;
@@ -35,7 +45,17 @@ export default function Growth({ root, onAnalyze }: { root: string; onAnalyze: (
         </div>
         <span className="badge">Somente leitura</span>
       </div>
-      {!root || (loaded && !growth) ? (
+      {root && !loaded && <p className="text-[var(--color-muted)]">Carregando a comparação…</p>}
+      {root && failed ? (
+        <section className="panel empty-state">
+          <Icon name="clock" size={38} />
+          <h2>Não foi possível comparar.</h2>
+          <p>Analise a pasta de novo para tentar outra vez.</p>
+          <button type="button" className="button primary" onClick={onAnalyze}>
+            Ir para o Mapa do disco
+          </button>
+        </section>
+      ) : !root || (loaded && !growth) ? (
         <section className="panel empty-state">
           <Icon name="clock" size={38} />
           <h2>{root ? "Primeira análise registrada." : "Nenhuma análise ainda."}</h2>
