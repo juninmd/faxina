@@ -78,6 +78,12 @@ export default function App() {
     setMotion(next);
   };
 
+  // Read through a ref so changing a setting does not re-run the whole junk scan.
+  const settingsRef = useRef(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
   const loadJunk = useCallback(async () => {
     setJunkLoading(true);
     setScanError(false);
@@ -86,7 +92,7 @@ export default function App() {
       const merged = mergeRulesWithScan(items);
       setRules(merged);
       setScanned(true);
-      const rec = recommended(merged, settings).map((r) => r.id);
+      const rec = recommended(merged, settingsRef.current).map((r) => r.id);
       setSelected(rec);
       const firstActive = merged.find((r) => r.size > 0 && !r.blocked) || merged[0];
       setDetail(firstActive);
@@ -98,7 +104,7 @@ export default function App() {
     } finally {
       setJunkLoading(false);
     }
-  }, [settings]);
+  }, []);
 
   useEffect(() => {
     api.homeDir().then(setHome, () => setHome(""));
