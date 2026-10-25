@@ -164,7 +164,12 @@ fn credential_dirs() -> Vec<PathBuf> {
         ".aws",
         ".azure",
         ".kube",
+        ".docker",
         ".config/gcloud",
+        ".config/gh",
+        ".git-credentials",
+        ".npmrc",
+        ".netrc",
     ]
     .iter()
     .map(|rel| home.join(rel))
@@ -281,6 +286,18 @@ mod tests {
         assert!(is_protected(&home.join(".ssh").join("id_ed25519")));
         assert!(is_protected(&home.join(".aws").join("credentials")));
         assert!(is_protected(&home.join(".config").join("gcloud")));
+    }
+
+    #[test]
+    fn token_files_under_home_are_protected() {
+        let home = dunce(&dirs::home_dir().unwrap()).unwrap();
+        assert!(is_protected(&home.join(".docker").join("config.json")));
+        assert!(is_protected(
+            &home.join(".config").join("gh").join("hosts.yml")
+        ));
+        assert!(is_protected(&home.join(".git-credentials")));
+        assert!(is_protected(&home.join(".npmrc")));
+        assert!(is_protected(&home.join(".netrc")));
     }
 
     #[test]
