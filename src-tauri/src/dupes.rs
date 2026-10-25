@@ -16,8 +16,15 @@ const PARTIAL: usize = 64 * 1024;
 /// crossover around 128 KiB; files reaching a full hash are already past it).
 const MMAP_MIN: u64 = 256 * 1024;
 /// Upper bound on persisted hashes, so re-scanning many different folders cannot grow the cache
-/// file forever. Past this, the file is left as-is instead of being rewritten.
+/// file forever. Past this, the oldest entries are evicted.
 const CACHE_CAP: usize = 300_000;
+
+fn current_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -137,12 +144,15 @@ struct CacheEntry {
     size: u64,
     modified: u64,
     hash: String,
+    #[serde(default)]
+    last_used: u64,
 }
 
 /// Hashes survive across runs as long as a file's size and mtime are unchanged, so re-scanning a
 /// big media library does not re-read every multi-GB file.
 struct HashCache {
     path: Option<PathBuf>,
+    cap: usize,
     map: Mutex<HashMap<String, CacheEntry>>,
     dirty: AtomicBool,
 }
@@ -151,6 +161,7 @@ impl HashCache {
     fn disabled() -> Self {
         Self {
             path: None,
+            cap: CACHE_CAP,
             map: Mutex::new(HashMap::new()),
             dirty: AtomicBool::new(false),
         }
@@ -168,36 +179,70 @@ impl HashCache {
     }
 
     fn at(path: PathBuf) -> Self {
+        Self::with_cap(path, CACHE_CAP)
+    }
+
+    fn with_cap(path: PathBuf, cap: usize) -> Self {
         let map = std::fs::read_to_string(&path)
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
         Self {
             path: Some(path),
+            cap,
             map: Mutex::new(map),
             dirty: AtomicBool::new(false),
         }
     }
 
     fn get(&self, path: &Path, size: u64, modified: u64) -> Option<String> {
-        let guard = self.map.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = self.map.lock().unwrap_or_else(|e| e.into_inner());
         let key = path.to_string_lossy();
-        match guard.get(key.as_ref()) {
-            Some(e) if e.size == size && e.modified == modified => Some(e.hash.clone()),
-            _ => None,
+        if let Some(e) = guard.get_mut(key.as_ref()) {
+            if e.size == size && e.modified == modified {
+                let now = current_timestamp();
+                if e.last_used != now {
+                    e.last_used = now;
+                    self.dirty.store(true, Ordering::Relaxed);
+                }
+                return Some(e.hash.clone());
+            }
         }
+        None
     }
 
     fn insert(&self, path: &Path, size: u64, modified: u64, hash: String) {
+        let now = current_timestamp();
         self.map.lock().unwrap_or_else(|e| e.into_inner()).insert(
             path.to_string_lossy().into_owned(),
             CacheEntry {
                 size,
                 modified,
                 hash,
+                last_used: now,
             },
         );
         self.dirty.store(true, Ordering::Relaxed);
+    }
+
+    fn prune(&self, root: &Path, seen: &HashMap<PathBuf, (u64, u64)>) {
+        let mut map = self.map.lock().unwrap_or_else(|e| e.into_inner());
+        let before_len = map.len();
+        map.retain(|key, entry| {
+            let path = Path::new(key);
+            if path.starts_with(root) {
+                if let Some(&(s, m)) = seen.get(path) {
+                    entry.size == s && entry.modified == m
+                } else {
+                    false
+                }
+            } else {
+                true
+            }
+        });
+        if map.len() != before_len {
+            self.dirty.store(true, Ordering::Relaxed);
+        }
     }
 
     fn save(&self) {
@@ -206,27 +251,51 @@ impl HashCache {
             return;
         }
         let mut map = self.map.lock().unwrap_or_else(|e| e.into_inner());
-        if map.len() > CACHE_CAP {
-            prune_to_cap(&mut map, CACHE_CAP);
+        if map.len() > self.cap {
+            prune_to_cap(&mut map, self.cap);
         }
-        let Ok(json) = serde_json::to_string(&*map) else {
-            return;
+        let json = match serde_json::to_string(&*map) {
+            Ok(j) => j,
+            Err(err) => {
+                eprintln!("Failed to serialize hash cache: {err}");
+                return;
+            }
         };
         if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
+            if let Err(err) = std::fs::create_dir_all(dir) {
+                eprintln!("Failed to create cache directory {}: {err}", dir.display());
+                return;
+            }
         }
         let tmp = path.with_extension("json.tmp");
-        if std::fs::write(&tmp, json).is_ok() {
-            let _ = std::fs::rename(&tmp, path);
+        if let Err(err) = std::fs::write(&tmp, &json) {
+            eprintln!(
+                "Failed to write temporary hash cache file {}: {err}",
+                tmp.display()
+            );
+            return;
+        }
+        if let Err(err) = std::fs::rename(&tmp, path) {
+            eprintln!(
+                "Failed to rename temporary hash cache file {} to {}: {err}",
+                tmp.display(),
+                path.display()
+            );
         }
     }
 }
 
-/// Entries for deleted files can never hit again, so they go first; then any excess is trimmed.
+/// Entries for deleted files can never hit again, so they go first. Any excess then goes
+/// least-recently-used first, so a hash that keeps being reused survives.
 fn prune_to_cap(map: &mut HashMap<String, CacheEntry>, cap: usize) {
     map.retain(|p, _| Path::new(p).exists());
-    let excess: Vec<String> = map.keys().skip(cap).cloned().collect();
-    for k in excess {
+    if map.len() <= cap {
+        return;
+    }
+    let mut by_age: Vec<(String, u64)> =
+        map.iter().map(|(k, v)| (k.clone(), v.last_used)).collect();
+    by_age.sort_by(|(k1, lu1), (k2, lu2)| lu1.cmp(lu2).then_with(|| k1.cmp(k2)));
+    for (k, _) in by_age.into_iter().take(map.len() - cap) {
         map.remove(&k);
     }
 }
@@ -307,6 +376,10 @@ fn refine(
 
 pub fn find(root: &Path, min_size: u64, p: &DupProgress) -> Vec<DupGroup> {
     let cache = HashCache::open();
+    find_impl(root, min_size, p, &cache)
+}
+
+fn find_impl(root: &Path, min_size: u64, p: &DupProgress, cache: &HashCache) -> Vec<DupGroup> {
     let w = Walk {
         min_size: min_size.max(1),
         cancel: p.cancel,
@@ -314,6 +387,10 @@ pub fn find(root: &Path, min_size: u64, p: &DupProgress) -> Vec<DupGroup> {
         links: Links::default(),
     };
     let files = walk(root, &w);
+    let seen: HashMap<PathBuf, (u64, u64)> = files
+        .iter()
+        .map(|(p, s, m)| (p.clone(), (*s, *m)))
+        .collect();
 
     let mut by_size: HashMap<u64, Vec<Candidate>> = HashMap::new();
     for f in files {
@@ -322,7 +399,7 @@ pub fn find(root: &Path, min_size: u64, p: &DupProgress) -> Vec<DupGroup> {
     let same_size: Vec<Vec<Candidate>> = by_size.into_values().filter(|v| v.len() > 1).collect();
 
     // Size -> prefix hash -> suffix hash -> full hash (fclones-style), the cheap probes first.
-    let prefix = refine(same_size, Mode::Prefix(PARTIAL), p, &cache);
+    let prefix = refine(same_size, Mode::Prefix(PARTIAL), p, cache);
     let (small, big): (Vec<_>, Vec<_>) = prefix
         .into_iter()
         .partition(|(_, v)| v[0].1 <= PARTIAL as u64);
@@ -331,7 +408,7 @@ pub fn find(root: &Path, min_size: u64, p: &DupProgress) -> Vec<DupGroup> {
         big.into_iter().map(|(_, v)| v).collect(),
         Mode::Tail(PARTIAL),
         p,
-        &cache,
+        cache,
     );
     // Prefix + suffix cover the whole file once size <= 2*PARTIAL, so no full hash is needed.
     let (covered, rest): (Vec<_>, Vec<_>) = suffix
@@ -344,7 +421,7 @@ pub fn find(root: &Path, min_size: u64, p: &DupProgress) -> Vec<DupGroup> {
         rest.into_iter().map(|(_, v)| v).collect(),
         Mode::Full,
         p,
-        &cache,
+        cache,
     ));
 
     let mut out: Vec<DupGroup> = groups
@@ -366,6 +443,7 @@ pub fn find(root: &Path, min_size: u64, p: &DupProgress) -> Vec<DupGroup> {
         })
         .collect();
     out.sort_unstable_by_key(|g| std::cmp::Reverse(g.wasted()));
+    cache.prune(root, &seen);
     cache.save();
     out
 }
@@ -501,6 +579,7 @@ mod tests {
                     size: 1,
                     modified: 2,
                     hash: "h".into(),
+                    last_used: 0,
                 },
             );
         }
@@ -512,6 +591,7 @@ mod tests {
                     size: 1,
                     modified: 2,
                     hash: "h".into(),
+                    last_used: 0,
                 },
             );
         }
@@ -543,5 +623,98 @@ mod tests {
         let reloaded = HashCache::at(cache_file);
         assert_eq!(reloaded.get(&live, 1, 2).as_deref(), Some("keep"));
         assert!(reloaded.map.lock().unwrap().len() <= CACHE_CAP);
+    }
+
+    #[test]
+    fn hash_cache_evicts_oldest_entries_when_exceeding_cap() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("cache.json");
+        let c = HashCache::with_cap(file.clone(), 3);
+        // Real files: entries for deleted files are pruned before the age-based trim.
+        let paths: Vec<PathBuf> = (1..=4)
+            .map(|i| tmp.path().join(format!("{i}.bin")))
+            .collect();
+        for p in &paths {
+            fs::write(p, b"x").unwrap();
+            c.insert(p, 1, 2, "hash".into());
+        }
+
+        {
+            let mut guard = c.map.lock().unwrap();
+            for (p, used) in paths.iter().zip([100u64, 200, 300, 400]) {
+                guard
+                    .get_mut(p.to_string_lossy().as_ref())
+                    .unwrap()
+                    .last_used = used;
+            }
+        }
+
+        c.save();
+
+        let loaded = HashCache::at(file);
+        let guard = loaded.map.lock().unwrap();
+        assert_eq!(guard.len(), 3);
+        assert!(
+            !guard.contains_key(paths[0].to_string_lossy().as_ref()),
+            "oldest entry should be evicted"
+        );
+        assert!(guard.contains_key(paths[1].to_string_lossy().as_ref()));
+        assert!(guard.contains_key(paths[2].to_string_lossy().as_ref()));
+        assert!(guard.contains_key(paths[3].to_string_lossy().as_ref()));
+    }
+
+    #[test]
+    fn find_prunes_deleted_or_modified_files_from_cache() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        let cache_file = r.join("dupes-cache.json");
+
+        let content = vec![5u8; 2 * PARTIAL + 100];
+        fs::write(r.join("a.bin"), &content).unwrap();
+        fs::write(r.join("b.bin"), &content).unwrap();
+
+        let cancel = AtomicBool::new(false);
+        let progress = DupProgress::new(&cancel);
+
+        let cache = HashCache::at(cache_file.clone());
+        find_impl(r, 1, &progress, &cache);
+
+        {
+            let loaded = HashCache::at(cache_file.clone());
+            let guard = loaded.map.lock().unwrap();
+            assert_eq!(guard.len(), 2);
+        }
+
+        fs::remove_file(r.join("b.bin")).unwrap();
+
+        find_impl(r, 1, &progress, &cache);
+
+        {
+            let loaded = HashCache::at(cache_file);
+            let guard = loaded.map.lock().unwrap();
+            assert_eq!(guard.len(), 1);
+            let key = r.join("b.bin").to_string_lossy().into_owned();
+            assert!(
+                !guard.contains_key(&key),
+                "deleted file should be pruned from cache"
+            );
+        }
+    }
+
+    #[test]
+    fn hash_cache_reads_old_json_without_last_used() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("old_cache.json");
+        let old_json = r#"{
+            "/x/y": {
+                "size": 10,
+                "modified": 20,
+                "hash": "abc"
+            }
+        }"#;
+        fs::write(&file, old_json).unwrap();
+
+        let c = HashCache::at(file);
+        assert_eq!(c.get(Path::new("/x/y"), 10, 20).as_deref(), Some("abc"));
     }
 }
