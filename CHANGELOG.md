@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.1](https://github.com/juninmd/faxina/compare/v1.12.0...v1.12.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **guard:** refuse deletion of credential stores under a scan root ([#33](https://github.com/juninmd/faxina/issues/33)) ([aa7a952](https://github.com/juninmd/faxina/commit/aa7a9528802394c28663d87e7bc5c903e81075ca))
+
 # [1.12.0](https://github.com/juninmd/faxina/compare/v1.11.0...v1.12.0) (2026-10-25)
 
 
