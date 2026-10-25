@@ -1,10 +1,11 @@
 import { hierarchy, treemap, treemapSquarify } from "d3-hierarchy";
-import { useMemo, useState } from "react";
+import { type KeyboardEvent, useMemo, useState } from "react";
 import { useSize } from "../hooks/useSize";
 import type { ViewNode } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import { kindColor } from "../lib/kinds";
 import type { Marks } from "../lib/marks";
+import { nextTile } from "../lib/treemapNav";
 
 interface Props {
   root: ViewNode;
@@ -34,6 +35,20 @@ function ownValue(n: ViewNode): number {
 export function Treemap({ root, selected, marked, onSelect, onOpen, onToggleMark }: Props) {
   const [ref, { width, height }] = useSize<HTMLDivElement>();
   const [hover, setHover] = useState<string | null>(null);
+
+  // Arrow keys walk the top-level tiles, the only ones in the tab order.
+  const moveFocus = (e: KeyboardEvent<HTMLElement>) => {
+    const container = e.currentTarget.parentElement;
+    const tiles = Array.from(container?.querySelectorAll<HTMLElement>('[role="treeitem"][tabindex="0"]') ?? []);
+    const points = tiles.map((t) => {
+      const r = t.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    });
+    const next = nextTile(points, tiles.indexOf(e.currentTarget), e.key);
+    if (next === null) return;
+    e.preventDefault();
+    tiles[next]?.focus();
+  };
 
   const nodes = useMemo(() => {
     if (width < 10 || height < 10) return [];
@@ -79,6 +94,7 @@ export function Treemap({ root, selected, marked, onSelect, onOpen, onToggleMark
             onFocus={() => onSelect(n)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && n.isDir) onOpen(n);
+              if (d.depth === 1) moveFocus(e);
             }}
             className={`tile absolute overflow-hidden rounded-[3px] ${n.reclaimable && !internal ? "hatch" : ""}`}
             style={{
