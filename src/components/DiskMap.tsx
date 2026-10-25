@@ -1,5 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { useEffect, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
 import type { useScan } from "../hooks/useScan";
 import { api, type DiskInfo } from "../lib/api";
 import { formatBytes } from "../lib/format";
@@ -30,11 +30,17 @@ export default function DiskMap({
 }) {
   const [disks, setDisks] = useState<DiskInfo[]>([]);
   const [expanded, setExpanded] = useState(false);
+  const screen = useRef<HTMLElement>(null);
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
     api.listDisks().then(setDisks, () => setDisks([]));
   }, []);
+
+  // Opening the full-screen map moves focus into it, so keyboard users are not left behind.
+  useEffect(() => {
+    if (expanded) screen.current?.querySelector<HTMLElement>("button")?.focus();
+  }, [expanded]);
 
   useEffect(() => {
     if (!active || !expanded) return;
@@ -46,6 +52,26 @@ export default function DiskMap({
   }, [active, expanded]);
 
   if (!active) return null;
+
+  // While the map is full screen it behaves as a modal: Tab cycles inside it and never reaches the page behind.
+  const trapFocus = (e: ReactKeyboardEvent<HTMLElement>) => {
+    if (e.key !== "Tab") return;
+    const items = Array.from(
+      e.currentTarget.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex="0"]'),
+    ).filter((el) => !el.hasAttribute("disabled"));
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    const current = document.activeElement;
+    const outside = !e.currentTarget.contains(current);
+    if (e.shiftKey && (current === first || outside)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (current === last || outside)) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
   // A failed scan or folder open is stored in the hook; show it where the picker's errors go.
   const message = notice || scan.error;
 
@@ -65,7 +91,16 @@ export default function DiskMap({
   const markedList = [...marked.values()];
 
   return (
-    <section className={`disk-map-screen ${expanded ? "is-expanded" : ""}`} aria-label="Explorador visual do disco">
+    // aria-modal is valid only with role="dialog", which is set on the same element in the same render.
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: the role is conditional, so the rule cannot see it
+    <section
+      ref={screen}
+      className={`disk-map-screen ${expanded ? "is-expanded" : ""}`}
+      aria-label="Explorador visual do disco"
+      role={expanded ? "dialog" : undefined}
+      aria-modal={expanded || undefined}
+      onKeyDown={expanded ? trapFocus : undefined}
+    >
       <div className="page-heading compact">
         <div>
           <p className="eyebrow">O MAPA QUE VOCÊ JÁ CONHECE</p>
