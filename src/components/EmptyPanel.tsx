@@ -5,11 +5,13 @@ import { formatCount } from "../lib/format";
 import type { Swallow } from "./types";
 
 const LABEL = { folder: "pasta vazia", link: "link quebrado" } as const;
+const PAGE = 50;
 
 export function EmptyPanel({ swallow, defaultRoot }: { swallow: Swallow; defaultRoot: string }) {
   const [root, setRoot] = useState(defaultRoot);
   const [items, setItems] = useState<EmptyItem[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [shown, setShown] = useState(PAGE);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -22,6 +24,7 @@ export function EmptyPanel({ swallow, defaultRoot }: { swallow: Swallow; default
     try {
       setItems(await api.findEmpty(root));
       setPicked(new Set());
+      setShown(PAGE);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -123,7 +126,7 @@ export function EmptyPanel({ swallow, defaultRoot }: { swallow: Swallow; default
       {error && <p className="text-sm text-[var(--color-danger)]">{error}</p>}
       {items?.length === 0 && <p className="text-[var(--color-muted)]">Nada vazio ou quebrado por aqui. 🎉</p>}
       <ul className="flex flex-col gap-1">
-        {items?.map((i) => (
+        {items?.slice(0, shown).map((i) => (
           <li key={i.path}>
             <label
               data-path={i.path}
@@ -141,6 +144,15 @@ export function EmptyPanel({ swallow, defaultRoot }: { swallow: Swallow; default
           </li>
         ))}
       </ul>
+      {items && items.length > shown && (
+        <button
+          type="button"
+          onClick={() => setShown((n) => n + PAGE)}
+          className="self-center rounded-md border border-[var(--color-line)] px-4 py-2 text-sm hover:bg-[var(--color-panel-2)]"
+        >
+          Mostrar mais {Math.min(PAGE, items.length - shown)} (faltam {formatCount(items.length - shown)})
+        </button>
+      )}
     </div>
   );
 }
