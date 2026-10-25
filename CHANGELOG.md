@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.3](https://github.com/juninmd/faxina/compare/v1.13.2...v1.13.3) (2026-10-25)
+
+
+### Bug Fixes
+
+* **a11y:** keep focus inside the full-screen disk map ([#73](https://github.com/juninmd/faxina/issues/73)) ([b48e68e](https://github.com/juninmd/faxina/commit/b48e68ed8cbf9ee38f702fb36efb876e2163c3ae))
+
 ## [1.13.2](https://github.com/juninmd/faxina/compare/v1.13.1...v1.13.2) (2026-10-25)
 
 
