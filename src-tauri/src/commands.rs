@@ -306,6 +306,13 @@ pub async fn find_duplicates(
     let groups = tauri::async_runtime::spawn_blocking(move || {
         let progress = DupProgress::new(&cancel);
         let finished = AtomicBool::new(false);
+        // Also runs on unwind, so a panic in the search still stops the progress thread.
+        struct Finish<'a>(&'a AtomicBool);
+        impl Drop for Finish<'_> {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Relaxed);
+            }
+        }
         std::thread::scope(|s| {
             s.spawn(|| {
                 while !finished.load(Ordering::Relaxed) {
@@ -313,9 +320,8 @@ pub async fn find_duplicates(
                     std::thread::sleep(Duration::from_millis(150));
                 }
             });
-            let found = dupes::find(&root, min_size, &progress);
-            finished.store(true, Ordering::Relaxed);
-            found
+            let _finish = Finish(&finished);
+            dupes::find(&root, min_size, &progress)
         })
     })
     .await
