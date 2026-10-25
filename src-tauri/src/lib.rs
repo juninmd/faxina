@@ -2,6 +2,7 @@ mod category;
 mod commands;
 mod disks;
 mod dupes;
+mod empty;
 mod guard;
 mod history;
 mod junk;
@@ -36,6 +37,8 @@ pub fn run() {
             commands::junk_scan,
             commands::junk_clean,
             commands::find_duplicates,
+            commands::find_empty,
+            commands::delete_broken_links,
             commands::cancel_duplicates,
             disks::disk_info,
             disks::list_disks,

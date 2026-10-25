@@ -116,6 +116,11 @@ pub(crate) fn remove_permanent(path: &Path) -> io::Result<()> {
     }
 }
 
+/// Removes a link itself (file or directory flavor), never what it points to.
+pub(crate) fn remove_link(path: &Path) -> io::Result<()> {
+    fs::remove_file(path).or_else(|_| fs::remove_dir(path))
+}
+
 /// Fans out one level so a single huge folder (node_modules) still uses every core.
 pub fn remove_tree(dir: &Path) -> io::Result<()> {
     let entries: Vec<fs::DirEntry> = fs::read_dir(dir)?.collect::<io::Result<_>>()?;

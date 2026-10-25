@@ -7,6 +7,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::dupes::{self, DupGroup, DupProgress};
+use crate::empty::{self, EmptyItem};
 use crate::history::{self, Growth};
 use crate::junk::{self, CleanReport, JunkItem};
 use crate::model::{BigFile, Node, Suggestion, ViewNode};
@@ -26,6 +27,7 @@ pub struct AppState {
     progress: Arc<Progress>,
     dup_root: Mutex<Option<PathBuf>>,
     dup_cancel: Arc<AtomicBool>,
+    empty_root: Mutex<Option<PathBuf>>,
     growth: Mutex<Option<Growth>>,
 }
 
@@ -221,6 +223,9 @@ pub async fn delete_paths(
     if let Some(r) = lock(&state.dup_root).as_ref() {
         roots.push(r.clone());
     }
+    if let Some(r) = lock(&state.empty_root).as_ref() {
+        roots.push(r.clone());
+    }
     let outcomes = tauri::async_runtime::spawn_blocking(move || {
         let sized: Vec<Result<(PathBuf, u64), String>> = paths
             .iter()
@@ -319,6 +324,46 @@ pub async fn find_duplicates(
     .await
     .map_err(|e| e.to_string())?;
     Ok(groups.into_iter().take(MAX_DUP_GROUPS).collect())
+}
+
+#[tauri::command]
+pub async fn find_empty(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<Vec<EmptyItem>, String> {
+    let root = PathBuf::from(&path);
+    if !root.is_dir() {
+        return Err("pasta não encontrada".into());
+    }
+    *lock(&state.empty_root) = Some(root.clone());
+    tauri::async_runtime::spawn_blocking(move || empty::find(&root))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Removes dangling links found by `find_empty`. `delete_paths` refuses every link on purpose;
+/// here each one is re-checked (inside the searched root, still a link, still dangling) and only
+/// the link itself is removed, never what it points to.
+#[tauri::command]
+pub async fn delete_broken_links(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<DeleteReport, String> {
+    let root = lock(&state.empty_root).clone();
+    let mut report = DeleteReport::default();
+    for raw in paths {
+        let p = Path::new(&raw);
+        let outcome = match root.as_deref() {
+            Some(r) if p.is_absolute() => guard::check_dangling_link(p, r)
+                .and_then(|()| remove::remove_link(p).map_err(|e| e.to_string())),
+            _ => Err("fora da área analisada".into()),
+        };
+        match outcome {
+            Ok(()) => report.deleted.push(raw),
+            Err(error) => report.failed.push(Failure { path: raw, error }),
+        }
+    }
+    Ok(report)
 }
 
 #[tauri::command]

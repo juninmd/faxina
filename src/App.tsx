@@ -5,6 +5,7 @@ import ConfirmDialog from "./components/ConfirmDialog";
 import Coverage from "./components/Coverage";
 import DiskMap from "./components/DiskMap";
 import { DupesPanel } from "./components/DupesPanel";
+import { EmptyPanel } from "./components/EmptyPanel";
 import Growth from "./components/Growth";
 import Icon, { type IconName } from "./components/Icon";
 import Overview from "./components/Overview";
@@ -42,6 +43,7 @@ const NAV: { id: Page; label: string; icon: IconName; caption?: string }[] = [
   { id: "review", label: "Revisar limpeza", icon: "spark" },
   { id: "report", label: "Resultados", icon: "file" },
   { id: "dupes", label: "Duplicatas", icon: "copy" },
+  { id: "empty", label: "Vazios e links", icon: "trash" },
   { id: "coverage", label: "Aplicativos", icon: "box", caption: "PERSONALIZAR" },
   { id: "routine", label: "Minha rotina", icon: "clock" },
   { id: "updates", label: "Atualizações", icon: "download" },
@@ -353,6 +355,7 @@ export default function App() {
             {page === "report" && <ReportPanel report={history[0] ?? null} history={history} navigate={setPage} />}
 
             {page === "dupes" && <DupesPanel swallow={swallow} defaultRoot={scan.root || home} />}
+            {page === "empty" && <EmptyPanel swallow={swallow} defaultRoot={scan.root || home} />}
 
             {page === "coverage" && <Coverage rules={rules} excluded={settings.excluded} onExclude={exclude} />}
 

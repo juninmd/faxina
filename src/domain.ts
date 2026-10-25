@@ -9,6 +9,7 @@ export type Page =
   | "report"
   | "growth"
   | "dupes"
+  | "empty"
   | "coverage"
   | "routine"
   | "updates";
