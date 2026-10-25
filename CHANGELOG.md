@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.12.2](https://github.com/juninmd/faxina/compare/v1.12.1...v1.12.2) (2026-10-25)
+
+
+### Bug Fixes
+
+* **a11y:** keep the safety card heading out of an interactive button ([#62](https://github.com/juninmd/faxina/issues/62)) ([7852c20](https://github.com/juninmd/faxina/commit/7852c207bc422144485fe8d0303dfb084b089e8b))
+* **guard:** protect more token stores under home from deletion ([#57](https://github.com/juninmd/faxina/issues/57)) ([86fdc0b](https://github.com/juninmd/faxina/commit/86fdc0b96eca860c48411fa7559e89fa0eff6c3e))
+* **remove:** re-check that the path is still a link at removal time ([#63](https://github.com/juninmd/faxina/issues/63)) ([d8e6b15](https://github.com/juninmd/faxina/commit/d8e6b15a3ab1331d07869c64a41330e0e71c8f79))
+* **ui:** do not report "no stale projects" before the check finishes ([#60](https://github.com/juninmd/faxina/issues/60)) ([19b0bf7](https://github.com/juninmd/faxina/commit/19b0bf77c4d86a57335cbc9d1e1ef835e861a2c7))
+* **ui:** drop the junk analysis result when the user cancels it ([#61](https://github.com/juninmd/faxina/issues/61)) ([bb134c7](https://github.com/juninmd/faxina/commit/bb134c700b8a5015d77e18acb301e254b8814514))
+* **ui:** report folder-picker and copy-path failures instead of hiding them ([#58](https://github.com/juninmd/faxina/issues/58)) ([048ce86](https://github.com/juninmd/faxina/commit/048ce86bbc7312f3e17b7fc8a10b159e3082ffc9))
+* **ui:** stop reporting a failed comparison as the first analysis ([#59](https://github.com/juninmd/faxina/issues/59)) ([2d48f09](https://github.com/juninmd/faxina/commit/2d48f090fdea1bd7dda577892a040f047462f052))
+
+
+### Performance Improvements
+
+* **dupes:** size the prefix probe buffer to the file ([#56](https://github.com/juninmd/faxina/issues/56)) ([6226c7c](https://github.com/juninmd/faxina/commit/6226c7cf8a858d6d996d039e4a73b60e89aa8c95))
+
 ## [1.12.1](https://github.com/juninmd/faxina/compare/v1.12.0...v1.12.1) (2026-10-25)
 
 
