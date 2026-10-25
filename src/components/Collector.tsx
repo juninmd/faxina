@@ -23,6 +23,11 @@ export function Collector({ items, onClear, onUnmark, onDelete }: Props) {
     else dialog.current?.close();
   }, [confirming]);
 
+  // The dialog unmounts with the list, so a stale "confirming" would never reopen it.
+  useEffect(() => {
+    if (!items.length) setConfirming(false);
+  }, [items.length]);
+
   if (!items.length) return null;
 
   return (
