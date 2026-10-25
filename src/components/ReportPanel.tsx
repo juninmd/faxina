@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { count, gb, type Page, type Report, shareSummary } from "../domain";
 import { formatBytes } from "../lib/format";
 import CountUp from "./CountUp";
@@ -13,17 +13,21 @@ export default function ReportPanel({
   history: Report[];
   navigate: (p: Page) => void;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"ok" | "error" | null>(null);
+  const timer = useRef<number | undefined>(undefined);
   const summary = report ? shareSummary(report, formatBytes) : undefined;
+  useEffect(() => () => window.clearTimeout(timer.current), []);
   const share = async () => {
     if (!summary) return;
     try {
       await navigator.clipboard.writeText(summary);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopied("ok");
     } catch {
-      setCopied(false);
+      setCopied("error");
     }
+    // One timer at a time, so a quick second click is not reset by the first.
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setCopied(null), 2000);
   };
 
   return (
@@ -100,7 +104,7 @@ export default function ReportPanel({
             {summary && (
               <button type="button" className="button secondary" onClick={share}>
                 <Icon name="copy" size={18} />
-                {copied ? "Resumo copiado!" : "Copiar resumo"}
+                {copied === "ok" ? "Resumo copiado!" : copied === "error" ? "Não foi possível copiar" : "Copiar resumo"}
               </button>
             )}
           </div>
