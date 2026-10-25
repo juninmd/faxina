@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.1](https://github.com/juninmd/faxina/compare/v1.13.0...v1.13.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **ui:** show a busy state while the big-files list refreshes ([#70](https://github.com/juninmd/faxina/issues/70)) ([0364b9f](https://github.com/juninmd/faxina/commit/0364b9f77fdc64d38e2b41fe2cd1b7d62b7433e6))
+
 # [1.13.0](https://github.com/juninmd/faxina/compare/v1.12.4...v1.13.0) (2026-10-25)
 
 
