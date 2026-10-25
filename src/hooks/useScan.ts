@@ -1,5 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type DiskInfo, type Suggestion, type ViewNode } from "../lib/api";
 import { parentOf } from "../lib/format";
 
@@ -19,6 +19,8 @@ export function useScan() {
   const [error, setError] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [scanning, setScanning] = useState("");
+  // Each scan or folder open takes a ticket; only the latest one may write the view.
+  const latest = useRef(0);
 
   useEffect(() => {
     const un = listen<ScanTick>("scan-progress", (e) => setProgress((p) => (p ? e.payload : p)));
@@ -33,14 +35,17 @@ export function useScan() {
       setProgress({ files: 0, bytes: 0 });
       setScanning(path);
       const t0 = performance.now();
+      const mine = ++latest.current;
       try {
         const v = await api.startScan(path, depth);
         setElapsed((performance.now() - t0) / 1000);
+        if (mine !== latest.current) return;
         setRoot(path);
         setTotal(v.size);
         setView(v);
         // Independent reads: awaiting them one after the other kept the result screen waiting.
         const [sug, info] = await Promise.all([api.suggestions(), api.diskInfo(path)]);
+        if (mine !== latest.current) return;
         setSuggestions(sug);
         setDisk(info);
       } catch (e) {
@@ -52,7 +57,18 @@ export function useScan() {
     [depth],
   );
 
-  const open = useCallback(async (path: string) => setView(await api.getView(path, depth)), [depth]);
+  const open = useCallback(
+    async (path: string) => {
+      const mine = ++latest.current;
+      try {
+        const v = await api.getView(path, depth);
+        if (mine === latest.current) setView(v);
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [depth],
+  );
 
   const up = useCallback(() => {
     if (!view) return;
