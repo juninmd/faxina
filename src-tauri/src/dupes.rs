@@ -379,7 +379,12 @@ pub fn find(root: &Path, min_size: u64, p: &DupProgress) -> (Vec<DupGroup>, bool
     find_impl(root, min_size, p, &cache)
 }
 
-fn find_impl(root: &Path, min_size: u64, p: &DupProgress, cache: &HashCache) -> Vec<DupGroup> {
+fn find_impl(
+    root: &Path,
+    min_size: u64,
+    p: &DupProgress,
+    cache: &HashCache,
+) -> (Vec<DupGroup>, bool) {
     let w = Walk {
         min_size: min_size.max(1),
         cancel: p.cancel,
