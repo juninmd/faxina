@@ -167,12 +167,7 @@ impl HashCache {
         }
         let mut map = self.map.lock().unwrap_or_else(|e| e.into_inner());
         if map.len() > CACHE_CAP {
-            // Entries for deleted files can never hit again, so drop them before capping.
-            map.retain(|p, _| Path::new(p).exists());
-            let excess: Vec<String> = map.keys().skip(CACHE_CAP).cloned().collect();
-            for k in excess {
-                map.remove(&k);
-            }
+            prune_to_cap(&mut map, CACHE_CAP);
         }
         let Ok(json) = serde_json::to_string(&*map) else {
             return;
@@ -184,6 +179,15 @@ impl HashCache {
         if std::fs::write(&tmp, json).is_ok() {
             let _ = std::fs::rename(&tmp, path);
         }
+    }
+}
+
+/// Entries for deleted files can never hit again, so they go first; then any excess is trimmed.
+fn prune_to_cap(map: &mut HashMap<String, CacheEntry>, cap: usize) {
+    map.retain(|p, _| Path::new(p).exists());
+    let excess: Vec<String> = map.keys().skip(cap).cloned().collect();
+    for k in excess {
+        map.remove(&k);
     }
 }
 
@@ -427,6 +431,41 @@ mod tests {
         assert_eq!(c.get(Path::new("/x/y"), 10, 20).as_deref(), Some("abc"));
         assert_eq!(c.get(Path::new("/x/y"), 11, 20), None, "size changed");
         assert_eq!(c.get(Path::new("/x/y"), 10, 21), None, "mtime changed");
+    }
+
+    #[test]
+    fn prune_to_cap_drops_missing_files_then_trims_to_the_cap() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut map = HashMap::new();
+        for i in 0..3 {
+            let live = tmp.path().join(format!("live-{i}.bin"));
+            fs::write(&live, b"x").unwrap();
+            map.insert(
+                live.to_string_lossy().into_owned(),
+                CacheEntry {
+                    size: 1,
+                    modified: 2,
+                    hash: "h".into(),
+                },
+            );
+        }
+        for i in 0..5 {
+            let gone = tmp.path().join(format!("gone-{i}.bin"));
+            map.insert(
+                gone.to_string_lossy().into_owned(),
+                CacheEntry {
+                    size: 1,
+                    modified: 2,
+                    hash: "h".into(),
+                },
+            );
+        }
+        prune_to_cap(&mut map, 2);
+        assert_eq!(map.len(), 2, "trimmed to the cap");
+        assert!(
+            map.keys().all(|p| Path::new(p).exists()),
+            "only live files survive"
+        );
     }
 
     #[test]
