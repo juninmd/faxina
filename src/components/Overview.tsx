@@ -24,8 +24,10 @@ export default function Overview({
   onCancel: () => void;
   navigate: (page: Page) => void;
 }) {
-  const total = disk?.total ?? 512 * 1024 * 1024 * 1024;
-  const free = disk?.free ?? 128 * 1024 * 1024 * 1024;
+  // Without a reading, show placeholders rather than invented capacity.
+  const known = !!disk;
+  const total = disk?.total ?? 0;
+  const free = disk?.free ?? 0;
   const used = Math.max(0, total - free);
   const usedPct = Math.round((used / (total || 1)) * 100);
   const freePct = 100 - usedPct;
@@ -64,10 +66,8 @@ export default function Overview({
           <div className="orbit">
             <div className="orbit-core">
               <span>DISCO {disk?.mount ? `· ${disk.mount}` : "LOCAL"}</span>
-              <strong>
-                <CountUp value={free} format={gb} />
-              </strong>
-              <small>disponíveis de {gb(total)}</small>
+              <strong>{known ? <CountUp value={free} format={gb} /> : "—"}</strong>
+              <small>{known ? `disponíveis de ${gb(total)}` : "lendo o disco…"}</small>
             </div>
           </div>
           <div className="orbit-caption">
@@ -143,25 +143,27 @@ export default function Overview({
             <h2>Um olhar sobre o disco</h2>
             <span className="muted">
               {disk?.mount ? `Unidade ${disk.mount} · ` : ""}
-              {gb(total)} total
+              {known ? `${gb(total)} total` : "—"}
             </span>
           </div>
-          <div
-            className="disk-bar flex h-4 w-full overflow-hidden rounded-full bg-[var(--color-line)]"
-            role="img"
-            aria-label={`Disco: ${gb(used)} ocupados (${usedPct}%), ${gb(free)} livres (${freePct}%)`}
-          >
-            <div className="bg-[#658fde] transition-all duration-300" style={{ width: `${usedPct}%` }} />
-            <div className="bg-[#1d2430] transition-all duration-300" style={{ width: `${freePct}%` }} />
-          </div>
+          {known && (
+            <div
+              className="disk-bar flex h-4 w-full overflow-hidden rounded-full bg-[var(--color-line)]"
+              role="img"
+              aria-label={`Disco: ${gb(used)} ocupados (${usedPct}%), ${gb(free)} livres (${freePct}%)`}
+            >
+              <div className="bg-[#658fde] transition-all duration-300" style={{ width: `${usedPct}%` }} />
+              <div className="bg-[#1d2430] transition-all duration-300" style={{ width: `${freePct}%` }} />
+            </div>
+          )}
           <div className="disk-legend">
             <span>
               <b className="legend-dot blue" />
-              Espaço ocupado <strong>{gb(used)}</strong>
+              Espaço ocupado <strong>{known ? gb(used) : "—"}</strong>
             </span>
             <span>
               <b className="legend-dot dark" />
-              Espaço livre <strong>{gb(free)}</strong>
+              Espaço livre <strong>{known ? gb(free) : "—"}</strong>
             </span>
             <span>
               <b className="legend-dot yellow" />
