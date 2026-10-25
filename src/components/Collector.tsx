@@ -23,6 +23,15 @@ export function Collector({ items, onClear, onUnmark, onDelete }: Props) {
     else dialog.current?.close();
   }, [confirming]);
 
+  // The dialog unmounts with the list, so a stale "confirming" would never reopen it.
+  // "Sem Lixeira" must not survive either, or the next delete is permanent without a choice.
+  useEffect(() => {
+    if (!items.length) {
+      setConfirming(false);
+      setPermanent(false);
+    }
+  }, [items.length]);
+
   if (!items.length) return null;
 
   return (
