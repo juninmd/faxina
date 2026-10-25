@@ -68,11 +68,10 @@ fn walk(dir: &Path, w: &Walk) -> Vec<Candidate> {
     let mut files = Vec::new();
     let mut dirs = Vec::new();
     for e in entries {
-        let path = dir.join(&e.name);
         if e.is_dir {
-            dirs.push(path);
+            dirs.push(dir.join(&e.name));
         } else if e.size >= w.min_size && e.id.is_none_or(|id| w.links.first(id)) {
-            files.push((path, e.size, e.modified));
+            files.push((dir.join(&e.name), e.size, e.modified));
         }
     }
     let deeper: Vec<Vec<Candidate>> = dirs.into_par_iter().map(|d| walk(&d, w)).collect();

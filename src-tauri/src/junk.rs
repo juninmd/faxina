@@ -149,7 +149,7 @@ pub fn dir_size(path: &Path) -> (u64, u64) {
         return (0, 0);
     };
     rd.flatten()
-        .filter_map(|e| fs::symlink_metadata(e.path()).ok().map(|m| (e.path(), m)))
+        .filter_map(|e| e.metadata().ok().map(|m| (e.path(), m)))
         .filter(|(_, m)| !is_link(m))
         .map(|(p, m)| {
             if m.is_dir() {
@@ -188,7 +188,7 @@ fn measure_tree(dir: &Path, rule: &Rule, ci: bool, depth: usize) -> (u64, u64) {
         if excluded(rule, &name, ci) {
             continue;
         }
-        let Ok(meta) = fs::symlink_metadata(entry.path()) else {
+        let Ok(meta) = entry.metadata() else {
             continue;
         };
         let is_tree = meta.is_dir() && !is_link(&meta);
@@ -282,7 +282,7 @@ fn clean_tree(
     let mut recurse: Vec<PathBuf> = Vec::new();
     for (path, meta) in rd
         .flatten()
-        .filter_map(|e| fs::symlink_metadata(e.path()).ok().map(|m| (e.path(), m)))
+        .filter_map(|e| e.metadata().ok().map(|m| (e.path(), m)))
     {
         let name = path
             .file_name()
@@ -482,6 +482,28 @@ mod tests {
         assert!(ok, "mklink /J needs no admin rights");
         assert!(expand(tmp.path(), "User Data/*/Cache").is_empty());
         assert!(crate::guard::check(&link, &[tmp.path().to_path_buf()]).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn dir_size_does_not_count_through_junctions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("precious");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("big.bin"), [0u8; 1000]).unwrap();
+        let cache = tmp.path().join("cache");
+        fs::create_dir_all(&cache).unwrap();
+        fs::write(cache.join("a.bin"), [0u8; 10]).unwrap();
+        let ok = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(cache.join("Evil"))
+            .arg(&outside)
+            .output()
+            .unwrap()
+            .status
+            .success();
+        assert!(ok, "mklink /J needs no admin rights");
+        assert_eq!(dir_size(&cache).0, 10);
     }
 
     #[test]

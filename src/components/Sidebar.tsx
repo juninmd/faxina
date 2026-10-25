@@ -13,7 +13,7 @@ interface Props {
   disk: DiskInfo | null;
   marked: Marks;
   onToggleMark: (m: Mark) => void;
-  onReveal: (path: string) => void;
+  onReveal: (path: string) => Promise<void>;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -75,8 +75,12 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
             </button>
             <button
               type="button"
-              onClick={() => {
-                onReveal(selection.path);
+              onClick={async () => {
+                try {
+                  await onReveal(selection.path);
+                } catch {
+                  return;
+                }
                 setCopied(selection.path);
                 setTimeout(() => setCopied(""), 1500);
               }}
