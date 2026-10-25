@@ -33,12 +33,33 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
   const [promptFailed, setPromptFailed] = useState("");
   const [months, setMonths] = useState(6);
   const [stale, setStale] = useState<Suggestion[]>([]);
+  const [staleLoaded, setStaleLoaded] = useState(false);
+  const [staleFailed, setStaleFailed] = useState(false);
   const [sugShown, setSugShown] = useState(PAGE);
   const [staleShown, setStaleShown] = useState(PAGE);
   // `suggestions` is re-read after every scan and deletion, so it doubles as the refresh signal.
   // biome-ignore lint/correctness/useExhaustiveDependencies: refetch when the scan data changes
   useEffect(() => {
-    api.staleDeps(months).then(setStale, () => setStale([]));
+    // A reply for a months value the user has already changed away from must not win.
+    let current = true;
+    setStaleLoaded(false);
+    setStaleFailed(false);
+    api.staleDeps(months).then(
+      (s) => {
+        if (!current) return;
+        setStale(s);
+        setStaleLoaded(true);
+      },
+      () => {
+        if (!current) return;
+        setStale([]);
+        setStaleFailed(true);
+        setStaleLoaded(true);
+      },
+    );
+    return () => {
+      current = false;
+    };
   }, [months, suggestions]);
   const [num, unit] = splitBytes(selection.size);
   const share = scanTotal ? (selection.size / scanTotal) * 100 : 0;
@@ -200,7 +221,11 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
             ))}
           </select>
         </div>
-        {stale.length === 0 ? (
+        {!staleLoaded ? (
+          <p className="mt-3 text-sm text-[var(--color-muted)]">Procurando projetos parados…</p>
+        ) : staleFailed ? (
+          <p className="mt-3 text-sm text-[var(--color-muted)]">Não foi possível verificar os projetos parados.</p>
+        ) : stale.length === 0 ? (
           <p className="mt-3 text-sm text-[var(--color-muted)]">Nenhum projeto parado nesse período.</p>
         ) : (
           <>
