@@ -15,10 +15,13 @@ interface Props {
 export function Collector({ items, onClear, onUnmark, onDelete }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [permanent, setPermanent] = useState(false);
+  // Permanent delete needs its own acknowledgement, same as the confirmation dialog.
+  const [acknowledged, setAcknowledged] = useState(false);
   // Cancelling must not leave "sem Lixeira" ticked for the next open.
   const closeConfirm = () => {
     setConfirming(false);
     setPermanent(false);
+    setAcknowledged(false);
   };
   const dialog = useRef<HTMLDialogElement>(null);
   const total = items.reduce((s, m) => s + m.size, 0);
@@ -82,9 +85,22 @@ export function Collector({ items, onClear, onUnmark, onDelete }: Props) {
           {permanent ? "apagados para sempre" : "movidos para a Lixeira — dá pra recuperar depois"}.
         </p>
         <label className="mt-4 flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={permanent} onChange={(e) => setPermanent(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={permanent}
+            onChange={(e) => {
+              setPermanent(e.target.checked);
+              setAcknowledged(false);
+            }}
+          />
           Excluir permanentemente (sem Lixeira)
         </label>
+        {permanent && (
+          <label className="mt-3 flex items-start gap-2 text-sm">
+            <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} />
+            Entendo que a exclusão permanente não pode ser desfeita pela Lixeira.
+          </label>
+        )}
         <div className="mt-6 flex justify-end gap-2">
           <button
             type="button"
@@ -95,6 +111,7 @@ export function Collector({ items, onClear, onUnmark, onDelete }: Props) {
           </button>
           <button
             type="button"
+            disabled={permanent && !acknowledged}
             onClick={() => {
               setConfirming(false);
               onDelete(permanent);
