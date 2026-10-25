@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.10.0](https://github.com/juninmd/faxina/compare/v1.9.0...v1.10.0) (2026-10-25)
+
+
+### Features
+
+* recognize more build/cache folders and find empty folders and broken links ([#18](https://github.com/juninmd/faxina/issues/18)) ([971ca79](https://github.com/juninmd/faxina/commit/971ca7918629c1fba49a286c2413d1168e5900fc))
+
 # [1.9.0](https://github.com/juninmd/faxina/compare/v1.8.0...v1.9.0) (2026-10-24)
 
 
