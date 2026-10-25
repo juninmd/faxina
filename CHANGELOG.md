@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.13.2](https://github.com/juninmd/faxina/compare/v1.13.1...v1.13.2) (2026-10-25)
+
+
+### Bug Fixes
+
+* **ui:** acknowledge a scan cancellation while the backend stops ([#72](https://github.com/juninmd/faxina/issues/72)) ([2302eed](https://github.com/juninmd/faxina/commit/2302eedfb384e910ec92f3ede37044a6f33dd2a3))
+* **ui:** label the update button while a download is running ([#71](https://github.com/juninmd/faxina/issues/71)) ([4a2aa57](https://github.com/juninmd/faxina/commit/4a2aa579a142a3aa626b0a9a32b1f33bdaffb504))
+
 ## [1.13.1](https://github.com/juninmd/faxina/compare/v1.13.0...v1.13.1) (2026-10-25)
 
 
