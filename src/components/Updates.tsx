@@ -105,7 +105,11 @@ export default function Updates() {
                 onClick={checkForUpdates}
               >
                 <Icon name="refresh" size={18} />
-                {state === "checking" ? "Verificando…" : "Verificar atualizações"}
+                {state === "checking"
+                  ? "Verificando…"
+                  : state === "downloading"
+                    ? "Baixando…"
+                    : "Verificar atualizações"}
               </button>
             )}
           </div>
