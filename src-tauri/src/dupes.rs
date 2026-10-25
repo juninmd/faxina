@@ -305,7 +305,7 @@ fn refine(
         .collect()
 }
 
-pub fn find(root: &Path, min_size: u64, p: &DupProgress) -> Vec<DupGroup> {
+pub fn find(root: &Path, min_size: u64, p: &DupProgress) -> (Vec<DupGroup>, bool) {
     let cache = HashCache::open();
     let w = Walk {
         min_size: min_size.max(1),
@@ -367,7 +367,8 @@ pub fn find(root: &Path, min_size: u64, p: &DupProgress) -> Vec<DupGroup> {
         .collect();
     out.sort_unstable_by_key(|g| std::cmp::Reverse(g.wasted()));
     cache.save();
-    out
+    let cancelled = p.cancel.load(Ordering::Relaxed);
+    (out, cancelled)
 }
 
 #[cfg(test)]
@@ -377,7 +378,7 @@ mod tests {
 
     fn run(root: &Path, min: u64) -> Vec<DupGroup> {
         let cancel = AtomicBool::new(false);
-        find(root, min, &DupProgress::new(&cancel))
+        find(root, min, &DupProgress::new(&cancel)).0
     }
 
     #[test]
@@ -389,7 +390,7 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let p = DupProgress::new(&cancel);
         assert_eq!(p.tick().stage, 0, "no stage before the search starts");
-        let g = find(r, 1, &p);
+        let g = find(r, 1, &p).0;
         assert_eq!(g.len(), 1);
         let t = p.tick();
         assert!(t.stage >= 1, "at least one hashing stage ran");
@@ -471,6 +472,22 @@ mod tests {
             "empty files are never reported"
         );
         assert!(run(tmp.path(), 100).is_empty());
+    }
+
+    #[test]
+    fn pre_cancelled_find_returns_cancelled_true() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        fs::write(r.join("a.jpg"), b"same bytes").unwrap();
+        fs::write(r.join("b.jpg"), b"same bytes").unwrap();
+
+        let cancel = AtomicBool::new(true);
+        let (_, cancelled) = find(r, 1, &DupProgress::new(&cancel));
+        assert!(cancelled);
+
+        let cancel_false = AtomicBool::new(false);
+        let (_, cancelled_false) = find(r, 1, &DupProgress::new(&cancel_false));
+        assert!(!cancelled_false);
     }
 
     #[test]

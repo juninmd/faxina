@@ -2,7 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import { confirm, open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
 import { api, type DupGroup } from "../lib/api";
-import { defaultPick, pruneDeleted } from "../lib/dupes";
+import { defaultPick, dupNotice, pruneDeleted } from "../lib/dupes";
 import { baseName, formatAge, formatBytes, formatCount } from "../lib/format";
 import type { Swallow } from "./types";
 
@@ -27,6 +27,10 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
   const [root, setRoot] = useState(defaultRoot);
   const [minSize, setMinSize] = useState(MIN_SIZES[1].value);
   const [groups, setGroups] = useState<DupGroup[] | null>(null);
+  const [dupMeta, setDupMeta] = useState<{ cancelled: boolean; truncated: boolean }>({
+    cancelled: false,
+    truncated: false,
+  });
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [tick, setTick] = useState<DupTick | null>(null);
   const [error, setError] = useState("");
@@ -62,8 +66,9 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
     try {
       const found = await api.findDuplicates(root, minSize);
       if (mine !== epoch.current) return;
-      setGroups(found);
-      setPicked(defaultPick(found));
+      setGroups(found.groups);
+      setDupMeta({ cancelled: found.cancelled, truncated: found.truncated });
+      setPicked(defaultPick(found.groups));
     } catch (e) {
       if (mine === epoch.current) setError(String(e));
     } finally {
@@ -183,6 +188,11 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
         )}
       </div>
       {error && <p className="text-sm text-[var(--color-danger)]">{error}</p>}
+      {dupNotice(dupMeta) && (
+        <p className="text-sm text-[var(--color-accent)]" role="status">
+          {dupNotice(dupMeta)}
+        </p>
+      )}
       {groups?.length === 0 && <p className="text-[var(--color-muted)]">Nenhuma duplicata encontrada. 🎉</p>}
       {!!groups?.length && (
         <p className="text-sm text-[var(--color-muted)]" role="status">

@@ -289,13 +289,21 @@ pub async fn junk_clean(ids: Vec<String>, permanent: bool) -> Result<CleanReport
         .map_err(|e| e.to_string())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DupResult {
+    pub groups: Vec<DupGroup>,
+    pub cancelled: bool,
+    pub truncated: bool,
+}
+
 #[tauri::command]
 pub async fn find_duplicates(
     app: AppHandle,
     state: State<'_, AppState>,
     path: String,
     min_size: u64,
-) -> Result<Vec<DupGroup>, String> {
+) -> Result<DupResult, String> {
     let root = PathBuf::from(&path);
     if !root.is_dir() {
         return Err("pasta não encontrada".into());
@@ -303,7 +311,7 @@ pub async fn find_duplicates(
     *lock(&state.dup_root) = Some(root.clone());
     let cancel = state.dup_cancel.clone();
     cancel.store(false, Ordering::Relaxed);
-    let groups = tauri::async_runtime::spawn_blocking(move || {
+    let (groups, cancelled) = tauri::async_runtime::spawn_blocking(move || {
         let progress = DupProgress::new(&cancel);
         let finished = AtomicBool::new(false);
         // Also runs on unwind, so a panic in the search still stops the progress thread.
@@ -326,7 +334,15 @@ pub async fn find_duplicates(
     })
     .await
     .map_err(|e| e.to_string())?;
-    Ok(groups.into_iter().take(MAX_DUP_GROUPS).collect())
+
+    let truncated = groups.len() > MAX_DUP_GROUPS;
+    let groups = groups.into_iter().take(MAX_DUP_GROUPS).collect();
+
+    Ok(DupResult {
+        groups,
+        cancelled,
+        truncated,
+    })
 }
 
 #[tauri::command]
@@ -371,6 +387,34 @@ pub async fn delete_broken_links(
     })
     .await
     .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncated_flag_set_when_exceeding_max_dup_groups() {
+        let make_group = |i| DupGroup {
+            hash: format!("hash_{i}"),
+            size: 100,
+            files: vec![],
+        };
+
+        let groups: Vec<_> = (0..501).map(make_group).collect();
+        let truncated = groups.len() > MAX_DUP_GROUPS;
+        let taken: Vec<_> = groups.into_iter().take(MAX_DUP_GROUPS).collect();
+
+        assert_eq!(taken.len(), 500);
+        assert!(truncated);
+
+        let small_groups: Vec<_> = (0..10).map(make_group).collect();
+        let small_truncated = small_groups.len() > MAX_DUP_GROUPS;
+        let small_taken: Vec<_> = small_groups.into_iter().take(MAX_DUP_GROUPS).collect();
+
+        assert_eq!(small_taken.len(), 10);
+        assert!(!small_truncated);
+    }
 }
 
 #[tauri::command]
