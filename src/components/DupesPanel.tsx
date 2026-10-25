@@ -1,6 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { confirm, open } from "@tauri-apps/plugin-dialog";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type DupGroup } from "../lib/api";
 import { defaultPick, pruneDeleted } from "../lib/dupes";
 import { baseName, formatAge, formatBytes, formatCount } from "../lib/format";
@@ -40,19 +40,34 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
     };
   }, []);
 
+  // Results belong to the folder and size they were searched with; a change makes them stale.
+  // A search still running when that happens must not write its results either.
+  const epoch = useRef(0);
+  const resetResults = () => {
+    epoch.current += 1;
+    // A search still running is no longer wanted: stop it and clear its progress, or the button sticks.
+    if (tick) api.cancelDuplicates();
+    setTick(null);
+    setGroups(null);
+    setPicked(new Set());
+    setError("");
+  };
+
   const search = async () => {
+    const mine = epoch.current;
     setError("");
     setGroups(null);
     setShown(PAGE);
     setTick({ stage: 0, done: 0, total: 0 });
     try {
       const found = await api.findDuplicates(root, minSize);
+      if (mine !== epoch.current) return;
       setGroups(found);
       setPicked(defaultPick(found));
     } catch (e) {
-      setError(String(e));
+      if (mine === epoch.current) setError(String(e));
     } finally {
-      setTick(null);
+      if (mine === epoch.current) setTick(null);
     }
   };
 
@@ -106,8 +121,15 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
         <button
           type="button"
           onClick={async () => {
-            const dir = await open({ directory: true, defaultPath: root });
-            if (typeof dir === "string") setRoot(dir);
+            try {
+              const dir = await open({ directory: true, defaultPath: root });
+              if (typeof dir === "string") {
+                setRoot(dir);
+                resetResults();
+              }
+            } catch (e) {
+              setError(String(e));
+            }
           }}
           className="max-w-md truncate rounded-md border border-[var(--color-line)] px-3 py-2 text-sm hover:bg-[var(--color-panel-2)]"
           title={root}
@@ -117,7 +139,10 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
         </button>
         <select
           value={minSize}
-          onChange={(e) => setMinSize(Number(e.target.value))}
+          onChange={(e) => {
+            setMinSize(Number(e.target.value));
+            resetResults();
+          }}
           className="rounded-md border border-[var(--color-line)] bg-[var(--color-panel)] px-3 py-2 text-sm"
           aria-label="Tamanho mínimo"
         >
