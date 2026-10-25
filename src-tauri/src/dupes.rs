@@ -41,9 +41,50 @@ impl DupGroup {
     }
 }
 
+/// One progress sample: which hashing stage runs, and how far it has got.
+#[derive(Serialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct DupTick {
+    pub stage: u64,
+    pub done: u64,
+    pub total: u64,
+}
+
 pub struct DupProgress<'a> {
-    pub done: AtomicU64,
+    stage: AtomicU64,
+    done: AtomicU64,
+    total: AtomicU64,
     pub cancel: &'a AtomicBool,
+}
+
+impl<'a> DupProgress<'a> {
+    pub fn new(cancel: &'a AtomicBool) -> Self {
+        Self {
+            stage: AtomicU64::new(0),
+            done: AtomicU64::new(0),
+            total: AtomicU64::new(0),
+            cancel,
+        }
+    }
+
+    pub fn tick(&self) -> DupTick {
+        DupTick {
+            stage: self.stage.load(Ordering::Relaxed),
+            done: self.done.load(Ordering::Relaxed),
+            total: self.total.load(Ordering::Relaxed),
+        }
+    }
+
+    /// Each stage hashes a different set of files, so its total is only known when it starts.
+    /// A stage with nothing left to hash is not a stage, so it leaves the counter alone.
+    fn begin_stage(&self, total: usize) {
+        if total == 0 {
+            return;
+        }
+        self.stage.fetch_add(1, Ordering::Relaxed);
+        self.done.store(0, Ordering::Relaxed);
+        self.total.store(total as u64, Ordering::Relaxed);
+    }
 }
 
 type Candidate = (PathBuf, u64, u64);
@@ -232,6 +273,7 @@ fn refine(
     p: &DupProgress,
     cache: &HashCache,
 ) -> Vec<(String, Vec<Candidate>)> {
+    p.begin_stage(buckets.iter().map(Vec::len).sum());
     buckets
         .into_par_iter()
         .flat_map(|bucket| {
@@ -325,14 +367,27 @@ mod tests {
 
     fn run(root: &Path, min: u64) -> Vec<DupGroup> {
         let cancel = AtomicBool::new(false);
-        find(
-            root,
-            min,
-            &DupProgress {
-                done: AtomicU64::new(0),
-                cancel: &cancel,
-            },
-        )
+        find(root, min, &DupProgress::new(&cancel))
+    }
+
+    #[test]
+    fn progress_reports_the_stage_it_is_in_with_its_own_total() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        fs::write(r.join("a.jpg"), b"same bytes").unwrap();
+        fs::write(r.join("b.jpg"), b"same bytes").unwrap();
+        let cancel = AtomicBool::new(false);
+        let p = DupProgress::new(&cancel);
+        assert_eq!(p.tick().stage, 0, "no stage before the search starts");
+        let g = find(r, 1, &p);
+        assert_eq!(g.len(), 1);
+        let t = p.tick();
+        assert!(t.stage >= 1, "at least one hashing stage ran");
+        assert!(t.total >= 2, "the stage reports the files it had to hash");
+        assert_eq!(
+            t.done, t.total,
+            "a finished stage has hashed everything it counted"
+        );
     }
 
     #[test]
