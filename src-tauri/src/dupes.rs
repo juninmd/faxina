@@ -165,9 +165,14 @@ impl HashCache {
         if !self.dirty.load(Ordering::Relaxed) {
             return;
         }
-        let map = self.map.lock().unwrap_or_else(|e| e.into_inner());
+        let mut map = self.map.lock().unwrap_or_else(|e| e.into_inner());
         if map.len() > CACHE_CAP {
-            return;
+            // Entries for deleted files can never hit again, so drop them before capping.
+            map.retain(|p, _| Path::new(p).exists());
+            let excess: Vec<String> = map.keys().skip(CACHE_CAP).cloned().collect();
+            for k in excess {
+                map.remove(&k);
+            }
         }
         let Ok(json) = serde_json::to_string(&*map) else {
             return;
@@ -422,5 +427,27 @@ mod tests {
         assert_eq!(c.get(Path::new("/x/y"), 10, 20).as_deref(), Some("abc"));
         assert_eq!(c.get(Path::new("/x/y"), 11, 20), None, "size changed");
         assert_eq!(c.get(Path::new("/x/y"), 10, 21), None, "mtime changed");
+    }
+
+    #[test]
+    fn save_prunes_entries_for_deleted_files_when_over_the_cap() {
+        let tmp = tempfile::tempdir().unwrap();
+        let live = tmp.path().join("live.bin");
+        fs::write(&live, b"x").unwrap();
+        let cache_file = tmp.path().join("cache.json");
+        let c = HashCache::at(cache_file.clone());
+        c.insert(&live, 1, 2, "keep".into());
+        for i in 0..CACHE_CAP {
+            c.insert(
+                &tmp.path().join(format!("gone-{i}.bin")),
+                1,
+                2,
+                "stale".into(),
+            );
+        }
+        c.save();
+        let reloaded = HashCache::at(cache_file);
+        assert_eq!(reloaded.get(&live, 1, 2).as_deref(), Some("keep"));
+        assert!(reloaded.map.lock().unwrap().len() <= CACHE_CAP);
     }
 }
