@@ -308,6 +308,10 @@ pub async fn find_duplicates(
     if !root.is_dir() {
         return Err("pasta não encontrada".into());
     }
+    // This root becomes a deletion root, so it must not be a protected folder itself.
+    if guard::is_protected(&root) {
+        return Err("pasta protegida do sistema".into());
+    }
     *lock(&state.dup_root) = Some(root.clone());
     let cancel = state.dup_cancel.clone();
     cancel.store(false, Ordering::Relaxed);
@@ -353,6 +357,10 @@ pub async fn find_empty(
     let root = PathBuf::from(&path);
     if !root.is_dir() {
         return Err("pasta não encontrada".into());
+    }
+    // This root becomes a deletion root, so it must not be a protected folder itself.
+    if guard::is_protected(&root) {
+        return Err("pasta protegida do sistema".into());
     }
     *lock(&state.empty_root) = Some(root.clone());
     tauri::async_runtime::spawn_blocking(move || empty::find(&root))
