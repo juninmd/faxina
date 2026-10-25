@@ -46,6 +46,8 @@ export default function DiskMap({
   }, [active, expanded]);
 
   if (!active) return null;
+  // A failed scan or folder open is stored in the hook; show it where the picker's errors go.
+  const message = notice || scan.error;
 
   const chooseFolder = async () => {
     try {
@@ -117,9 +119,9 @@ export default function DiskMap({
         </div>
       </div>
 
-      {notice && (
+      {message && (
         <div className="map-notice" role="alert">
-          {notice}
+          {message}
         </div>
       )}
 
