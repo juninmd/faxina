@@ -19,6 +19,8 @@ export default function ScanProgress({
   onCancel: () => void;
 }) {
   const [secs, setSecs] = useState(0);
+  // The backend stops at its next check, so the numbers keep moving for a moment after the click.
+  const [asked, setAsked] = useState(false);
   useEffect(() => {
     const t0 = performance.now();
     const id = setInterval(() => setSecs((performance.now() - t0) / 1000), 250);
@@ -58,8 +60,16 @@ export default function ScanProgress({
           </div>
         ))}
       </dl>
-      <button type="button" onClick={onCancel} className="button secondary">
-        Cancelar mapeamento
+      <button
+        type="button"
+        disabled={asked}
+        onClick={() => {
+          setAsked(true);
+          onCancel();
+        }}
+        className="button secondary"
+      >
+        {asked ? "Cancelando…" : "Cancelar mapeamento"}
       </button>
     </div>
   );
