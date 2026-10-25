@@ -1,5 +1,22 @@
 # Changelog
 
+# [1.13.0](https://github.com/juninmd/faxina/compare/v1.12.4...v1.13.0) (2026-10-25)
+
+
+### Bug Fixes
+
+* **guard:** refuse protected folders as duplicate and empty-folder roots ([#69](https://github.com/juninmd/faxina/issues/69)) ([bb75e09](https://github.com/juninmd/faxina/commit/bb75e09db4269eb7f434f2f24aefb060f1fe69cd)), closes [#35](https://github.com/juninmd/faxina/issues/35) [#36](https://github.com/juninmd/faxina/issues/36)
+
+
+### Features
+
+* **dupes:** signal partial cancelled and truncated duplicate results ([#35](https://github.com/juninmd/faxina/issues/35)) ([d69db93](https://github.com/juninmd/faxina/commit/d69db9313cabf4ee0dcb8f4e0d89f1e5264941fb))
+
+
+### Performance Improvements
+
+* **dupes:** prune and evict hash cache instead of freezing above cap ([#36](https://github.com/juninmd/faxina/issues/36)) ([ada5f7e](https://github.com/juninmd/faxina/commit/ada5f7e5f596b070288e023904223b188067ac38))
+
 ## [1.12.4](https://github.com/juninmd/faxina/compare/v1.12.3...v1.12.4) (2026-10-25)
 
 
