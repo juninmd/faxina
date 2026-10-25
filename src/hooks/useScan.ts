@@ -88,9 +88,16 @@ export function useScan() {
     setDisk(info);
   }, [root, view, depth]);
 
+  // A depth change gets its own ticket: it must not drop an in-flight scan, nor be dropped by one.
+  const depthTicket = useRef(0);
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-layout only when the depth changes
   useEffect(() => {
-    if (view) api.getView(view.path, depth).then(setView, (e) => setError(String(e)));
+    if (!view) return;
+    const ticket = ++depthTicket.current;
+    api.getView(view.path, depth).then(
+      (v) => ticket === depthTicket.current && setView(v),
+      (e) => ticket === depthTicket.current && setError(String(e)),
+    );
   }, [depth]);
 
   /** Back to the start screen to pick another disk or folder; the last root stays for Duplicatas. */
