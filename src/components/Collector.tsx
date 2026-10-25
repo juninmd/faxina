@@ -84,9 +84,10 @@ export function Collector({ items, onClear, onUnmark, onDelete }: Props) {
       <dialog
         ref={dialog}
         onClose={closeConfirm}
+        aria-labelledby="collector-title"
         className="m-auto w-[440px] rounded-xl border border-[var(--color-line)] bg-[var(--color-panel)] p-6 text-[var(--color-text)] backdrop:bg-black/60"
       >
-        <h2 className="text-lg font-semibold">
+        <h2 id="collector-title" className="text-lg font-semibold">
           Excluir {items.length} {items.length === 1 ? "item" : "itens"}?
         </h2>
         <p className="mt-2 text-sm text-[var(--color-muted)]">
