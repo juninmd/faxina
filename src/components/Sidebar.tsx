@@ -28,6 +28,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onToggleMark, onReveal }: Props) {
   const [copied, setCopied] = useState("");
   const [promptCopied, setPromptCopied] = useState("");
+  const [promptFailed, setPromptFailed] = useState("");
   const [months, setMonths] = useState(6);
   const [stale, setStale] = useState<Suggestion[]>([]);
   // `suggestions` is re-read after every scan and deletion, so it doubles as the refresh signal.
@@ -100,13 +101,18 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
                 setPromptCopied(selection.path);
                 setTimeout(() => setPromptCopied(""), 2000);
               } catch {
-                setPromptCopied("");
+                setPromptFailed(selection.path);
+                setTimeout(() => setPromptFailed(""), 2000);
               }
             }}
             className="mt-2 w-full rounded-md border border-[var(--color-line)] px-3 py-1.5 text-sm hover:bg-[var(--color-panel-2)]"
             title="Copia o nome, o tamanho e os maiores itens da pasta para colar em um assistente de IA"
           >
-            {promptCopied === selection.path ? "Texto copiado ✓" : "Copiar para um assistente"}
+            {promptCopied === selection.path
+              ? "Texto copiado ✓"
+              : promptFailed === selection.path
+                ? "Não foi possível copiar"
+                : "Copiar para um assistente"}
           </button>
         )}
       </section>
