@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.12.4](https://github.com/juninmd/faxina/compare/v1.12.3...v1.12.4) (2026-10-25)
+
+
+### Bug Fixes
+
+* **a11y:** name the collector delete dialog after its heading ([#67](https://github.com/juninmd/faxina/issues/67)) ([6731828](https://github.com/juninmd/faxina/commit/6731828abf49e06c3891aa86772c09e70338f1fd))
+* **ui:** show a failed scan or folder open in the map ([#68](https://github.com/juninmd/faxina/issues/68)) ([b7b66b2](https://github.com/juninmd/faxina/commit/b7b66b2132c2ce076a4c40d1c6627f93025ab1f6))
+
 ## [1.12.3](https://github.com/juninmd/faxina/compare/v1.12.2...v1.12.3) (2026-10-25)
 
 
