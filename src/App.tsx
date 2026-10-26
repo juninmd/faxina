@@ -65,6 +65,7 @@ export default function App() {
 
   const [home, setHome] = useState("");
   const [disks, setDisks] = useState<DiskInfo[]>([]);
+  const [diskMount, setDiskMount] = useState("");
   const [marked, setMarked] = useState<Map<string, Mark>>(new Map());
   const [motion, setMotion] = useState<MotionPref>(getMotionPref);
 
@@ -209,7 +210,7 @@ export default function App() {
     );
   };
 
-  const primaryDisk = disks[0] ?? null;
+  const primaryDisk = disks.find((d) => d.mount === diskMount) ?? disks[0] ?? null;
   const reclaimableAmount = totalSize(recommended(rules, settings));
   // The routine is local: the app opens, looks at the history and nudges. No background service.
   const cleanupDue = settings.reminder && isCleanupDue(settings, history);
@@ -319,6 +320,8 @@ export default function App() {
             {page === "overview" && (
               <Overview
                 disk={primaryDisk}
+                disks={disks}
+                onSelectDisk={setDiskMount}
                 reclaimable={reclaimableAmount}
                 scanned={scanned}
                 loading={junkLoading}

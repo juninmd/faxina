@@ -7,6 +7,8 @@ import Icon from "./Icon";
 
 export default function Overview({
   disk,
+  disks,
+  onSelectDisk,
   reclaimable,
   scanned,
   loading,
@@ -16,6 +18,8 @@ export default function Overview({
   navigate,
 }: {
   disk: DiskInfo | null;
+  disks: DiskInfo[];
+  onSelectDisk: (mount: string) => void;
   reclaimable: number;
   scanned: boolean;
   loading: boolean;
@@ -141,8 +145,22 @@ export default function Overview({
         <section className="panel disk-panel">
           <div className="section-heading">
             <h2>Um olhar sobre o disco</h2>
-            <span className="muted">
-              {disk?.mount ? `Unidade ${disk.mount} · ` : ""}
+            <span className="muted flex flex-wrap items-center gap-2">
+              {disks.length > 1 && disk ? (
+                <select
+                  aria-label="Escolher unidade de disco"
+                  value={disk.mount}
+                  onChange={(e) => onSelectDisk(e.target.value)}
+                >
+                  {disks.map((d) => (
+                    <option key={d.mount} value={d.mount}>
+                      Unidade {d.mount} ({gb(d.free)} livres de {gb(d.total)})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                disk?.mount && `Unidade ${disk.mount} · `
+              )}
               {known ? `${gb(total)} total` : "—"}
             </span>
           </div>
