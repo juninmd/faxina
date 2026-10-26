@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.14.0](https://github.com/juninmd/faxina/compare/v1.13.4...v1.14.0) (2026-10-26)
+
+
+### Features
+
+* **overview:** choose which disk the overview shows ([#75](https://github.com/juninmd/faxina/issues/75)) ([a149eb2](https://github.com/juninmd/faxina/commit/a149eb2815ad3ddb45816cfa76484ad5bafbb1b2))
+
 ## [1.13.4](https://github.com/juninmd/faxina/compare/v1.13.3...v1.13.4) (2026-10-26)
 
 
