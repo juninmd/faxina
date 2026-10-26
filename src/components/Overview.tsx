@@ -9,6 +9,7 @@ export default function Overview({
   disk,
   disks,
   onSelectDisk,
+  onMapDisk,
   reclaimable,
   scanned,
   loading,
@@ -20,6 +21,7 @@ export default function Overview({
   disk: DiskInfo | null;
   disks: DiskInfo[];
   onSelectDisk: (mount: string) => void;
+  onMapDisk: (mount: string) => void;
   reclaimable: number;
   scanned: boolean;
   loading: boolean;
@@ -173,6 +175,12 @@ export default function Overview({
               <div className="bg-[#658fde] transition-all duration-300" style={{ width: `${usedPct}%` }} />
               <div className="bg-[#1d2430] transition-all duration-300" style={{ width: `${freePct}%` }} />
             </div>
+          )}
+          {disk && (
+            <button type="button" className="text-button" onClick={() => onMapDisk(disk.mount)}>
+              <Icon name="grid" size={16} />
+              Mapear esta unidade
+            </button>
           )}
           <div className="disk-legend">
             <span>

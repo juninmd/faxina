@@ -322,6 +322,11 @@ export default function App() {
                 disk={primaryDisk}
                 disks={disks}
                 onSelectDisk={setDiskMount}
+                onMapDisk={(mount) => {
+                  setMarked(new Map());
+                  scan.scan(mount);
+                  setPage("map");
+                }}
                 reclaimable={reclaimableAmount}
                 scanned={scanned}
                 loading={junkLoading}
