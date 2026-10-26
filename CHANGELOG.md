@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.4](https://github.com/juninmd/faxina/compare/v1.13.3...v1.13.4) (2026-10-26)
+
+
+### Bug Fixes
+
+* **tauri:** correct mojibake in bundle shortDescription ([#74](https://github.com/juninmd/faxina/issues/74)) ([4739488](https://github.com/juninmd/faxina/commit/47394889e1d7b24c88e0f5cc813cefe1fe3336d2))
+
 ## [1.13.3](https://github.com/juninmd/faxina/compare/v1.13.2...v1.13.3) (2026-10-25)
 
 
