@@ -29,7 +29,7 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "category": "Utility",
-    "shortDescription": "Limpeza visual de disco: caches, duplicatas e mapa de espa\u00c3\u00a7o",
+    "shortDescription": "Limpeza visual de disco: caches, duplicatas e mapa de espa\u00e7o",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
