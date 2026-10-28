@@ -6,6 +6,8 @@ use rayon::prelude::*;
 use serde::Serialize;
 
 use crate::junk_defs::{definitions, Base, JunkDef, Rule, Scope};
+use crate::junk_projects::Projects;
+use crate::listing;
 use crate::scan::is_link;
 
 /// How deep we may descend into one cache tree. Guards against pathological nesting and links
@@ -22,6 +24,19 @@ pub struct JunkItem {
     pub files: u64,
     pub paths: Vec<String>,
     pub caution: Option<&'static str>,
+}
+
+#[derive(Default)]
+pub struct Snapshot {
+    targets: Vec<Target>,
+}
+
+struct Target {
+    id: &'static str,
+    path: PathBuf,
+    canonical: PathBuf,
+    rule: Rule,
+    min_age: Duration,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -45,6 +60,7 @@ pub fn base_dir(base: Base) -> Option<PathBuf> {
         Base::Cache => dirs::cache_dir(),
         Base::Temp => Some(std::env::temp_dir()),
         Base::Config => dirs::config_dir(),
+        Base::NodeProjects | Base::RustProjects | Base::PythonProjects => None,
     }
 }
 
@@ -134,11 +150,18 @@ pub fn expand(base: &Path, rel: &str) -> Vec<PathBuf> {
 }
 
 /// Directories one rule applies to, deduplicated.
-pub fn resolve(def: &JunkDef, rule: &Rule) -> Vec<PathBuf> {
-    let Some(base) = base_dir(def.base) else {
-        return Vec::new();
+fn resolve(def: &JunkDef, rule: &Rule, projects: &Projects) -> Vec<PathBuf> {
+    let mut out = if let Some(base) = base_dir(def.base) {
+        expand(&base, rule.path)
+    } else {
+        let protection = crate::guard::Protection::new();
+        projects
+            .roots(def.base)
+            .iter()
+            .flat_map(|base| expand(base, rule.path))
+            .filter(|p| !protection.is_protected(p))
+            .collect()
     };
-    let mut out = expand(&base, rule.path);
     out.sort();
     out.dedup();
     out
@@ -179,70 +202,104 @@ fn measure_tree(dir: &Path, rule: &Rule, ci: bool, depth: usize) -> (u64, u64) {
     if depth > MAX_DEPTH {
         return (0, 0);
     }
-    let Ok(rd) = fs::read_dir(dir) else {
+    // Use the same bulk Windows directory reader as the disk map; unsupported filesystems
+    // fall back to the portable reader. Its entries already exclude links and reparse points.
+    let Ok(entries) = listing::list(dir, cfg!(windows)) else {
         return (0, 0);
     };
-    let (mut size, mut files) = (0u64, 0u64);
-    for entry in rd.flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if excluded(rule, &name, ci) {
-            continue;
-        }
-        let Ok(meta) = entry.metadata() else {
-            continue;
-        };
-        let is_tree = meta.is_dir() && !is_link(&meta);
-        if is_tree {
-            if rule.scope == Scope::Contents || rule.recurse {
-                let (s, f) = measure_tree(&entry.path(), rule, ci, depth + 1);
-                size += s;
-                files += f;
+    // Large dependency trees need directory-level parallelism too, rather than leaving a
+    // single worker to measure millions of entries while the other rule workers are idle.
+    entries
+        .into_par_iter()
+        .map(|entry| {
+            if excluded(rule, &entry.name, ci) {
+                return (0, 0);
             }
-        } else if rule.scope == Scope::Files {
-            if rule.patterns.iter().any(|p| glob_match(p, &name, ci)) {
-                size += meta.len();
-                files += 1;
+            if entry.is_dir {
+                if rule.scope == Scope::Contents || rule.recurse {
+                    return measure_tree(&dir.join(&entry.name), rule, ci, depth + 1);
+                }
+            } else if rule.scope == Scope::Files {
+                if rule.patterns.iter().any(|p| glob_match(p, &entry.name, ci)) {
+                    return (entry.size, 1);
+                }
+            } else {
+                return (entry.size, 1);
             }
-        } else {
-            size += meta.len();
-            files += 1;
-        }
-    }
-    (size, files)
+            (0, 0)
+        })
+        .reduce(|| (0, 0), |a, b| (a.0 + b.0, a.1 + b.1))
 }
 
-pub fn scan_all() -> Vec<JunkItem> {
-    let mut items: Vec<JunkItem> = definitions()
+pub fn scan_all() -> (Vec<JunkItem>, Snapshot) {
+    #[cfg(test)]
+    let started = std::time::Instant::now();
+    let projects = Projects::discover();
+    #[cfg(test)]
+    eprintln!(
+        "Mounted-volume project discovery completed in {:?}",
+        started.elapsed()
+    );
+    scan_snapshot(&definitions(), &projects)
+}
+
+#[cfg(test)]
+fn scan_definitions(defs: &[JunkDef], projects: &Projects) -> Vec<JunkItem> {
+    scan_snapshot(defs, projects).0
+}
+
+fn scan_snapshot(defs: &[JunkDef], projects: &Projects) -> (Vec<JunkItem>, Snapshot) {
+    let results: Vec<_> = defs
         .par_iter()
         .filter_map(|def| {
             let mut paths = Vec::new();
-            let (mut size, mut files) = (0u64, 0u64);
             for rule in &def.rules {
-                for p in resolve(def, rule) {
-                    let (s, f) = measure(&p, rule);
-                    size += s;
-                    files += f;
-                    paths.push(p);
+                for p in resolve(def, rule, projects) {
+                    if let Ok(canonical) = fs::canonicalize(&p) {
+                        paths.push(Target {
+                            id: def.id,
+                            path: p,
+                            canonical,
+                            rule: *rule,
+                            min_age: def.min_age,
+                        });
+                    }
                 }
             }
-            paths.sort();
-            paths.dedup();
-            (size > 0).then(|| JunkItem {
-                id: def.id,
-                label: def.label,
-                group: def.group,
-                size,
-                files,
-                paths: paths
-                    .iter()
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .collect(),
-                caution: def.caution,
+            let (size, files) = paths
+                .par_iter()
+                .map(|target| measure(&target.path, &target.rule))
+                .reduce(|| (0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
+            let mut displayed: Vec<_> = paths
+                .iter()
+                .map(|t| t.path.to_string_lossy().into_owned())
+                .collect();
+            displayed.sort();
+            displayed.dedup();
+            (size > 0).then_some({
+                (
+                    JunkItem {
+                        id: def.id,
+                        label: def.label,
+                        group: def.group,
+                        size,
+                        files,
+                        paths: displayed,
+                        caution: def.caution,
+                    },
+                    paths,
+                )
             })
         })
         .collect();
+    let (mut items, targets): (Vec<_>, Vec<_>) = results.into_iter().unzip();
     items.sort_unstable_by_key(|n| std::cmp::Reverse(n.size));
-    items
+    (
+        items,
+        Snapshot {
+            targets: targets.into_iter().flatten().collect(),
+        },
+    )
 }
 
 /// Deletes what a rule points at inside `dir`; the folder itself stays so apps keep working.
@@ -383,20 +440,147 @@ fn merge(a: CleanReport, b: CleanReport) -> CleanReport {
     }
 }
 
-pub fn clean(ids: &[String], permanent: bool) -> CleanReport {
-    definitions()
-        .iter()
-        .filter(|d| ids.iter().any(|id| id == d.id))
-        .flat_map(|d| d.rules.iter().map(move |r| (d, r)))
-        .flat_map(|(d, r)| resolve(d, r).into_iter().map(move |p| (p, r, d.min_age)))
-        .map(|(p, rule, age)| clean_dir(&p, rule, age, permanent))
+pub fn clean(snapshot: Snapshot, ids: &[String], permanent: bool) -> CleanReport {
+    snapshot
+        .targets
+        .into_iter()
+        .filter(|t| ids.iter().any(|id| id == t.id))
+        .map(|target| {
+            if !real_dir(&target.path)
+                || fs::canonicalize(&target.path).ok().as_ref() != Some(&target.canonical)
+            {
+                return failed("O local analisado mudou. Execute uma nova análise.");
+            }
+            let Some(parent) = target.canonical.parent() else {
+                return failed("caminho inválido");
+            };
+            match crate::guard::check(&target.path, &[parent.to_path_buf()]) {
+                Ok(path) => clean_dir(&path, &target.rule, target.min_age, permanent),
+                Err(reason) => failed(&reason),
+            }
+        })
         .fold(CleanReport::default(), merge)
+}
+
+#[cfg(test)]
+fn clean_with_projects(
+    defs: &[JunkDef],
+    ids: &[String],
+    permanent: bool,
+    projects: &Projects,
+) -> CleanReport {
+    clean(scan_snapshot(defs, projects).1, ids, permanent)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::junk_defs::{matching, whole};
+
+    #[test]
+    fn cleanup_uses_reviewed_locations_not_newly_created_projects() {
+        let volume = tempfile::tempdir().unwrap();
+        let add_project = |name: &str| {
+            let project = volume.path().join(name);
+            fs::create_dir_all(project.join(".next/cache")).unwrap();
+            fs::write(project.join("package.json"), "{}").unwrap();
+            fs::write(project.join(".next/cache/data"), "data").unwrap();
+            project
+        };
+        let reviewed = add_project("reviewed");
+        let defs: Vec<_> = definitions()
+            .into_iter()
+            .filter(|d| d.id == "project-node-caches")
+            .collect();
+        let projects = Projects::from_roots(&[volume.path().into()]);
+        let (items, snapshot) = scan_snapshot(&defs, &projects);
+        assert_eq!(items[0].paths.len(), 1);
+        let unreviewed = add_project("new-project");
+        let result = clean(snapshot, &["project-node-caches".into()], true);
+        assert_eq!((result.removed, result.failed), (1, 0));
+        assert!(!reviewed.join(".next/cache/data").exists());
+        assert!(unreviewed.join(".next/cache/data").exists());
+    }
+
+    /// Manual smoke for the real mounted-volume discovery; never deletes anything.
+    #[test]
+    #[ignore = "reads all mounted volumes; run explicitly with --ignored --nocapture"]
+    fn mounted_volume_junk_scan_read_only() {
+        let disks = crate::disks::list_disks();
+        assert!(!disks.is_empty());
+        let (items, _) = scan_all();
+        for disk in disks {
+            let locations = items
+                .iter()
+                .flat_map(|i| &i.paths)
+                .filter(|p| Path::new(p).starts_with(&disk.mount))
+                .count();
+            println!("mount={} cleanup_locations={locations}", disk.mount);
+        }
+        for item in items.iter().filter(|i| i.id.starts_with("project-")) {
+            println!(
+                "{}: bytes={} files={} locations={}",
+                item.id,
+                item.size,
+                item.files,
+                item.paths.len()
+            );
+        }
+    }
+
+    #[test]
+    fn reviews_and_cleans_caches_on_both_volumes_preserving_sources_and_unselected_deps() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        for root in [first.path(), second.path()] {
+            for path in [
+                "app/.next/cache",
+                "app/node_modules",
+                "personal/cache",
+                "personal/target",
+            ] {
+                fs::create_dir_all(root.join(path)).unwrap();
+                fs::write(root.join(path).join("keep-or-clean"), "data").unwrap();
+            }
+            fs::write(root.join("app/package.json"), "{}").unwrap();
+            fs::write(root.join("app/source.ts"), "source").unwrap();
+        }
+        let projects = Projects::from_roots(&[first.path().into(), second.path().into()]);
+        let defs: Vec<_> = definitions()
+            .into_iter()
+            .filter(|d| {
+                matches!(
+                    d.base,
+                    Base::NodeProjects | Base::RustProjects | Base::PythonProjects
+                )
+            })
+            .collect();
+        let items = scan_definitions(&defs, &projects);
+        let caches = items
+            .iter()
+            .find(|i| i.id == "project-node-caches")
+            .unwrap();
+        assert_eq!((caches.size, caches.files, caches.paths.len()), (8, 2, 2));
+        let deps = items.iter().find(|i| i.id == "project-node-deps").unwrap();
+        assert!(deps.caution.is_some());
+        assert_eq!(deps.paths.len(), 2);
+        let report = clean_with_projects(&defs, &["project-node-caches".into()], true, &projects);
+        assert_eq!((report.freed, report.removed, report.failed), (8, 2, 0));
+        for root in [first.path(), second.path()] {
+            assert!(!root.join("app/.next/cache/keep-or-clean").exists());
+            for path in [
+                "app/source.ts",
+                "app/package.json",
+                "app/node_modules/keep-or-clean",
+                "personal/cache/keep-or-clean",
+                "personal/target/keep-or-clean",
+            ] {
+                assert!(root.join(path).is_file(), "{path}");
+            }
+        }
+        let after = scan_definitions(&defs, &projects);
+        assert!(!after.iter().any(|i| i.id == "project-node-caches"));
+    }
 
     #[test]
     fn glob_matches_partial_segments() {
@@ -504,6 +688,7 @@ mod tests {
             .success();
         assert!(ok, "mklink /J needs no admin rights");
         assert_eq!(dir_size(&cache).0, 10);
+        assert_eq!(measure(&cache, &whole("")), (10, 1));
     }
 
     #[test]
@@ -564,7 +749,7 @@ mod tests {
 
     #[test]
     fn unknown_ids_clean_nothing() {
-        let r = clean(&["../../etc".into()], true);
+        let r = clean(Snapshot::default(), &["../../etc".into()], true);
         assert_eq!(r.removed, 0);
     }
 

@@ -22,6 +22,7 @@ export type Rule = {
   size: number;
   files: number;
   path: string;
+  paths?: string[];
   consequence: string;
   caution?: string;
   blocked?: boolean;
@@ -357,6 +358,7 @@ export function mergeRulesWithScan(items: JunkItem[]): Rule[] {
       size: item.size,
       files: item.files,
       path: item.paths[0] || rule.path,
+      paths: item.paths,
       caution: item.caution ?? rule.caution,
     };
   });
@@ -372,6 +374,7 @@ export function mergeRulesWithScan(items: JunkItem[]): Rule[] {
         size: item.size,
         files: item.files,
         path: item.paths[0] || item.label,
+        paths: item.paths,
         consequence: item.caution
           ? `${item.caution} Fica desmarcado até você escolher.`
           : "Caches e arquivos temporários que os aplicativos recriam sozinhos.",

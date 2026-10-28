@@ -105,8 +105,9 @@ export const api = {
   growth: () => invoke<Growth | null>("get_growth"),
   largestFiles: (limit: number) => invoke<BigFile[]>("largest_files", { limit }),
   deletePaths: (paths: string[], permanent: boolean) => invoke<DeleteReport>("delete_paths", { paths, permanent }),
-  junkScan: () => invoke<JunkItem[]>("junk_scan"),
-  junkClean: (ids: string[], permanent: boolean) => invoke<CleanReport>("junk_clean", { ids, permanent }),
+  junkScan: () => invoke<{ scanId: number; items: JunkItem[] }>("junk_scan"),
+  junkClean: (ids: string[], permanent: boolean, scanId: number) =>
+    invoke<CleanReport>("junk_clean", { ids, permanent, scanId }),
   findDuplicates: (path: string, minSize: number) => invoke<DupResult>("find_duplicates", { path, minSize }),
   findEmpty: (path: string) => invoke<EmptyItem[]>("find_empty", { path }),
   deleteBrokenLinks: (paths: string[]) => invoke<DeleteReport>("delete_broken_links", { paths }),

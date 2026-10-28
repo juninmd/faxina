@@ -35,13 +35,19 @@ export default function Review({
         <div>
           <p className="eyebrow">VOCÊ NO CONTROLE</p>
           <h1>Revise antes de limpar.</h1>
-          <p>Cada item tem um motivo. Nenhuma surpresa depois.</p>
+          <p>Caches de aplicativos e projetos nas unidades conectadas. Revise os locais antes de limpar.</p>
         </div>
         <span className="badge green">
           <Icon name="shield" size={15} />
           Arquivos pessoais protegidos
         </span>
       </div>
+      {scanned && displayRules.length > 0 && (
+        <button type="button" className="button secondary" disabled={loading} onClick={onScan}>
+          <Icon name="refresh" size={16} />
+          {loading ? "Analisando unidades…" : "Analisar novamente todas as unidades"}
+        </button>
+      )}
       <div className="stepper">
         <span className="done">✓ Analisar</span>
         <i />
@@ -56,17 +62,17 @@ export default function Review({
           <Icon name="search" size={38} />
           <h2>
             {loading
-              ? "Analisando caches do sistema…"
+              ? "Analisando caches nas unidades…"
               : !scanned
                 ? "Primeiro, uma análise."
                 : "Nenhum cache encontrado."}
           </h2>
           <p>
             {loading
-              ? "Buscando caches, arquivos temporários e logs que podem ser limpos com segurança."
+              ? "Buscando caches de aplicativos e projetos em todas as unidades acessíveis. Isso pode levar alguns minutos."
               : !scanned
                 ? "Execute a análise para listar os itens que podem ser limpos com segurança."
-                : "Seu computador já está limpo! Nenhum arquivo desnecessário foi detectado."}
+                : "Nenhum item das regras de limpeza foi encontrado nos locais acessíveis."}
           </p>
           <button type="button" className="button primary" disabled={loading} onClick={onScan}>
             <Icon name="refresh" size={16} />
@@ -138,7 +144,9 @@ export default function Review({
               <h3>O que acontece ao limpar?</h3>
               <p>{detail.consequence}</p>
               <h3>Local no disco</h3>
-              <code>{detail.path}</code>
+              {(detail.paths?.length ? detail.paths : [detail.path]).map((path) => (
+                <code key={path}>{path}</code>
+              ))}
               <div className={`callout ${detail.blocked ? "amber-callout" : "green-callout"}`}>
                 <Icon name="shield" size={18} />
                 <span>
@@ -163,7 +171,7 @@ export default function Review({
               <Icon name="trash" size={18} />
               Destino: Lixeira / Exclusão
             </span>
-            <button type="button" className="button primary" disabled={!picked.length} onClick={onConfirm}>
+            <button type="button" className="button primary" disabled={!picked.length || loading} onClick={onConfirm}>
               Continuar <Icon name="arrow" size={18} />
             </button>
           </div>

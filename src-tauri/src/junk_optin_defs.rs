@@ -9,6 +9,14 @@ const MODELS: &str = "Modelos que você baixou. Voltam a ser baixados na próxim
 pub fn definitions() -> Vec<JunkDef> {
     let mut v = vec![
         opt_in(
+            caches("project-node-deps", "Dependências Node nas unidades", DEV, Base::NodeProjects, &["node_modules"]),
+            "Será preciso reinstalar as dependências. Pacotes locais ou alterações dentro de node_modules podem ser perdidos.",
+        ),
+        opt_in(
+            caches("project-rust-builds", "Compilações Rust nas unidades", DEV, Base::RustProjects, &["target"]),
+            "Será preciso recompilar os projetos. Binários e outros arquivos guardados em target serão removidos.",
+        ),
+        opt_in(
             caches("ollama-models", "Modelos do Ollama", DEV, Base::Home, &[".ollama/models"]),
             MODELS,
         ),

@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -29,6 +29,8 @@ pub struct AppState {
     dup_cancel: Arc<AtomicBool>,
     empty_root: Mutex<Option<PathBuf>>,
     growth: Mutex<Option<Growth>>,
+    junk: Mutex<Option<(u64, junk::Snapshot)>>,
+    junk_ticket: AtomicU64,
 }
 
 #[derive(Clone, Serialize)]
@@ -276,17 +278,53 @@ pub async fn delete_paths(
 }
 
 #[tauri::command]
-pub async fn junk_scan() -> Result<Vec<JunkItem>, String> {
-    tauri::async_runtime::spawn_blocking(junk::scan_all)
+pub async fn junk_scan(state: State<'_, AppState>) -> Result<JunkScan, String> {
+    let scan_id = {
+        let mut current = lock(&state.junk);
+        let id = state.junk_ticket.fetch_add(1, Ordering::SeqCst) + 1;
+        *current = None;
+        id
+    };
+    let (items, snapshot) = tauri::async_runtime::spawn_blocking(junk::scan_all)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut current = lock(&state.junk);
+    if state.junk_ticket.load(Ordering::SeqCst) == scan_id {
+        *current = Some((scan_id, snapshot));
+    }
+    Ok(JunkScan { scan_id, items })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JunkScan {
+    scan_id: u64,
+    items: Vec<JunkItem>,
+}
+
+#[tauri::command]
+pub async fn junk_clean(
+    state: State<'_, AppState>,
+    scan_id: u64,
+    ids: Vec<String>,
+    permanent: bool,
+) -> Result<CleanReport, String> {
+    let snapshot = take_junk_snapshot(&state, scan_id)?;
+    tauri::async_runtime::spawn_blocking(move || junk::clean(snapshot, &ids, permanent))
         .await
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub async fn junk_clean(ids: Vec<String>, permanent: bool) -> Result<CleanReport, String> {
-    tauri::async_runtime::spawn_blocking(move || junk::clean(&ids, permanent))
-        .await
-        .map_err(|e| e.to_string())
+fn take_junk_snapshot(state: &AppState, scan_id: u64) -> Result<junk::Snapshot, String> {
+    {
+        let mut current = lock(&state.junk);
+        if current.as_ref().map(|(id, _)| *id) != Some(scan_id)
+            || state.junk_ticket.load(Ordering::SeqCst) != scan_id
+        {
+            return Err("A análise mudou. Analise novamente antes de limpar.".into());
+        }
+        Ok(current.take().expect("snapshot checked above").1)
+    }
 }
 
 #[derive(Serialize)]
@@ -400,6 +438,20 @@ pub async fn delete_broken_links(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn junk_snapshot_rejects_stale_tokens_and_can_only_be_consumed_once() {
+        let state = AppState::default();
+        state.junk_ticket.store(7, Ordering::SeqCst);
+        *lock(&state.junk) = Some((7, junk::Snapshot::default()));
+        assert!(take_junk_snapshot(&state, 6).is_err());
+        assert!(lock(&state.junk).is_some());
+        assert!(take_junk_snapshot(&state, 7).is_ok());
+        assert!(take_junk_snapshot(&state, 7).is_err());
+        *lock(&state.junk) = Some((7, junk::Snapshot::default()));
+        state.junk_ticket.store(8, Ordering::SeqCst);
+        assert!(take_junk_snapshot(&state, 7).is_err());
+    }
 
     #[test]
     fn truncated_flag_set_when_exceeding_max_dup_groups() {
