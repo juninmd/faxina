@@ -91,6 +91,31 @@ describe("domain logic", () => {
     expect(recommended(merged, DEFAULT_SETTINGS).some((r) => r.id === "ollama-models")).toBe(false);
   });
 
+  test("review keeps every location across drives and leaves project dependencies unticked", () => {
+    const paths = ["C:/Projects/one/node_modules", "D:/Projects/two/node_modules"];
+    const merged = mergeRulesWithScan([
+      {
+        id: "project-node-deps",
+        label: "Dependências Node",
+        group: "Desenvolvimento",
+        size: 300,
+        files: 2,
+        paths,
+        caution: "Será preciso reinstalar as dependências.",
+      },
+      {
+        id: "project-node-caches",
+        label: "Caches Node",
+        group: "Desenvolvimento",
+        size: 100,
+        files: 1,
+        paths: ["D:/Projects/two/.next/cache"],
+      },
+    ]);
+    expect(merged.find((r) => r.id === "project-node-deps")?.paths).toEqual(paths);
+    expect(recommended(merged, DEFAULT_SETTINGS).map((r) => r.id)).toEqual(["project-node-caches"]);
+  });
+
   test("recommended filters out 0-size, blocked, busy, caution, and excluded items", () => {
     const testRules: Rule[] = [
       {

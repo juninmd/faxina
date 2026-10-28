@@ -139,7 +139,12 @@ impl Protection {
         if self.exact.iter().any(|d| d == p || d.starts_with(p)) {
             return true;
         }
-        self.system.iter().any(|d| p.starts_with(d))
+        self.is_system(p)
+    }
+
+    /// OS and credential trees must not be explored for project cleanup.
+    pub fn is_system(&self, p: &Path) -> bool {
+        at_protected_drive_entry(p) || self.system.iter().any(|d| p.starts_with(d))
     }
 }
 

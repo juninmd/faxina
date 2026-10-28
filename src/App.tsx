@@ -87,13 +87,15 @@ export default function App() {
 
   // Each analysis takes a ticket; cancelling takes a new one, so the abandoned result is dropped.
   const junkTicket = useRef(0);
+  const junkScanId = useRef<number | null>(null);
   const loadJunk = useCallback(async () => {
     const mine = ++junkTicket.current;
     setJunkLoading(true);
     setScanError(false);
     try {
-      const items = await api.junkScan();
+      const { items, scanId } = await api.junkScan();
       if (mine !== junkTicket.current) return;
+      junkScanId.current = scanId;
       const merged = mergeRulesWithScan(items);
       setRules(merged);
       setScanned(true);
@@ -193,7 +195,8 @@ export default function App() {
     swallow(
       ids.map((id) => `junk:${id}`),
       async () => {
-        const r = await api.junkClean(ids, destination === "permanent");
+        if (junkScanId.current === null) throw new Error("Analise novamente antes de limpar.");
+        const r = await api.junkClean(ids, destination === "permanent", junkScanId.current);
         const report = createReport(picked, destination, r.freed, r.skipped, r.removed);
         setHistory((h) => [report, ...h].slice(0, 12));
         setPage("report");

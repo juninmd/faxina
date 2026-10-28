@@ -19,6 +19,9 @@ pub enum Base {
     Temp,
     /// `~/.config` on Linux, `Application Support` on macOS, Roaming on Windows (Electron's home).
     Config,
+    NodeProjects,
+    RustProjects,
+    PythonProjects,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -228,6 +231,20 @@ fn common() -> Vec<JunkDef> {
     v.extend(crate::junk_native_defs::definitions());
     v.extend(crate::junk_apps_defs::definitions());
     v.extend(crate::junk_optin_defs::definitions());
+    v.push(caches(
+        "project-node-caches",
+        "Caches Node nas unidades",
+        DEV,
+        Base::NodeProjects,
+        &[".next/cache", ".angular/cache", ".parcel-cache", ".turbo"],
+    ));
+    v.push(caches(
+        "project-python-caches",
+        "Caches Python nas unidades",
+        DEV,
+        Base::PythonProjects,
+        &["__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"],
+    ));
     v
 }
 
