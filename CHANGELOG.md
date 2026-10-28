@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.15.0](https://github.com/juninmd/faxina/compare/v1.14.0...v1.15.0) (2026-10-28)
+
+
+### Features
+
+* **cleanup:** scan project caches across mounted drives ([9509e37](https://github.com/juninmd/faxina/commit/9509e3797fce407861a7baa5e8de7cb1fc80d09a))
+
 # [1.14.0](https://github.com/juninmd/faxina/compare/v1.13.4...v1.14.0) (2026-10-26)
 
 
