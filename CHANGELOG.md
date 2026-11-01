@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.16.0](https://github.com/juninmd/faxina/compare/v1.15.0...v1.16.0) (2026-11-01)
+
+
+### Features
+
+* **ui:** modernize interface with refreshed Tailwind components and dark theme ([#77](https://github.com/juninmd/faxina/issues/77)) ([c7732a3](https://github.com/juninmd/faxina/commit/c7732a34df078549a34a9cdb8d8b3a7d851c2023))
+
 # [1.15.0](https://github.com/juninmd/faxina/compare/v1.14.0...v1.15.0) (2026-10-28)
 
 
