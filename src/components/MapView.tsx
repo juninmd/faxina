@@ -80,83 +80,100 @@ export function MapView({ scan, marked, onToggleMark }: Props) {
 
   return (
     <div className="flex min-h-0 flex-1">
-      <div className="flex min-w-0 flex-1 flex-col gap-3 p-4">
-        <div className="flex items-center gap-3">
-          <nav aria-label="Caminho" className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-sm">
+      <div className="flex min-w-0 flex-1 flex-col gap-3 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <nav aria-label="Caminho" className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-xs">
             {crumbs(view.path, root).map((c, i, all) => (
               <span key={c.path} className="flex min-w-0 items-center gap-1">
-                {i > 0 && <span className="text-[var(--color-muted)]">/</span>}
+                {i > 0 && <span className="text-slate-400">/</span>}
                 <button
                   type="button"
                   onClick={() => open(c.path)}
-                  className={`truncate rounded px-1.5 py-0.5 hover:bg-[var(--color-panel-2)] ${i === all.length - 1 ? "bg-[var(--color-panel-2)]" : "text-[var(--color-muted)]"}`}
+                  className={`cursor-pointer truncate rounded-lg px-2 py-1 font-mono transition-colors hover:bg-slate-800 hover:text-white ${
+                    i === all.length - 1 ? "bg-slate-800 text-amber-300 font-semibold" : "text-slate-400"
+                  }`}
                 >
                   {c.label}
                 </button>
               </span>
             ))}
           </nav>
-          <fieldset className="flex rounded-md border border-[var(--color-line)] p-0.5 text-sm">
-            <legend className="sr-only">Modo de visualização</legend>
-            {(["treemap", "rings"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                aria-pressed={mode === m}
-                onClick={() => setMode(m)}
-                className={`rounded px-3 py-1 ${mode === m ? "bg-[var(--color-panel-2)]" : "text-[var(--color-muted)]"}`}
-              >
-                {m === "treemap" ? "Blocos" : "Anéis"}
-              </button>
-            ))}
-          </fieldset>
-          <div className="flex items-center gap-1 rounded-md border border-[var(--color-line)] px-2 py-1 text-sm">
-            <span className="text-[var(--color-muted)]">Profundidade {depth}</span>
-            <button
-              type="button"
-              aria-label="Menos profundidade"
-              onClick={() => setDepth((d) => Math.max(1, d - 1))}
-              className="px-1.5"
-            >
-              −
-            </button>
-            <button
-              type="button"
-              aria-label="Mais profundidade"
-              onClick={() => setDepth((d) => Math.min(8, d + 1))}
-              className="px-1.5"
-            >
-              +
-            </button>
+          <div className="flex items-center gap-2">
+            <fieldset className="flex rounded-xl border border-slate-700/80 bg-slate-850 p-1 text-xs">
+              <legend className="sr-only">Modo de visualização</legend>
+              {(["treemap", "rings"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={mode === m}
+                  onClick={() => setMode(m)}
+                  className={`cursor-pointer rounded-lg px-3 py-1 font-medium transition-all ${
+                    mode === m
+                      ? "bg-slate-700 text-white shadow-xs font-semibold"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {m === "treemap" ? "Blocos" : "Anéis"}
+                </button>
+              ))}
+            </fieldset>
+            <div className="flex items-center gap-1.5 rounded-xl border border-slate-700/80 bg-slate-850 px-3 py-1 text-xs">
+              <span className="text-slate-400">Profundidade</span>
+              <span className="font-mono font-bold text-white">{depth}</span>
+              <div className="flex items-center gap-0.5 ml-1">
+                <button
+                  type="button"
+                  aria-label="Menos profundidade"
+                  onClick={() => setDepth((d) => Math.max(1, d - 1))}
+                  className="cursor-pointer rounded-md px-1.5 py-0.5 hover:bg-slate-700 text-slate-300 hover:text-white font-bold"
+                >
+                  −
+                </button>
+                <button
+                  type="button"
+                  aria-label="Mais profundidade"
+                  onClick={() => setDepth((d) => Math.min(8, d + 1))}
+                  className="cursor-pointer rounded-md px-1.5 py-0.5 hover:bg-slate-700 text-slate-300 hover:text-white font-bold"
+                >
+                  +
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-muted)]">
-          <span className="text-[var(--color-text)]">
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-400">
+          <span className="font-semibold text-slate-200">
             {formatBytes(view.size)} · {formatCount(view.files)} arquivos
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="hatch inline-block h-3 w-3 rounded-sm bg-[var(--color-panel-2)]" /> Recuperável
+            <span className="hatch inline-block h-2.5 w-2.5 rounded-xs bg-slate-800" />
+            <span>Recuperável</span>
           </span>
           {KIND_ORDER.map((k) => (
             <span key={k} className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded-sm" style={{ background: KINDS[k].color }} />
-              {KINDS[k].label}
+              <span className="inline-block h-2.5 w-2.5 rounded-xs" style={{ background: KINDS[k].color }} />
+              <span>{KINDS[k].label}</span>
             </span>
           ))}
         </div>
-        <div className="min-h-0 flex-1">
+
+        <div className="min-h-0 flex-1 rounded-xl border border-slate-800/80 bg-slate-950/60 p-1">
           {mode === "treemap" ? <Treemap {...mapProps} /> : <Sunburst {...mapProps} onUp={up} />}
         </div>
-        <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-muted)]">
+
+        <footer className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
           {KEYS.map(([k, label]) => (
-            <span key={k}>
-              <kbd className="rounded border border-[var(--color-line)] px-1.5 py-0.5 font-mono text-[var(--color-text)]">
+            <span key={k} className="flex items-center gap-1">
+              <kbd className="rounded-md border border-slate-700/80 bg-slate-800/80 px-1.5 py-0.5 font-mono text-[10px] text-slate-200">
                 {k}
-              </kbd>{" "}
-              {label}
+              </kbd>
+              <span className="text-[11px] text-slate-400">{label}</span>
             </span>
           ))}
-          <span className="ml-auto">análise em {elapsed.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} s</span>
+          <span className="ml-auto font-mono text-[11px] text-slate-400">
+            análise em {elapsed.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} s
+          </span>
         </footer>
       </div>
       <Sidebar

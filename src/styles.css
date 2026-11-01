@@ -2,14 +2,23 @@
 @import "./theme.css";
 
 @theme {
-  --color-ink: #0e1117;
-  --color-panel: #161b24;
-  --color-panel-2: #1d2430;
-  --color-line: #2a3240;
-  --color-muted: #97a1b4;
-  --color-text: #e6e9ef;
-  --color-accent: #e3b341;
-  --color-danger: #f0605d;
+  --color-ink: #090d16;
+  --color-panel: #111726;
+  --color-panel-2: #182235;
+  --color-panel-hover: #1e2b42;
+  --color-line: #232f46;
+  --color-line-subtle: #192233;
+  --color-muted: #94a3b8;
+  --color-text: #f1f5f9;
+  --color-text-dim: #cbd5e1;
+  --color-accent: #f59e0b;
+  --color-accent-hover: #fbbf24;
+  --color-accent-muted: #78350f;
+  --color-danger: #f43f5e;
+  --color-success: #10b981;
+  --color-info: #3b82f6;
+  --color-slate-850: #151d2d;
+  --color-slate-750: #26354a;
   --font-sans: "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
 }

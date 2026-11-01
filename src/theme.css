@@ -2,16 +2,16 @@
 
 :root {
   color-scheme: dark;
-  --bg: #0e1117;
-  --surface: #161b24;
-  --surface-raised: #1d2430;
-  --border: #303a49;
-  --muted: #a4aebe;
-  --text: #e6e9ef;
-  --yellow: #e3b341;
-  --green: #91ceac;
-  --blue: #658fde;
-  --purple: #ab96d4;
+  --bg: #090d16;
+  --surface: #111726;
+  --surface-raised: #182235;
+  --border: #232f46;
+  --muted: #94a3b8;
+  --text: #f1f5f9;
+  --yellow: #f59e0b;
+  --green: #10b981;
+  --blue: #3b82f6;
+  --purple: #a855f7;
 }
 * {
   box-sizing: border-box;

@@ -18,9 +18,9 @@ interface Props {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <div className="text-[11px] tracking-wider text-[var(--color-muted)] uppercase">{label}</div>
-      <div className="mt-1 text-[15px]">{value}</div>
+    <div className="rounded-xl border border-slate-800/70 bg-slate-900/50 p-2.5 shadow-xs">
+      <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">{label}</div>
+      <div className="mt-0.5 text-xs font-semibold text-slate-200">{value}</div>
     </div>
   );
 }
@@ -69,23 +69,26 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
   const maxSug = suggestions[0]?.size ?? 1;
 
   return (
-    <aside className="flex w-[330px] shrink-0 flex-col gap-6 overflow-y-auto border-l border-[var(--color-line)] bg-[var(--color-panel)] p-5">
+    <aside className="flex w-[330px] shrink-0 flex-col gap-6 overflow-y-auto border-l border-slate-800/80 bg-slate-950/90 p-5 backdrop-blur-xl">
       <section aria-label="Seleção">
-        <div className="text-[11px] tracking-wider text-[var(--color-muted)] uppercase">Seleção</div>
-        <div className="mt-3 flex items-center gap-2">
-          <span className="h-5 w-1 rounded" style={{ background: kindColor(selection.kind) }} />
-          <span className="truncate text-lg font-medium" title={selection.path}>
+        <div className="text-[10px] font-bold tracking-widest text-amber-400 uppercase">Seleção</div>
+        <div className="mt-2.5 flex items-center gap-2">
+          <span className="h-5 w-1.5 rounded-full" style={{ background: kindColor(selection.kind) }} />
+          <span className="truncate text-base font-bold text-white" title={selection.path}>
             {selection.name}
           </span>
         </div>
-        <div className="mt-3 text-5xl font-light tabular-nums">
+        <div className="mt-2 font-mono text-4xl font-extrabold tracking-tight text-white">
           {num}
-          <span className="ml-2 text-xl text-[var(--color-muted)]">{unit}</span>
+          <span className="ml-2 text-lg text-slate-400">{unit}</span>
         </div>
-        <div className="mt-3 h-1.5 rounded bg-[var(--color-panel-2)]">
-          <div className="h-full rounded bg-[var(--color-accent)]" style={{ width: `${Math.min(100, share)}%` }} />
+        <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-slate-800">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-400"
+            style={{ width: `${Math.min(100, share)}%` }}
+          />
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-4">
+        <div className="mt-4 grid grid-cols-2 gap-2.5">
           <Stat label="Da análise" value={`${share.toFixed(share < 10 ? 1 : 0)}%`} />
           <Stat label="Arquivos" value={formatCount(selection.files)} />
           <Stat label="Última escrita" value={formatAge(selection.modified)} />
@@ -96,7 +99,7 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
             <button
               type="button"
               onClick={() => onToggleMark(selection)}
-              className="flex-1 rounded-md border border-[var(--color-line)] px-3 py-1.5 text-sm hover:bg-[var(--color-panel-2)]"
+              className="flex-1 cursor-pointer rounded-xl border border-slate-700 bg-slate-800/90 px-3 py-2 text-xs font-semibold text-slate-200 transition-colors hover:bg-slate-750"
             >
               {marked.has(selection.path) ? "Desmarcar" : "Marcar para excluir"}
             </button>
@@ -113,7 +116,7 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
                 setCopied(selection.path);
                 setTimeout(() => setCopied(""), 1500);
               }}
-              className="rounded-md border border-[var(--color-line)] px-3 py-1.5 text-sm hover:bg-[var(--color-panel-2)]"
+              className="cursor-pointer rounded-xl border border-slate-700 bg-slate-800/90 px-3 py-2 text-xs font-semibold text-slate-200 transition-colors hover:bg-slate-750"
               title="Copiar caminho"
               aria-label="Copiar caminho"
             >
@@ -139,7 +142,7 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
                 setTimeout(() => setPromptFailed(""), 2000);
               }
             }}
-            className="mt-2 w-full rounded-md border border-[var(--color-line)] px-3 py-1.5 text-sm hover:bg-[var(--color-panel-2)]"
+            className="mt-2.5 w-full cursor-pointer rounded-xl border border-slate-700 bg-slate-850 px-3 py-2 text-xs font-semibold text-slate-300 transition-colors hover:bg-slate-800"
             title="Copia o nome, o tamanho e os maiores itens da pasta para colar em um assistente de IA"
           >
             {promptCopied === selection.path
