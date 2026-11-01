@@ -71,15 +71,19 @@ export function EmptyPanel({ swallow, defaultRoot }: { swallow: Swallow; default
   };
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-5 overflow-y-auto p-8">
-      <header>
-        <h1 className="text-2xl font-semibold">Pastas vazias e links quebrados</h1>
-        <p className="mt-1 text-sm text-[var(--color-muted)]">
+    <div className="flex h-full w-full flex-col gap-6 overflow-y-auto">
+      <div>
+        <p className="text-[11px] font-bold tracking-widest text-amber-400 uppercase">Organização do sistema</p>
+        <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
+          Pastas vazias e links quebrados
+        </h1>
+        <p className="mt-1 text-sm text-slate-400">
           Só aparece a pasta mais externa de cada cadeia vazia. Nada vem marcado: revise antes, algumas pastas vazias
           são espaços reservados por programas.
         </p>
-      </header>
-      <div className="flex flex-wrap items-center gap-3">
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4 shadow-md backdrop-blur-md">
         <button
           type="button"
           onClick={async () => {
@@ -90,65 +94,100 @@ export function EmptyPanel({ swallow, defaultRoot }: { swallow: Swallow; default
               setError(String(e));
             }
           }}
-          className="max-w-md truncate rounded-md border border-[var(--color-line)] px-3 py-2 text-sm hover:bg-[var(--color-panel-2)]"
+          className="flex max-w-md cursor-pointer items-center gap-2 truncate rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-200 transition-colors hover:bg-slate-750"
           title={root}
         >
-          <span aria-hidden="true">📁 </span>
-          {root || "Escolher pasta"}
+          <span aria-hidden="true">📁</span>
+          <span className="truncate">{root || "Escolher pasta"}</span>
         </button>
+
         <button
           type="button"
           disabled={!root || busy}
           onClick={search}
-          className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-black disabled:opacity-50"
+          className="cursor-pointer rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 px-5 py-2 text-xs font-bold text-slate-950 shadow-lg shadow-amber-500/20 hover:brightness-110 disabled:opacity-50"
         >
           {busy ? "Procurando…" : "Procurar"}
         </button>
+
         {!!items?.length && (
           <button
             type="button"
             onClick={() => setPicked(picked.size === items.length ? new Set() : new Set(items.map((i) => i.path)))}
-            className="rounded-md border border-[var(--color-line)] px-3 py-2 text-sm hover:bg-[var(--color-panel-2)]"
+            className="cursor-pointer rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-200 transition-colors hover:bg-slate-750"
           >
             {picked.size === items.length ? "Desmarcar todos" : "Marcar todos"}
           </button>
         )}
+
         {!!picked.size && (
           <button
             type="button"
             onClick={remove}
-            className="ml-auto rounded-md bg-[var(--color-danger)] px-4 py-2 text-sm font-semibold text-black"
+            className="ml-auto inline-flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-r from-rose-500 to-rose-600 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-rose-500/25 transition-all hover:brightness-110 active:scale-[0.98]"
           >
-            <span aria-hidden="true">🕳️ </span>Limpar {formatCount(picked.size)}
+            <span aria-hidden="true">🕳️</span>
+            <span>Limpar {formatCount(picked.size)}</span>
           </button>
         )}
       </div>
-      {error && <p className="text-sm text-[var(--color-danger)]">{error}</p>}
-      {items?.length === 0 && <p className="text-[var(--color-muted)]">Nada vazio ou quebrado por aqui. 🎉</p>}
-      <ul className="flex flex-col gap-1">
+
+      {error && <p className="text-xs font-semibold text-rose-400">{error}</p>}
+
+      {items?.length === 0 && (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-3xl border border-slate-800/80 bg-slate-900/60 p-12 text-center shadow-lg backdrop-blur-md">
+          <span className="text-4xl" aria-hidden="true">
+            🎉
+          </span>
+          <p className="text-sm font-semibold text-white">Nada vazio ou quebrado por aqui.</p>
+        </div>
+      )}
+
+      {!!items?.length && (
+        <p className="text-xs text-slate-400 font-medium" role="status">
+          {formatCount(items.length)} itens encontrados
+        </p>
+      )}
+
+      <ul className="flex flex-col gap-2">
         {items?.slice(0, shown).map((i) => (
           <li key={i.path}>
             <label
               data-path={i.path}
               data-color="#8b5cd6"
-              className="flex cursor-pointer items-center gap-3 rounded px-2 py-1 text-sm hover:bg-[var(--color-panel-2)]"
+              className="group flex cursor-pointer items-center gap-3.5 rounded-xl border border-slate-800/70 bg-slate-900/50 p-3 shadow-xs transition-colors hover:border-slate-700 hover:bg-slate-850/60"
             >
-              <input type="checkbox" checked={picked.has(i.path)} onChange={() => toggle(i.path)} />
-              <span className="min-w-0 flex-1 truncate" title={i.path}>
+              <input
+                type="checkbox"
+                checked={picked.has(i.path)}
+                onChange={() => toggle(i.path)}
+                className="h-4 w-4 cursor-pointer rounded border-slate-700 accent-amber-500"
+              />
+              <span
+                className="min-w-0 flex-1 truncate font-mono text-[11px] text-slate-300 group-hover:text-white"
+                title={i.path}
+              >
                 {i.path}
               </span>
-              <span className="shrink-0 rounded bg-[var(--color-panel-2)] px-1.5 text-[10px] uppercase">
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                  i.kind === "folder"
+                    ? "border border-amber-500/30 bg-amber-500/10 text-amber-400"
+                    : "border border-rose-500/30 bg-rose-500/10 text-rose-400"
+                }`}
+              >
                 {LABEL[i.kind]}
               </span>
             </label>
           </li>
         ))}
       </ul>
+
       {items && items.length > shown && (
         <button
           type="button"
           onClick={() => setShown((n) => n + PAGE)}
-          className="self-center rounded-md border border-[var(--color-line)] px-4 py-2 text-sm hover:bg-[var(--color-panel-2)]"
+          className="self-center cursor-pointer rounded-xl border border-slate-700 bg-slate-800/80 px-5 py-2.5 text-xs font-semibold text-slate-200 transition-colors hover:bg-slate-750"
         >
           Mostrar mais {Math.min(PAGE, items.length - shown)} (faltam {formatCount(items.length - shown)})
         </button>

@@ -36,75 +36,117 @@ export default function Growth({ root, onAnalyze }: { root: string; onAnalyze: (
   const grew = (growth?.delta ?? 0) >= 0;
 
   return (
-    <>
-      <div className="page-heading compact">
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="eyebrow">COMPARAÇÃO ENTRE ANÁLISES</p>
-          <h1>O que cresceu desde a última vez.</h1>
-          <p>Cada análise do Mapa guarda os tamanhos das pastas grandes, só neste computador.</p>
+          <p className="text-[11px] font-bold tracking-widest text-amber-400 uppercase">Comparação entre análises</p>
+          <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
+            O que cresceu desde a última vez.
+          </h1>
+          <p className="mt-1 text-sm text-slate-400">
+            Cada análise do Mapa guarda os tamanhos das pastas grandes, só neste computador.
+          </p>
         </div>
-        <span className="badge">Somente leitura</span>
+        <span className="rounded-full border border-slate-700/80 bg-slate-800/60 px-4 py-2 text-xs font-semibold text-slate-300 shadow-xs backdrop-blur-sm">
+          Somente leitura
+        </span>
       </div>
-      {root && !loaded && <p className="text-[var(--color-muted)]">Carregando a comparação…</p>}
+
+      {root && !loaded && <p className="text-xs text-slate-400">Carregando a comparação…</p>}
+
       {root && failed ? (
-        <section className="panel empty-state">
-          <Icon name="clock" size={38} />
-          <h2>Não foi possível comparar.</h2>
-          <p>Analise a pasta de novo para tentar outra vez.</p>
-          <button type="button" className="button primary" onClick={onAnalyze}>
+        <section className="flex flex-col items-center justify-center gap-4 rounded-3xl border border-slate-800/80 bg-slate-900/60 p-12 text-center shadow-lg backdrop-blur-md">
+          <span className="flex h-16 w-16 items-center justify-center rounded-2xl border border-rose-500/30 bg-rose-500/15 text-rose-400">
+            <Icon name="clock" size={32} />
+          </span>
+          <h2 className="text-xl font-bold text-white">Não foi possível comparar.</h2>
+          <p className="max-w-md text-sm text-slate-400">Analise a pasta de novo para tentar outra vez.</p>
+          <button
+            type="button"
+            className="cursor-pointer rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 px-6 py-2.5 text-xs font-bold text-slate-950 shadow-lg shadow-amber-500/20 hover:brightness-110"
+            onClick={onAnalyze}
+          >
             Ir para o Mapa do disco
           </button>
         </section>
       ) : !root || (loaded && !growth) ? (
-        <section className="panel empty-state">
-          <Icon name="clock" size={38} />
-          <h2>{root ? "Primeira análise registrada." : "Nenhuma análise ainda."}</h2>
-          <p>
+        <section className="flex flex-col items-center justify-center gap-4 rounded-3xl border border-slate-800/80 bg-slate-900/60 p-12 text-center shadow-lg backdrop-blur-md">
+          <span className="flex h-16 w-16 items-center justify-center rounded-2xl border border-slate-700 bg-slate-800 text-amber-400">
+            <Icon name="clock" size={32} />
+          </span>
+          <h2 className="text-xl font-bold text-white">
+            {root ? "Primeira análise registrada." : "Nenhuma análise ainda."}
+          </h2>
+          <p className="max-w-md text-sm text-slate-400">
             {root
               ? "Analise a mesma pasta de novo mais tarde para ver o que cresceu entre as duas."
               : "Analise uma pasta no Mapa do disco. Na próxima análise da mesma pasta, a comparação aparece aqui."}
           </p>
-          <button type="button" className="button primary" onClick={onAnalyze}>
+          <button
+            type="button"
+            className="cursor-pointer rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 px-6 py-2.5 text-xs font-bold text-slate-950 shadow-lg shadow-amber-500/20 hover:brightness-110"
+            onClick={onAnalyze}
+          >
             Ir para o Mapa do disco
           </button>
         </section>
       ) : (
         growth && (
           <>
-            <div className="metric-grid">
-              <div className="panel metric emphasized">
-                <span>{grew ? "Cresceu" : "Diminuiu"}</span>
-                <strong>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div
+                className={`flex flex-col rounded-2xl border p-6 shadow-xl backdrop-blur-md ${
+                  grew
+                    ? "border-amber-500/40 bg-gradient-to-br from-amber-500/10 via-slate-900 to-slate-950"
+                    : "border-emerald-500/40 bg-gradient-to-br from-emerald-500/10 via-slate-900 to-slate-950"
+                }`}
+              >
+                <span
+                  className={`text-xs font-bold uppercase tracking-wider ${grew ? "text-amber-400" : "text-emerald-400"}`}
+                >
+                  {grew ? "Cresceu" : "Diminuiu"}
+                </span>
+                <strong
+                  className={`mt-2 font-mono text-4xl font-extrabold ${grew ? "text-amber-400" : "text-emerald-400"}`}
+                >
                   {grew ? "+" : "−"}
                   {formatBytes(Math.abs(growth.delta))}
                 </strong>
-                <small>Comparado à análise {formatAge(growth.previousAt)}</small>
+                <small className="mt-1 text-xs text-slate-400">
+                  Comparado à análise {formatAge(growth.previousAt)}
+                </small>
               </div>
             </div>
-            <section className="panel history-panel">
-              <div className="section-heading">
-                <h2>Pastas que mais cresceram</h2>
-                <span className="muted" title={growth.root}>
+
+            <section className="flex flex-col gap-4 rounded-2xl border border-slate-800/80 bg-slate-900/60 p-6 shadow-lg backdrop-blur-md">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800/60">
+                <h2 className="text-base font-bold text-white">Pastas que mais cresceram</h2>
+                <span className="font-mono text-xs text-slate-400 truncate max-w-sm" title={growth.root}>
                   {growth.root}
                 </span>
               </div>
               {growth.grown.length ? (
                 <ul className="flex flex-col gap-3">
                   {growth.grown.map((f) => (
-                    <li key={f.path}>
+                    <li
+                      key={f.path}
+                      className="flex flex-col gap-1.5 rounded-xl border border-slate-800/60 bg-slate-950/40 p-3.5"
+                    >
                       <div className="flex items-baseline justify-between gap-4">
-                        <span className="truncate" title={f.path}>
+                        <span className="font-mono text-xs text-slate-300 truncate" title={f.path}>
                           {f.path}
                         </span>
-                        <strong className="tabular-nums">+{formatBytes(f.growth)}</strong>
+                        <strong className="font-mono text-xs font-bold text-amber-400 tabular-nums">
+                          +{formatBytes(f.growth)}
+                        </strong>
                       </div>
-                      <div className="mt-1 h-1.5 rounded bg-[var(--color-panel-2)]">
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
                         <div
-                          className="h-full rounded bg-[var(--color-accent)]"
+                          className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-400"
                           style={{ width: `${Math.max(2, (f.growth / maxGrowth) * 100)}%` }}
                         />
                       </div>
-                      <small className="muted">
+                      <small className="text-[11px] text-slate-400">
                         {f.beforeKnown ? formatBytes(f.before) : `menos de ${formatBytes(f.before)}`} →{" "}
                         {formatBytes(f.after)}
                       </small>
@@ -112,18 +154,19 @@ export default function Growth({ root, onAnalyze }: { root: string; onAnalyze: (
                   ))}
                 </ul>
               ) : (
-                <p className="muted">Nenhuma pasta cresceu de forma relevante (mais de 100 MB).</p>
+                <p className="text-xs text-slate-400">Nenhuma pasta cresceu de forma relevante (mais de 100 MB).</p>
               )}
             </section>
+
             {!grew && (
-              <div className="callout amber-callout">
-                <Icon name="file" />
+              <div className="flex items-center gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-relaxed text-amber-200">
+                <Icon name="file" size={18} />
                 <span>Se alguma pasta não pôde ser lida nesta análise, parte da redução pode não ser real.</span>
               </div>
             )}
           </>
         )
       )}
-    </>
+    </div>
   );
 }

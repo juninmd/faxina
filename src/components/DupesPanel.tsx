@@ -115,14 +115,16 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
   };
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-5 overflow-y-auto p-8">
-      <header>
-        <h1 className="text-2xl font-semibold">Arquivos duplicados</h1>
-        <p className="mt-1 text-sm text-[var(--color-muted)]">
+    <div className="flex h-full w-full flex-col gap-6 overflow-y-auto">
+      <div>
+        <p className="text-[11px] font-bold tracking-widest text-amber-400 uppercase">Varredura de redundância</p>
+        <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">Arquivos duplicados</h1>
+        <p className="mt-1 text-sm text-slate-400">
           Comparação por conteúdo (BLAKE3), não por nome. A cópia mais antiga de cada grupo é mantida por padrão.
         </p>
-      </header>
-      <div className="flex flex-wrap items-center gap-3">
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4 shadow-md backdrop-blur-md">
         <button
           type="button"
           onClick={async () => {
@@ -136,19 +138,20 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
               setError(String(e));
             }
           }}
-          className="max-w-md truncate rounded-md border border-[var(--color-line)] px-3 py-2 text-sm hover:bg-[var(--color-panel-2)]"
+          className="flex max-w-md cursor-pointer items-center gap-2 truncate rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-200 transition-colors hover:bg-slate-750"
           title={root}
         >
-          <span aria-hidden="true">📁 </span>
-          {root || "Escolher pasta"}
+          <span aria-hidden="true">📁</span>
+          <span className="truncate">{root || "Escolher pasta"}</span>
         </button>
+
         <select
           value={minSize}
           onChange={(e) => {
             setMinSize(Number(e.target.value));
             resetResults();
           }}
-          className="rounded-md border border-[var(--color-line)] bg-[var(--color-panel)] px-3 py-2 text-sm"
+          className="cursor-pointer rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 outline-none focus:border-amber-500"
           aria-label="Tamanho mínimo"
         >
           {MIN_SIZES.map((s) => (
@@ -157,12 +160,13 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
             </option>
           ))}
         </select>
+
         {tick === null ? (
           <button
             type="button"
             disabled={!root}
             onClick={search}
-            className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-black"
+            className="cursor-pointer rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 px-5 py-2 text-xs font-bold text-slate-950 shadow-lg shadow-amber-500/20 hover:brightness-110 disabled:opacity-50"
           >
             Procurar
           </button>
@@ -170,72 +174,102 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
           <button
             type="button"
             onClick={() => api.cancelDuplicates()}
-            className="rounded-md border border-[var(--color-line)] px-4 py-2 text-sm"
+            className="cursor-pointer rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-750"
           >
             Cancelar (
             {tick.total ? `etapa ${tick.stage}: ${formatCount(tick.done)} de ${formatCount(tick.total)}` : "preparando"}
             )
           </button>
         )}
+
         {!!picked.size && (
           <button
             type="button"
             onClick={remove}
-            className="ml-auto rounded-md bg-[var(--color-danger)] px-4 py-2 text-sm font-semibold text-black"
+            className="ml-auto inline-flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-r from-rose-500 to-rose-600 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-rose-500/25 transition-all hover:brightness-110 active:scale-[0.98]"
           >
-            <span aria-hidden="true">🕳️ </span>Mandar {formatCount(picked.size)} para a Lixeira ({formatBytes(wasted)})
+            <span aria-hidden="true">🕳️</span>
+            <span>
+              Mandar {formatCount(picked.size)} para a Lixeira ({formatBytes(wasted)})
+            </span>
           </button>
         )}
       </div>
-      {error && <p className="text-sm text-[var(--color-danger)]">{error}</p>}
+
+      {error && <p className="text-xs font-semibold text-rose-400">{error}</p>}
       {dupNotice(dupMeta) && (
-        <p className="text-sm text-[var(--color-accent)]" role="status">
+        <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200" role="status">
           {dupNotice(dupMeta)}
         </p>
       )}
-      {groups?.length === 0 && <p className="text-[var(--color-muted)]">Nenhuma duplicata encontrada. 🎉</p>}
+
+      {groups?.length === 0 && (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-3xl border border-slate-800/80 bg-slate-900/60 p-12 text-center shadow-lg backdrop-blur-md">
+          <span className="text-4xl" aria-hidden="true">
+            🎉
+          </span>
+          <p className="text-sm font-semibold text-white">Nenhuma duplicata encontrada.</p>
+        </div>
+      )}
+
       {!!groups?.length && (
-        <p className="text-sm text-[var(--color-muted)]" role="status">
+        <p className="text-xs text-slate-400 font-medium" role="status">
           {formatCount(groups.length)} grupos · a seleção vale para todos, inclusive os que ainda não apareceram abaixo.
         </p>
       )}
-      <ul className="flex flex-col gap-3">
+
+      <ul className="flex flex-col gap-4">
         {groups?.slice(0, shown).map((g) => (
-          <li key={g.hash} className="rounded-lg bg-[var(--color-panel)] p-3">
-            <div className="mb-2 flex justify-between text-sm">
-              <span className="truncate font-medium">{baseName(g.files[0].path)}</span>
-              <span className="shrink-0 text-[var(--color-muted)]">
+          <li
+            key={g.hash}
+            className="flex flex-col gap-2 rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4 shadow-sm backdrop-blur-md"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800/60 text-xs">
+              <span className="truncate font-semibold text-white">{baseName(g.files[0].path)}</span>
+              <span className="shrink-0 font-mono text-amber-400">
                 {g.files.length} cópias × {formatBytes(g.size)}
               </span>
             </div>
-            {g.files.map((f, i) => (
-              <label
-                key={f.path}
-                data-path={f.path}
-                data-color="#8b5cd6"
-                className="flex cursor-pointer items-center gap-3 rounded px-2 py-1 text-sm hover:bg-[var(--color-panel-2)]"
-              >
-                <input type="checkbox" checked={picked.has(f.path)} onChange={() => toggle(g, f.path)} />
-                <span
-                  className={`min-w-0 flex-1 truncate ${picked.has(f.path) ? "text-[var(--color-danger)] line-through" : ""}`}
-                  title={f.path}
+            <div className="flex flex-col gap-1.5">
+              {g.files.map((f, i) => (
+                <label
+                  key={f.path}
+                  data-path={f.path}
+                  data-color="#8b5cd6"
+                  className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-800/50 bg-slate-950/40 px-3 py-2 text-xs transition-colors hover:border-slate-700 hover:bg-slate-850/50"
                 >
-                  {f.path}
-                </span>
-                {i === 0 && (
-                  <span className="rounded bg-[var(--color-panel-2)] px-1.5 text-[10px] uppercase">original</span>
-                )}
-                <span className="shrink-0 text-xs text-[var(--color-muted)]">{formatAge(f.modified)}</span>
-              </label>
-            ))}
+                  <input
+                    type="checkbox"
+                    checked={picked.has(f.path)}
+                    onChange={() => toggle(g, f.path)}
+                    className="h-4 w-4 cursor-pointer rounded border-slate-700 accent-amber-500"
+                  />
+                  <span
+                    className={`min-w-0 flex-1 truncate font-mono text-[11px] ${
+                      picked.has(f.path) ? "text-rose-400 line-through opacity-70" : "text-slate-300"
+                    }`}
+                    title={f.path}
+                  >
+                    {f.path}
+                  </span>
+                  {i === 0 && (
+                    <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-[9px] font-bold text-blue-400 uppercase tracking-wider">
+                      original
+                    </span>
+                  )}
+                  <span className="shrink-0 text-[11px] text-slate-400">{formatAge(f.modified)}</span>
+                </label>
+              ))}
+            </div>
           </li>
         ))}
       </ul>
+
       {groups && groups.length > shown && (
         <button
           type="button"
           onClick={() => setShown((n) => n + PAGE)}
-          className="self-center rounded-md border border-[var(--color-line)] px-4 py-2 text-sm hover:bg-[var(--color-panel-2)]"
+          className="self-center cursor-pointer rounded-xl border border-slate-700 bg-slate-800/80 px-5 py-2.5 text-xs font-semibold text-slate-200 transition-colors hover:bg-slate-750"
         >
           Mostrar mais {Math.min(PAGE, groups.length - shown)} (faltam {formatCount(groups.length - shown)})
         </button>

@@ -219,102 +219,149 @@ export default function App() {
   const cleanupDue = settings.reminder && isCleanupDue(settings, history);
 
   return (
-    <div className="app-shell">
-      <a href="#main" className="skip-link">
+    <div className="flex h-screen max-h-screen overflow-hidden bg-[var(--color-ink)] text-[var(--color-text)]">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-amber-500 focus:px-4 focus:py-2 focus:font-semibold focus:text-slate-950"
+      >
         Pular para o conteúdo
       </a>
-      <aside className="sidebar">
-        <button type="button" className="brand" onClick={() => setPage("overview")}>
-          <span className="brand-mark">
-            <i />
-            <i />
-            <i />
-            <i />
+      <aside className="flex w-60 min-w-60 shrink-0 flex-col border-r border-slate-800/70 bg-[#0b101b]/95 p-4 backdrop-blur-xl">
+        <button
+          type="button"
+          className="group flex cursor-pointer items-center gap-3 px-2 py-1 text-left transition-transform hover:scale-[1.01]"
+          onClick={() => setPage("overview")}
+        >
+          <span className="grid grid-cols-2 gap-1 rounded-lg bg-slate-900/80 p-1.5 shadow-sm transition-transform duration-300 group-hover:rotate-6">
+            <i className="h-2 w-2 rounded-xs bg-amber-400" />
+            <i className="h-2 w-2 rounded-xs bg-blue-500" />
+            <i className="h-2 w-2 rounded-xs bg-emerald-400" />
+            <i className="h-2 w-2 rounded-xs bg-rose-400" />
           </span>
-          faxina<span className="brand-period">.</span>
+          <span className="text-xl font-bold tracking-tight text-white">
+            faxina<span className="text-amber-400">.</span>
+          </span>
         </button>
-        <span className="sidebar-tagline">Espaço para o que importa.</span>
-        <nav aria-label="Navegação principal" className="sidebar-nav">
+        <span className="mt-1 px-2 text-[11px] font-medium tracking-wide text-slate-400/80">
+          Espaço para o que importa.
+        </span>
+        <nav aria-label="Navegação principal" className="mt-5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
           {NAV.map((n) => (
             <div key={n.id}>
-              {n.caption && <span className="nav-caption">{n.caption}</span>}
+              {n.caption && (
+                <span className="block px-3 pt-4 pb-1 text-[10px] font-bold tracking-widest text-slate-400 uppercase">
+                  {n.caption}
+                </span>
+              )}
               <button
                 type="button"
-                className={`nav-link ${page === n.id ? "active" : ""}`}
+                className={`group flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-150 ${
+                  page === n.id
+                    ? "border border-amber-500/25 bg-amber-500/10 font-semibold text-amber-300 shadow-xs"
+                    : "border border-transparent text-slate-400 hover:bg-slate-800/40 hover:text-slate-200"
+                }`}
                 aria-current={page === n.id ? "page" : undefined}
                 onClick={() => setPage(n.id)}
               >
-                <Icon name={n.icon} />
+                <Icon name={n.icon} size={18} />
                 <span>{n.label}</span>
                 {n.id === "review" && scanned && picked.length > 0 && (
-                  <span className="nav-count">{picked.length}</span>
+                  <span className="ml-auto rounded-full border border-amber-500/30 bg-amber-500/20 px-2 py-0.5 font-mono text-[11px] font-bold text-amber-300 shadow-xs">
+                    {picked.length}
+                  </span>
                 )}
               </button>
             </div>
           ))}
         </nav>
-        <div className="sidebar-bottom">
+        <div className="mt-auto flex shrink-0 flex-col gap-3 pt-3 border-t border-slate-800/60">
           <button
             type="button"
             onClick={cycleMotion}
             title="Animação de exclusão: seguir o sistema, sempre ou nunca"
-            className="motion-button"
+            className="flex w-full cursor-pointer items-center justify-between rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs text-slate-300 shadow-xs transition-colors hover:bg-slate-800/70"
           >
-            <span aria-hidden="true">✨</span>
-            <span>Animações: {MOTION_LABELS[motion]}</span>
+            <span className="flex items-center gap-2">
+              <span aria-hidden="true">✨</span>
+              <span>Animações</span>
+            </span>
+            <span className="font-medium text-amber-400/90">{MOTION_LABELS[motion]}</span>
           </button>
-          <div className="privacy-card">
-            <Icon name="shield" size={22} />
-            <strong>Seu espaço é seu.</strong>
-            <p>
+          <div className="rounded-2xl border border-slate-800/80 bg-gradient-to-b from-slate-900/60 to-slate-950/80 p-3.5 text-xs text-slate-400 shadow-xs">
+            <div className="mb-2 flex items-center gap-2 text-emerald-400">
+              <Icon name="shield" size={18} />
+              <strong className="text-slate-200">Seu espaço é seu.</strong>
+            </div>
+            <p className="leading-relaxed">
               Você escolhe o que limpar.
               <br />
               Seus dados ficam com você.
             </p>
           </div>
-          <span className="prototype-label">
-            <span className="status-dot" />
-            PROTEÇÃO ATIVA
-          </span>
+          <div className="flex items-center gap-2 px-1 pt-1 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
+            <span>PROTEÇÃO ATIVA</span>
+          </div>
         </div>
       </aside>
-      <div className="workspace">
-        <header className="topbar">
-          <span>
-            Meu computador <span className="breadcrumb-separator">/</span>{" "}
-            <strong>{NAV.find((n) => n.id === page)?.label}</strong>
-          </span>
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center justify-between border-b border-slate-800/70 bg-[#0b101b]/80 px-8 text-xs text-slate-400 backdrop-blur-md">
+          <div className="flex items-center gap-2">
+            <span>Meu computador</span>
+            <span className="text-slate-400">/</span>
+            <strong className="font-semibold text-slate-100">{NAV.find((n) => n.id === page)?.label}</strong>
+          </div>
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={cycleMotion}
               title="Animação de exclusão: seguir o sistema, sempre ou nunca"
-              className="flex items-center gap-1.5 rounded-md border border-[var(--color-line)] bg-[var(--color-panel)] px-2.5 py-1 text-xs text-[var(--color-muted)] hover:text-white"
+              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/80 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:text-white"
             >
               <span aria-hidden="true">✨</span>
               <span>Animações: {MOTION_LABELS[motion]}</span>
             </button>
-            <div className="topbar-status">
-              <Icon name="shield" size={15} />
-              Protegido · {platformName()}
+            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 shadow-xs">
+              <Icon name="shield" size={14} />
+              <span>Protegido · {platformName()}</span>
             </div>
           </div>
         </header>
 
-        <main id="main" ref={main} tabIndex={-1}>
-          <div className={`content ${page === "map" ? "map-page" : ""}`}>
+        <main id="main" ref={main} tabIndex={-1} className="flex min-h-0 flex-1 flex-col overflow-y-auto outline-none">
+          <div
+            className={`mx-auto flex w-full max-w-7xl flex-1 flex-col p-8 sm:p-10 ${page === "map" ? "p-0 sm:p-0 max-w-none" : ""}`}
+          >
             {storageError && (
-              <div className="callout amber-callout" role="alert">
-                O armazenamento local não pôde ser gravado. Suas preferências não serão persistidas nesta sessão.
+              <div
+                className="mb-6 flex items-center gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200"
+                role="alert"
+              >
+                <Icon name="file" size={20} />
+                <span>
+                  O armazenamento local não pôde ser gravado. Suas preferências não serão persistidas nesta sessão.
+                </span>
               </div>
             )}
             {scanError && (
-              <div className="callout error-callout" role="alert">
-                <Icon name="close" />
-                <span>
-                  <strong>Não foi possível concluir a análise de caches.</strong> Tente novamente.
-                </span>
-                <button type="button" className="button secondary" onClick={loadJunk}>
+              <div
+                className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200"
+                role="alert"
+              >
+                <div className="flex items-center gap-3">
+                  <Icon name="close" size={20} />
+                  <span>
+                    <strong>Não foi possível concluir a análise de caches.</strong> Tente novamente.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="cursor-pointer rounded-xl border border-rose-500/40 bg-rose-500/20 px-4 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-500/30"
+                  onClick={loadJunk}
+                >
                   Tentar de novo
                 </button>
               </div>
@@ -395,20 +442,34 @@ export default function App() {
 
             {page === "updates" && <Updates />}
 
-            <footer className="page-footer">
-              <span>Feito para liberar espaço. Pensado para preservar o que importa.</span>
-              <span>faxina · desktop cleaner</span>
-            </footer>
+            {page !== "map" && (
+              <footer className="mt-16 flex flex-wrap items-center justify-between gap-4 border-t border-slate-800/60 pt-6 text-xs text-slate-500">
+                <span>Feito para liberar espaço. Pensado para preservar o que importa.</span>
+                <span className="font-mono text-slate-600">faxina · desktop cleaner</span>
+              </footer>
+            )}
           </div>
         </main>
       </div>
 
-      <div className={`toast ${notice ? "visible" : ""}`} role="status">
+      <div
+        className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-2xl border border-slate-700/80 bg-slate-900/95 px-5 py-3 text-sm font-medium text-slate-100 shadow-2xl backdrop-blur-xl transition-all duration-300 ${
+          notice ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-4 opacity-0"
+        }`}
+        role="status"
+      >
         {notice && (
           <>
-            <Icon name="check" size={16} />
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
+              <Icon name="check" size={14} />
+            </span>
             <span>{notice}</span>
-            <button type="button" aria-label="Dispensar aviso" onClick={() => setNotice("")}>
+            <button
+              type="button"
+              aria-label="Dispensar aviso"
+              onClick={() => setNotice("")}
+              className="ml-2 cursor-pointer text-slate-400 hover:text-white"
+            >
               <Icon name="close" size={15} />
             </button>
           </>
