@@ -1,19 +1,45 @@
 import { useEffect, useRef, useState } from "react";
 import { gb, type Report } from "../domain";
+import type { CleanReport } from "../lib/api";
+import { formatBytes, formatCount } from "../lib/format";
 import Icon from "./Icon";
 
 export default function ConfirmDialog({
   amount,
+  onPreview,
   onClose,
   onConfirm,
 }: {
   amount: number;
+  /** Dry run: asks the backend what the cleanup would do, without removing anything. */
+  onPreview: () => Promise<CleanReport>;
   onClose: () => void;
   onConfirm: (destination: Report["destination"]) => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [destination, setDestination] = useState<Report["destination"]>("trash");
   const [acknowledged, setAcknowledged] = useState(false);
+  const [preview, setPreview] = useState<{ text: string; ok: boolean } | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+
+  const simulate = async () => {
+    setPreviewing(true);
+    try {
+      const r = await onPreview();
+      const notes = [
+        r.skipped ? `${formatCount(r.skipped)} recentes seriam mantidos` : "",
+        r.failed ? `${formatCount(r.failed)} seriam recusados${r.reason ? `: ${r.reason}` : ""}` : "",
+      ].filter(Boolean);
+      setPreview({
+        ok: r.failed === 0,
+        text: `Liberaria ${formatBytes(r.freed)} em ${formatCount(r.removed)} arquivos${notes.length ? ` · ${notes.join(" · ")}` : ""}. Nada foi removido.`,
+      });
+    } catch (e) {
+      setPreview({ ok: false, text: String(e) });
+    } finally {
+      setPreviewing(false);
+    }
+  };
 
   // Every switch needs a fresh acknowledgement, so an earlier tick never carries over.
   const choose = (next: Report["destination"]) => {
@@ -127,7 +153,28 @@ export default function ConfirmDialog({
         </label>
       )}
 
+      {preview && (
+        <p
+          role="status"
+          className={`mt-3 rounded-xl border p-3 text-xs leading-relaxed ${
+            preview.ok
+              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+              : "border-amber-500/30 bg-amber-500/10 text-amber-200"
+          }`}
+        >
+          {preview.text}
+        </p>
+      )}
+
       <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+        <button
+          type="button"
+          className="mr-auto cursor-pointer rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-xs font-semibold text-slate-200 transition-colors hover:bg-slate-750 disabled:opacity-50"
+          disabled={previewing}
+          onClick={simulate}
+        >
+          {previewing ? "Simulando…" : "Simular"}
+        </button>
         <button
           type="button"
           className="cursor-pointer rounded-xl border border-slate-700 bg-slate-800 px-5 py-2.5 text-xs font-semibold text-slate-300 transition-colors hover:bg-slate-750"

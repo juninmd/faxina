@@ -110,6 +110,7 @@ export const api = {
   junkScan: () => invoke<{ scanId: number; items: JunkItem[] }>("junk_scan"),
   junkClean: (ids: string[], permanent: boolean, scanId: number) =>
     invoke<CleanReport>("junk_clean", { ids, permanent, scanId }),
+  junkPreview: (ids: string[], scanId: number) => invoke<CleanReport>("junk_preview", { ids, scanId }),
   findDuplicates: (path: string, minSize: number) => invoke<DupResult>("find_duplicates", { path, minSize }),
   findEmpty: (path: string) => invoke<EmptyItem[]>("find_empty", { path }),
   deleteBrokenLinks: (paths: string[]) => invoke<DeleteReport>("delete_broken_links", { paths }),

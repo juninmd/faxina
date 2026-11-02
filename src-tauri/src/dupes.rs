@@ -76,6 +76,16 @@ pub fn refused_selection(
 ) -> HashMap<String, String> {
     let wanted: std::collections::HashSet<&str> = requested.iter().map(String::as_str).collect();
     let mut refused = HashMap::new();
+    // Naming a file twice is a malformed request, not a way to delete it twice.
+    let mut seen = std::collections::HashSet::new();
+    for path in requested {
+        if !seen.insert(path.as_str()) {
+            refused.insert(
+                path.clone(),
+                "O mesmo arquivo foi selecionado mais de uma vez.".to_string(),
+            );
+        }
+    }
     for group in groups {
         let all_taken = group
             .iter()
@@ -642,6 +652,8 @@ mod tests {
         assert!(refused_selection(&groups, &[path("b.txt"), path("c.txt")]).is_empty());
         let all = [path("a.txt"), path("b.txt"), path("c.txt")];
         assert_eq!(refused_selection(&groups, &all).len(), 3);
+        let twice = [path("b.txt"), path("b.txt")];
+        assert!(refused_selection(&groups, &twice)[&path("b.txt")].contains("mais de uma vez"));
         // Unrelated paths are left to the regular guard.
         assert!(refused_selection(&groups, &[path("elsewhere")]).is_empty());
     }

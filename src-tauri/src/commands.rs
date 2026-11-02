@@ -322,6 +322,28 @@ pub async fn junk_clean(
         .map_err(|e| e.to_string())
 }
 
+/// Dry run: what `junk_clean` would free for `ids`. The reviewed snapshot is put back afterwards
+/// so the real cleanup can still use it.
+#[tauri::command]
+pub async fn junk_preview(
+    state: State<'_, AppState>,
+    scan_id: u64,
+    ids: Vec<String>,
+) -> Result<CleanReport, String> {
+    let snapshot = take_junk_snapshot(&state, scan_id)?;
+    let (report, snapshot) = tauri::async_runtime::spawn_blocking(move || {
+        let report = junk::preview(&snapshot, &ids);
+        (report, snapshot)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let mut current = lock(&state.junk);
+    if state.junk_ticket.load(Ordering::SeqCst) == scan_id {
+        *current = Some((scan_id, snapshot));
+    }
+    Ok(report)
+}
+
 fn take_junk_snapshot(state: &AppState, scan_id: u64) -> Result<junk::Snapshot, String> {
     {
         let mut current = lock(&state.junk);
