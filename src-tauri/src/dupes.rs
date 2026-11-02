@@ -167,6 +167,54 @@ impl<'a> DupProgress<'a> {
 
 type Candidate = (PathBuf, u64, u64);
 
+/// Most names a search may skip: the list is typed by hand, and a long one is a mistake.
+pub const MAX_EXCLUDED_NAMES: usize = 50;
+
+/// Exact file or folder names the user wants left out of the search (`node_modules`,
+/// `Backups`). A name never matches a path, a wildcard or a drive, so an exclusion cannot widen
+/// into something the user did not type.
+#[derive(Default, Clone)]
+pub struct ExcludedNames(std::collections::HashSet<String>);
+
+impl ExcludedNames {
+    pub fn compile(names: &[String]) -> Result<Self, String> {
+        let mut set = std::collections::HashSet::new();
+        for raw in names {
+            let name = raw.trim();
+            if name.is_empty() {
+                continue;
+            }
+            if name.len() > 255
+                || name.contains(['/', '\\', '*', '?', ':', '\0'])
+                || name == "."
+                || name == ".."
+            {
+                return Err(format!("Nome inválido para ignorar: {name}"));
+            }
+            set.insert(Self::key(name));
+        }
+        if set.len() > MAX_EXCLUDED_NAMES {
+            return Err(format!(
+                "Use no máximo {MAX_EXCLUDED_NAMES} nomes para ignorar."
+            ));
+        }
+        Ok(Self(set))
+    }
+
+    /// Windows and default macOS volumes ignore case; everything else is exact.
+    fn key(name: &str) -> String {
+        if cfg!(any(windows, target_os = "macos")) {
+            name.to_lowercase()
+        } else {
+            name.to_string()
+        }
+    }
+
+    fn matches(&self, name: &str) -> bool {
+        !self.0.is_empty() && self.0.contains(&Self::key(name))
+    }
+}
+
 struct Walk<'a> {
     min_size: u64,
     cancel: &'a AtomicBool,
@@ -174,6 +222,7 @@ struct Walk<'a> {
     ids: bool,
     links: Links,
     protection: Protection,
+    excluded: ExcludedNames,
 }
 
 /// Names that are OS bookkeeping rather than user content, never offered as duplicates.
@@ -201,6 +250,9 @@ fn walk(dir: &Path, w: &Walk) -> Vec<Candidate> {
     let mut files = Vec::new();
     let mut dirs = Vec::new();
     for e in entries {
+        if w.excluded.matches(&e.name) {
+            continue;
+        }
         if e.is_dir {
             let path = dir.join(&e.name);
             if !skip_dir(&e.name, &path, w) {
@@ -474,9 +526,19 @@ fn refine(
         .collect()
 }
 
+#[cfg(test)]
 pub fn find(root: &Path, min_size: u64, p: &DupProgress) -> (Vec<DupGroup>, bool) {
+    find_excluding(root, min_size, p, &ExcludedNames::default())
+}
+
+pub fn find_excluding(
+    root: &Path,
+    min_size: u64,
+    p: &DupProgress,
+    excluded: &ExcludedNames,
+) -> (Vec<DupGroup>, bool) {
     let cache = HashCache::open();
-    find_impl(root, min_size, p, &cache)
+    find_impl(root, min_size, p, &cache, excluded)
 }
 
 fn find_impl(
@@ -484,6 +546,7 @@ fn find_impl(
     min_size: u64,
     p: &DupProgress,
     cache: &HashCache,
+    excluded: &ExcludedNames,
 ) -> (Vec<DupGroup>, bool) {
     let w = Walk {
         min_size: min_size.max(1),
@@ -491,6 +554,7 @@ fn find_impl(
         ids: listing::ids_supported(root),
         links: Links::default(),
         protection: Protection::new(),
+        excluded: excluded.clone(),
     };
     let files = walk(root, &w);
     let seen: HashMap<PathBuf, (u64, u64)> = files
@@ -615,6 +679,41 @@ mod tests {
         assert!(run(r, 1).is_empty());
         fs::write(r.join("docs/b.txt"), b"same bytes").unwrap();
         assert_eq!(run(r, 1)[0].files.len(), 2);
+    }
+
+    #[test]
+    fn excluded_names_hide_matching_files_and_folders_everywhere() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        fs::create_dir_all(r.join("Backups")).unwrap();
+        fs::create_dir_all(r.join("work/Backups")).unwrap();
+        fs::write(r.join("a.txt"), b"same bytes").unwrap();
+        fs::write(r.join("Backups/b.txt"), b"same bytes").unwrap();
+        fs::write(r.join("work/Backups/c.txt"), b"same bytes").unwrap();
+        fs::write(r.join("work/skip.me"), b"same bytes").unwrap();
+        let cancel = AtomicBool::new(false);
+        let search = |names: &[&str]| {
+            let names: Vec<String> = names.iter().map(|n| n.to_string()).collect();
+            let ex = ExcludedNames::compile(&names).unwrap();
+            find_excluding(r, 1, &DupProgress::new(&cancel), &ex).0
+        };
+        assert_eq!(search(&[]).first().map(|g| g.files.len()), Some(4));
+        assert!(
+            search(&["Backups", "skip.me"]).is_empty(),
+            "only a.txt is left"
+        );
+    }
+
+    #[test]
+    fn excluded_names_reject_paths_wildcards_and_long_lists() {
+        let one = |n: &str| ExcludedNames::compile(&[n.to_string()]);
+        for bad in ["a/b", "a\\b", "*.tmp", "C:", "..", "."] {
+            assert!(one(bad).is_err(), "{bad}");
+        }
+        assert!(one("  node_modules ").is_ok());
+        assert!(one("").is_ok(), "blank entries are ignored");
+        let many: Vec<String> = (0..=MAX_EXCLUDED_NAMES).map(|i| format!("n{i}")).collect();
+        assert!(ExcludedNames::compile(&many).is_err());
     }
 
     #[test]
@@ -881,7 +980,7 @@ mod tests {
         let progress = DupProgress::new(&cancel);
 
         let cache = HashCache::at(cache_file.clone());
-        find_impl(r, 1, &progress, &cache);
+        find_impl(r, 1, &progress, &cache, &ExcludedNames::default());
 
         {
             let loaded = HashCache::at(cache_file.clone());
@@ -891,7 +990,7 @@ mod tests {
 
         fs::remove_file(r.join("b.bin")).unwrap();
 
-        find_impl(r, 1, &progress, &cache);
+        find_impl(r, 1, &progress, &cache, &ExcludedNames::default());
 
         {
             let loaded = HashCache::at(cache_file);

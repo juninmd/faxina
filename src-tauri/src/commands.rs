@@ -370,7 +370,9 @@ pub async fn find_duplicates(
     state: State<'_, AppState>,
     path: String,
     min_size: u64,
+    exclude_names: Option<Vec<String>>,
 ) -> Result<DupResult, String> {
+    let excluded = dupes::ExcludedNames::compile(&exclude_names.unwrap_or_default())?;
     let root = PathBuf::from(&path);
     if !root.is_dir() {
         return Err("pasta não encontrada".into());
@@ -401,7 +403,7 @@ pub async fn find_duplicates(
                 }
             });
             let _finish = Finish(&finished);
-            dupes::find(&root, min_size, &progress)
+            dupes::find_excluding(&root, min_size, &progress, &excluded)
         })
     })
     .await

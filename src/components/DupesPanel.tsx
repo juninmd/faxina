@@ -3,6 +3,7 @@ import { confirm, open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
 import { api, type DupGroup } from "../lib/api";
 import { defaultPick, dupNotice, groupPick, KEEPER_RULES, type KeeperRule, keeperOf, pruneDeleted } from "../lib/dupes";
+import { parseExcludedNames } from "../lib/exclusions";
 import { baseName, formatAge, formatBytes, formatCount } from "../lib/format";
 import type { Swallow } from "./types";
 
@@ -20,6 +21,8 @@ const MIN_SIZES = [
   { label: "≥ 100 MB", value: 100 * 1024 * 1024 },
 ];
 
+const IGNORE_KEY = "faxina-dupes-ignore-v1";
+
 /** Groups rendered per page: thousands of rows at once freeze the webview. */
 const PAGE = 50;
 
@@ -36,6 +39,14 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
   const [error, setError] = useState("");
   const [shown, setShown] = useState(PAGE);
   const [rule, setRule] = useState<KeeperRule>("oldest");
+  const [ignoreText, setIgnoreText] = useState(() => {
+    try {
+      return localStorage.getItem(IGNORE_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const ignore = parseExcludedNames(ignoreText);
 
   useEffect(() => setRoot((r) => r || defaultRoot), [defaultRoot]);
   useEffect(() => {
@@ -59,13 +70,22 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
   };
 
   const search = async () => {
+    if (ignore.error) {
+      setError(ignore.error);
+      return;
+    }
+    try {
+      localStorage.setItem(IGNORE_KEY, ignoreText);
+    } catch {
+      // Private mode or full storage: the list just is not remembered.
+    }
     const mine = epoch.current;
     setError("");
     setGroups(null);
     setShown(PAGE);
     setTick({ stage: 0, done: 0, total: 0 });
     try {
-      const found = await api.findDuplicates(root, minSize);
+      const found = await api.findDuplicates(root, minSize, ignore.names);
       if (mine !== epoch.current) return;
       setGroups(found.groups);
       setDupMeta({ cancelled: found.cancelled, truncated: found.truncated });
@@ -226,6 +246,22 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
           </button>
         )}
       </div>
+
+      <label className="flex flex-col gap-1.5 text-xs font-semibold text-slate-300">
+        <span>Ignorar nomes de pastas ou arquivos (separe por vírgula)</span>
+        <input
+          type="text"
+          value={ignoreText}
+          onChange={(e) => {
+            setIgnoreText(e.target.value);
+            setError("");
+          }}
+          placeholder="node_modules, Backups"
+          aria-invalid={!!ignore.error}
+          className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 font-normal text-slate-200 outline-none placeholder:text-slate-500 focus:border-amber-500"
+        />
+        {ignore.error && <span className="font-normal text-rose-400">{ignore.error}</span>}
+      </label>
 
       {error && <p className="text-xs font-semibold text-rose-400">{error}</p>}
       {dupNotice(dupMeta) && (
