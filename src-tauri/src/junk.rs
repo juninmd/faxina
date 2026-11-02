@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -24,6 +25,8 @@ pub struct JunkItem {
     pub files: u64,
     pub paths: Vec<String>,
     pub caution: Option<&'static str>,
+    /// Programs from the definition that are running right now and keep these files open.
+    pub running: Vec<&'static str>,
 }
 
 #[derive(Default)]
@@ -37,6 +40,29 @@ struct Target {
     canonical: PathBuf,
     rule: Rule,
     min_age: Duration,
+    procs: &'static [&'static str],
+}
+
+/// Lower-case names of the running processes, without a `.exe` suffix.
+fn running_processes() -> HashSet<String> {
+    let mut system = sysinfo::System::new();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    system
+        .processes()
+        .values()
+        .map(|p| {
+            let name = p.name().to_string_lossy().to_lowercase();
+            name.strip_suffix(".exe").map(str::to_owned).unwrap_or(name)
+        })
+        .collect()
+}
+
+fn open_programs(procs: &'static [&'static str], running: &HashSet<String>) -> Vec<&'static str> {
+    procs
+        .iter()
+        .copied()
+        .filter(|p| running.contains(*p))
+        .collect()
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -60,7 +86,7 @@ pub fn base_dir(base: Base) -> Option<PathBuf> {
         Base::Cache => dirs::cache_dir(),
         Base::Temp => Some(std::env::temp_dir()),
         Base::Config => dirs::config_dir(),
-        Base::NodeProjects | Base::RustProjects | Base::PythonProjects => None,
+        Base::NodeProjects | Base::RustProjects | Base::PythonProjects | Base::Marked(_) => None,
     }
 }
 
@@ -249,6 +275,11 @@ fn scan_definitions(defs: &[JunkDef], projects: &Projects) -> Vec<JunkItem> {
 }
 
 fn scan_snapshot(defs: &[JunkDef], projects: &Projects) -> (Vec<JunkItem>, Snapshot) {
+    let running = if defs.iter().any(|d| !d.procs.is_empty()) {
+        running_processes()
+    } else {
+        HashSet::new()
+    };
     let results: Vec<_> = defs
         .par_iter()
         .filter_map(|def| {
@@ -262,6 +293,7 @@ fn scan_snapshot(defs: &[JunkDef], projects: &Projects) -> (Vec<JunkItem>, Snaps
                             canonical,
                             rule: *rule,
                             min_age: def.min_age,
+                            procs: def.procs,
                         });
                     }
                 }
@@ -286,6 +318,7 @@ fn scan_snapshot(defs: &[JunkDef], projects: &Projects) -> (Vec<JunkItem>, Snaps
                         files,
                         paths: displayed,
                         caution: def.caution,
+                        running: open_programs(def.procs, &running),
                     },
                     paths,
                 )
@@ -304,8 +337,23 @@ fn scan_snapshot(defs: &[JunkDef], projects: &Projects) -> (Vec<JunkItem>, Snaps
 
 /// Deletes what a rule points at inside `dir`; the folder itself stays so apps keep working.
 /// `permanent` false sends every entry to the OS Recycle Bin instead.
-pub fn clean_dir(dir: &Path, rule: &Rule, min_age: Duration, permanent: bool) -> CleanReport {
-    clean_tree(dir, rule, min_age, cfg!(windows), permanent, 0)
+#[cfg(test)]
+fn clean_dir(dir: &Path, rule: &Rule, min_age: Duration, permanent: bool) -> CleanReport {
+    let disposal = if permanent {
+        Disposal::Permanent
+    } else {
+        Disposal::Trash
+    };
+    clean_tree(dir, rule, min_age, cfg!(windows), disposal, 0)
+}
+
+/// What happens to the entries a rule selects.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Disposal {
+    Trash,
+    Permanent,
+    /// Count what would go, remove nothing.
+    Preview,
 }
 
 fn failed(reason: &str) -> CleanReport {
@@ -321,7 +369,7 @@ fn clean_tree(
     rule: &Rule,
     min_age: Duration,
     ci: bool,
-    permanent: bool,
+    disposal: Disposal,
     depth: usize,
 ) -> CleanReport {
     if depth > MAX_DEPTH {
@@ -384,22 +432,33 @@ fn clean_tree(
         })
         .collect();
     targets.extend(files.into_iter().map(|(p, size)| (p, size, 1)));
-    report = merge(report, remove_entries(&targets, permanent));
+    report = merge(report, remove_entries(&targets, disposal));
 
     let nested: CleanReport = recurse
         .into_par_iter()
-        .map(|p| clean_tree(&p, rule, min_age, ci, permanent, depth + 1))
+        .map(|p| clean_tree(&p, rule, min_age, ci, disposal, depth + 1))
         .reduce(CleanReport::default, merge);
     merge(report, nested)
 }
 
 /// Removes one directory's worth of entries, already measured: one shell batch for the trash, or
 /// parallel permanent deletes.
-fn remove_entries(items: &[(PathBuf, u64, u64)], permanent: bool) -> CleanReport {
+fn remove_entries(items: &[(PathBuf, u64, u64)], disposal: Disposal) -> CleanReport {
     if items.is_empty() {
         return CleanReport::default();
     }
-    if permanent {
+    if disposal == Disposal::Preview {
+        return items
+            .iter()
+            .fold(CleanReport::default(), |total, (_, size, files)| {
+                CleanReport {
+                    freed: total.freed + size,
+                    removed: total.removed + files,
+                    ..total
+                }
+            });
+    }
+    if disposal == Disposal::Permanent {
         return items
             .par_iter()
             .map(|(p, size, files)| {
@@ -441,11 +500,43 @@ fn merge(a: CleanReport, b: CleanReport) -> CleanReport {
 }
 
 pub fn clean(snapshot: Snapshot, ids: &[String], permanent: bool) -> CleanReport {
+    let disposal = if permanent {
+        Disposal::Permanent
+    } else {
+        Disposal::Trash
+    };
+    run(&snapshot, ids, disposal, &open_now(&snapshot))
+}
+
+/// What `clean` would do for `ids`, without touching anything. It uses the same plan, so the
+/// numbers (and the refusals: app running, location changed) match the real cleanup.
+pub fn preview(snapshot: &Snapshot, ids: &[String]) -> CleanReport {
+    run(snapshot, ids, Disposal::Preview, &open_now(snapshot))
+}
+
+fn open_now(snapshot: &Snapshot) -> HashSet<String> {
+    if snapshot.targets.iter().any(|t| !t.procs.is_empty()) {
+        running_processes()
+    } else {
+        HashSet::new()
+    }
+}
+
+/// `running` is checked again here, not only at scan time: the app may have started since.
+fn run(
+    snapshot: &Snapshot,
+    ids: &[String],
+    disposal: Disposal,
+    running: &HashSet<String>,
+) -> CleanReport {
     snapshot
         .targets
-        .into_iter()
+        .iter()
         .filter(|t| ids.iter().any(|id| id == t.id))
         .map(|target| {
+            if let Some(app) = open_programs(target.procs, running).first() {
+                return failed(&format!("Feche o {app} antes de limpar."));
+            }
             if !real_dir(&target.path)
                 || fs::canonicalize(&target.path).ok().as_ref() != Some(&target.canonical)
             {
@@ -455,7 +546,14 @@ pub fn clean(snapshot: Snapshot, ids: &[String], permanent: bool) -> CleanReport
                 return failed("caminho inválido");
             };
             match crate::guard::check(&target.path, &[parent.to_path_buf()]) {
-                Ok(path) => clean_dir(&path, &target.rule, target.min_age, permanent),
+                Ok(path) => clean_tree(
+                    &path,
+                    &target.rule,
+                    target.min_age,
+                    cfg!(windows),
+                    disposal,
+                    0,
+                ),
                 Err(reason) => failed(&reason),
             }
         })
@@ -476,6 +574,68 @@ fn clean_with_projects(
 mod tests {
     use super::*;
     use crate::junk_defs::{matching, whole};
+
+    #[test]
+    fn a_preview_reports_what_a_clean_would_free_and_removes_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("cache");
+        fs::create_dir_all(dir.join("sub")).unwrap();
+        fs::write(dir.join("a.bin"), "1234").unwrap();
+        fs::write(dir.join("sub/b.bin"), "123456").unwrap();
+        let snapshot = Snapshot {
+            targets: vec![Target {
+                id: "cache",
+                path: dir.clone(),
+                canonical: fs::canonicalize(&dir).unwrap(),
+                rule: whole(""),
+                min_age: Duration::ZERO,
+                procs: &[],
+            }],
+        };
+        let ids = ["cache".to_string()];
+        let preview = preview(&snapshot, &ids);
+        assert_eq!((preview.freed, preview.removed, preview.failed), (10, 2, 0));
+        assert!(dir.join("a.bin").exists() && dir.join("sub/b.bin").exists());
+        let real = clean(snapshot, &ids, true);
+        assert_eq!(
+            (real.freed, real.removed),
+            (10, 2),
+            "preview matches the clean"
+        );
+        assert!(!dir.join("a.bin").exists());
+    }
+
+    #[test]
+    fn a_running_program_blocks_its_definition_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        for name in ["guarded", "free"] {
+            fs::create_dir_all(tmp.path().join(name)).unwrap();
+            fs::write(tmp.path().join(name).join("cache.bin"), "data").unwrap();
+        }
+        // Build the snapshot by hand: both targets are real folders in the temp dir.
+        let target = |id: &'static str, procs: &'static [&'static str]| Target {
+            id,
+            path: tmp.path().join(id),
+            canonical: fs::canonicalize(tmp.path().join(id)).unwrap(),
+            rule: whole(""),
+            min_age: Duration::ZERO,
+            procs,
+        };
+        let snapshot = Snapshot {
+            targets: vec![target("guarded", &["editor"]), target("free", &[])],
+        };
+        let running = HashSet::from(["editor".to_string()]);
+        let report = run(
+            &snapshot,
+            &["guarded".into(), "free".into()],
+            Disposal::Permanent,
+            &running,
+        );
+        assert_eq!(report.failed, 1);
+        assert!(report.reason.unwrap().contains("editor"));
+        assert!(tmp.path().join("guarded/cache.bin").exists());
+        assert!(!tmp.path().join("free/cache.bin").exists());
+    }
 
     #[test]
     fn cleanup_uses_reviewed_locations_not_newly_created_projects() {
@@ -551,7 +711,10 @@ mod tests {
             .filter(|d| {
                 matches!(
                     d.base,
-                    Base::NodeProjects | Base::RustProjects | Base::PythonProjects
+                    Base::NodeProjects
+                        | Base::RustProjects
+                        | Base::PythonProjects
+                        | Base::Marked(_)
                 )
             })
             .collect();

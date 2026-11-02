@@ -26,6 +26,8 @@ pub struct AppState {
     scan: Mutex<Option<ScanData>>,
     progress: Arc<Progress>,
     dup_root: Mutex<Option<PathBuf>>,
+    /// The groups last shown to the user, so a delete can be checked against them.
+    dup_groups: Mutex<Vec<Vec<dupes::Expected>>>,
     dup_cancel: Arc<AtomicBool>,
     empty_root: Mutex<Option<PathBuf>>,
     growth: Mutex<Option<Growth>>,
@@ -228,11 +230,15 @@ pub async fn delete_paths(
     if let Some(r) = lock(&state.empty_root).as_ref() {
         roots.push(r.clone());
     }
+    let refused = dupes::refused_selection(&lock(&state.dup_groups), &paths);
     let outcomes = tauri::async_runtime::spawn_blocking(move || {
         let sized: Vec<Result<(PathBuf, u64), String>> = paths
             .iter()
             .zip(known)
             .map(|(raw, known)| {
+                if let Some(reason) = refused.get(raw) {
+                    return Err(reason.clone());
+                }
                 let p = guard::check(Path::new(raw), &roots)?;
                 let size = known.unwrap_or_else(|| disk_size(&p));
                 Ok((p, size))
@@ -274,6 +280,7 @@ pub async fn delete_paths(
             Err(error) => report.failed.push(Failure { path: raw, error }),
         }
     }
+    dupes::forget_deleted(&mut lock(&state.dup_groups), &report.deleted);
     Ok(report)
 }
 
@@ -315,6 +322,28 @@ pub async fn junk_clean(
         .map_err(|e| e.to_string())
 }
 
+/// Dry run: what `junk_clean` would free for `ids`. The reviewed snapshot is put back afterwards
+/// so the real cleanup can still use it.
+#[tauri::command]
+pub async fn junk_preview(
+    state: State<'_, AppState>,
+    scan_id: u64,
+    ids: Vec<String>,
+) -> Result<CleanReport, String> {
+    let snapshot = take_junk_snapshot(&state, scan_id)?;
+    let (report, snapshot) = tauri::async_runtime::spawn_blocking(move || {
+        let report = junk::preview(&snapshot, &ids);
+        (report, snapshot)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let mut current = lock(&state.junk);
+    if state.junk_ticket.load(Ordering::SeqCst) == scan_id {
+        *current = Some((scan_id, snapshot));
+    }
+    Ok(report)
+}
+
 fn take_junk_snapshot(state: &AppState, scan_id: u64) -> Result<junk::Snapshot, String> {
     {
         let mut current = lock(&state.junk);
@@ -341,7 +370,9 @@ pub async fn find_duplicates(
     state: State<'_, AppState>,
     path: String,
     min_size: u64,
+    exclude_names: Option<Vec<String>>,
 ) -> Result<DupResult, String> {
+    let excluded = dupes::ExcludedNames::compile(&exclude_names.unwrap_or_default())?;
     let root = PathBuf::from(&path);
     if !root.is_dir() {
         return Err("pasta não encontrada".into());
@@ -351,6 +382,7 @@ pub async fn find_duplicates(
         return Err("pasta protegida do sistema".into());
     }
     *lock(&state.dup_root) = Some(root.clone());
+    lock(&state.dup_groups).clear();
     let cancel = state.dup_cancel.clone();
     cancel.store(false, Ordering::Relaxed);
     let (groups, cancelled) = tauri::async_runtime::spawn_blocking(move || {
@@ -371,14 +403,15 @@ pub async fn find_duplicates(
                 }
             });
             let _finish = Finish(&finished);
-            dupes::find(&root, min_size, &progress)
+            dupes::find_excluding(&root, min_size, &progress, &excluded)
         })
     })
     .await
     .map_err(|e| e.to_string())?;
 
     let truncated = groups.len() > MAX_DUP_GROUPS;
-    let groups = groups.into_iter().take(MAX_DUP_GROUPS).collect();
+    let groups: Vec<DupGroup> = groups.into_iter().take(MAX_DUP_GROUPS).collect();
+    *lock(&state.dup_groups) = dupes::expected_of(&groups);
 
     Ok(DupResult {
         groups,

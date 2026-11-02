@@ -46,6 +46,8 @@ export interface JunkItem {
   paths: string[];
   /** Opt-in item: never ticked by default; this is the warning to show. */
   caution?: string | null;
+  /** Programs that keep these files open right now; the cleanup is refused until they close. */
+  running?: string[];
 }
 
 export interface CleanReport {
@@ -108,7 +110,9 @@ export const api = {
   junkScan: () => invoke<{ scanId: number; items: JunkItem[] }>("junk_scan"),
   junkClean: (ids: string[], permanent: boolean, scanId: number) =>
     invoke<CleanReport>("junk_clean", { ids, permanent, scanId }),
-  findDuplicates: (path: string, minSize: number) => invoke<DupResult>("find_duplicates", { path, minSize }),
+  junkPreview: (ids: string[], scanId: number) => invoke<CleanReport>("junk_preview", { ids, scanId }),
+  findDuplicates: (path: string, minSize: number, excludeNames: string[] = []) =>
+    invoke<DupResult>("find_duplicates", { path, minSize, excludeNames }),
   findEmpty: (path: string) => invoke<EmptyItem[]>("find_empty", { path }),
   deleteBrokenLinks: (paths: string[]) => invoke<DeleteReport>("delete_broken_links", { paths }),
   cancelDuplicates: () => invoke<void>("cancel_duplicates"),

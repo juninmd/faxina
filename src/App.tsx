@@ -479,6 +479,13 @@ export default function App() {
       {confirm && (
         <ConfirmDialog
           amount={totalSize(picked)}
+          onPreview={() => {
+            if (junkScanId.current === null) throw new Error("Analise novamente antes de simular.");
+            return api.junkPreview(
+              picked.map((r) => r.id),
+              junkScanId.current,
+            );
+          }}
           onClose={() => setConfirm(false)}
           onConfirm={(destination) => {
             setConfirm(false);

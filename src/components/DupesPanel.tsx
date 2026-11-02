@@ -2,7 +2,8 @@ import { listen } from "@tauri-apps/api/event";
 import { confirm, open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
 import { api, type DupGroup } from "../lib/api";
-import { defaultPick, dupNotice, pruneDeleted } from "../lib/dupes";
+import { defaultPick, dupNotice, groupPick, KEEPER_RULES, type KeeperRule, keeperOf, pruneDeleted } from "../lib/dupes";
+import { parseExcludedNames } from "../lib/exclusions";
 import { baseName, formatAge, formatBytes, formatCount } from "../lib/format";
 import type { Swallow } from "./types";
 
@@ -20,6 +21,8 @@ const MIN_SIZES = [
   { label: "≥ 100 MB", value: 100 * 1024 * 1024 },
 ];
 
+const IGNORE_STORE = "faxina.dupes.ignore";
+
 /** Groups rendered per page: thousands of rows at once freeze the webview. */
 const PAGE = 50;
 
@@ -35,6 +38,15 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
   const [tick, setTick] = useState<DupTick | null>(null);
   const [error, setError] = useState("");
   const [shown, setShown] = useState(PAGE);
+  const [rule, setRule] = useState<KeeperRule>("oldest");
+  const [ignoreText, setIgnoreText] = useState(() => {
+    try {
+      return localStorage.getItem(IGNORE_STORE) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const ignore = parseExcludedNames(ignoreText);
 
   useEffect(() => setRoot((r) => r || defaultRoot), [defaultRoot]);
   useEffect(() => {
@@ -58,17 +70,26 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
   };
 
   const search = async () => {
+    if (ignore.error) {
+      setError(ignore.error);
+      return;
+    }
+    try {
+      localStorage.setItem(IGNORE_STORE, ignoreText);
+    } catch {
+      // Private mode or full storage: the list just is not remembered.
+    }
     const mine = epoch.current;
     setError("");
     setGroups(null);
     setShown(PAGE);
     setTick({ stage: 0, done: 0, total: 0 });
     try {
-      const found = await api.findDuplicates(root, minSize);
+      const found = await api.findDuplicates(root, minSize, ignore.names);
       if (mine !== epoch.current) return;
       setGroups(found.groups);
       setDupMeta({ cancelled: found.cancelled, truncated: found.truncated });
-      setPicked(defaultPick(found.groups));
+      setPicked(defaultPick(found.groups, rule));
     } catch (e) {
       if (mine === epoch.current) setError(String(e));
     } finally {
@@ -82,6 +103,18 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
       if (n.has(path)) n.delete(path);
       // Never let every copy of a file be selected: one must survive.
       else if (group.files.filter((f) => !n.has(f.path)).length > 1) n.add(path);
+      return n;
+    });
+
+  /** Ticks every copy but the keeper of one group, or clears the group when it already has picks. */
+  const toggleGroup = (group: DupGroup) =>
+    setPicked((p) => {
+      const n = new Set(p);
+      if (group.files.some((f) => n.has(f.path))) {
+        for (const f of group.files) n.delete(f.path);
+      } else {
+        for (const path of groupPick(group, rule)) n.add(path);
+      }
       return n;
     });
 
@@ -120,7 +153,8 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
         <p className="text-[11px] font-bold tracking-widest text-amber-400 uppercase">Varredura de redundância</p>
         <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">Arquivos duplicados</h1>
         <p className="mt-1 text-sm text-slate-400">
-          Comparação por conteúdo (BLAKE3), não por nome. A cópia mais antiga de cada grupo é mantida por padrão.
+          Comparação por conteúdo (BLAKE3), não por nome. Uma cópia de cada grupo é sempre mantida; escolha qual regra
+          decide.
         </p>
       </div>
 
@@ -161,6 +195,23 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
           ))}
         </select>
 
+        <select
+          value={rule}
+          onChange={(e) => {
+            const next = e.target.value as KeeperRule;
+            setRule(next);
+            if (groups) setPicked(defaultPick(groups, next));
+          }}
+          className="cursor-pointer rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 outline-none focus:border-amber-500"
+          aria-label="Qual cópia manter"
+        >
+          {KEEPER_RULES.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label}
+            </option>
+          ))}
+        </select>
+
         {tick === null ? (
           <button
             type="button"
@@ -196,6 +247,22 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
         )}
       </div>
 
+      <label className="flex flex-col gap-1.5 text-xs font-semibold text-slate-300">
+        <span>Ignorar nomes de pastas ou arquivos (separe por vírgula)</span>
+        <input
+          type="text"
+          value={ignoreText}
+          onChange={(e) => {
+            setIgnoreText(e.target.value);
+            setError("");
+          }}
+          placeholder="node_modules, Backups"
+          aria-invalid={!!ignore.error}
+          className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 font-normal text-slate-200 outline-none placeholder:text-slate-500 focus:border-amber-500"
+        />
+        {ignore.error && <span className="font-normal text-rose-400">{ignore.error}</span>}
+      </label>
+
       {error && <p className="text-xs font-semibold text-rose-400">{error}</p>}
       {dupNotice(dupMeta) && (
         <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200" role="status">
@@ -226,12 +293,21 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
           >
             <div className="flex items-center justify-between pb-2 border-b border-slate-800/60 text-xs">
               <span className="truncate font-semibold text-white">{baseName(g.files[0].path)}</span>
-              <span className="shrink-0 font-mono text-amber-400">
-                {g.files.length} cópias × {formatBytes(g.size)}
+              <span className="flex shrink-0 items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(g)}
+                  className="cursor-pointer text-[11px] font-semibold text-slate-400 underline-offset-2 hover:text-white hover:underline"
+                >
+                  {g.files.some((f) => picked.has(f.path)) ? "Limpar seleção" : "Selecionar cópias"}
+                </button>
+                <span className="font-mono text-amber-400">
+                  {g.files.length} cópias × {formatBytes(g.size)}
+                </span>
               </span>
             </div>
             <div className="flex flex-col gap-1.5">
-              {g.files.map((f, i) => (
+              {g.files.map((f) => (
                 <label
                   key={f.path}
                   data-path={f.path}
@@ -252,9 +328,9 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
                   >
                     {f.path}
                   </span>
-                  {i === 0 && (
+                  {!picked.has(f.path) && f.path === keeperOf(g, rule) && (
                     <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-[9px] font-bold text-blue-400 uppercase tracking-wider">
-                      original
+                      mantida
                     </span>
                   )}
                   <span className="shrink-0 text-[11px] text-slate-400">{formatAge(f.modified)}</span>

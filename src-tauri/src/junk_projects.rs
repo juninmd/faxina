@@ -1,6 +1,6 @@
 //! Manifest-backed project locations on every mounted volume. Only backend-listed volume roots
 //! may be mount-point reparse directories; links below those roots are never followed.
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -8,11 +8,52 @@ use rayon::prelude::*;
 
 use crate::{guard::Protection, junk_defs::Base, scan::is_link};
 
+/// Ecosystems recognised by a manifest file in the project root. Each owns a few folders that
+/// the toolchain recreates (see `junk_optin_defs`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Marker {
+    Gradle,
+    Maven,
+    Flutter,
+    Composer,
+    Terraform,
+    Dotnet,
+    Haskell,
+    Elixir,
+    Zig,
+}
+
+/// Manifest names are matched exactly (case-sensitive); .NET project files by extension.
+fn markers_for(name: &str) -> &'static [Marker] {
+    match name {
+        "build.gradle" | "build.gradle.kts" => &[Marker::Gradle],
+        "pom.xml" => &[Marker::Maven],
+        "pubspec.yaml" => &[Marker::Flutter],
+        "composer.json" => &[Marker::Composer],
+        ".terraform.lock.hcl" => &[Marker::Terraform],
+        "stack.yaml" | "cabal.project" => &[Marker::Haskell],
+        "mix.exs" => &[Marker::Elixir],
+        "build.zig" => &[Marker::Zig],
+        _ => {
+            let lower = name.to_lowercase();
+            if [".csproj", ".fsproj", ".vbproj"]
+                .iter()
+                .any(|ext| lower.ends_with(ext))
+            {
+                &[Marker::Dotnet]
+            } else {
+                &[]
+            }
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Projects {
     node: Vec<PathBuf>,
     rust: Vec<PathBuf>,
     python: Vec<PathBuf>,
+    marked: HashMap<Marker, Vec<PathBuf>>,
 }
 
 struct Discovery<'a> {
@@ -61,16 +102,26 @@ impl Projects {
                 found
             })
             .reduce(Self::default, |mut a, b| {
-                a.node.extend(b.node);
-                a.rust.extend(b.rust);
-                a.python.extend(b.python);
+                a.merge(b);
                 a
             });
-        for paths in [&mut projects.node, &mut projects.rust, &mut projects.python] {
+        for paths in [&mut projects.node, &mut projects.rust, &mut projects.python]
+            .into_iter()
+            .chain(projects.marked.values_mut())
+        {
             paths.sort();
             paths.dedup();
         }
         projects
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.node.extend(other.node);
+        self.rust.extend(other.rust);
+        self.python.extend(other.python);
+        for (marker, paths) in other.marked {
+            self.marked.entry(marker).or_default().extend(paths);
+        }
     }
 
     pub fn roots(&self, base: Base) -> &[PathBuf] {
@@ -78,6 +129,7 @@ impl Projects {
             Base::NodeProjects => &self.node,
             Base::RustProjects => &self.rust,
             Base::PythonProjects => &self.python,
+            Base::Marked(marker) => self.marked.get(&marker).map_or(&[], Vec::as_slice),
             _ => &[],
         }
     }
@@ -92,11 +144,19 @@ impl Projects {
             return;
         };
         let entries: Vec<_> = entries.flatten().collect();
-        let has_file = |name: &str| {
-            entries.iter().any(|e| {
-                e.file_name() == name && e.metadata().is_ok_and(|m| m.is_file() && !is_link(&m))
-            })
-        };
+        // One metadata pass over the folder: regular files only, never links.
+        let files: Vec<String> = entries
+            .iter()
+            .filter(|e| e.metadata().is_ok_and(|m| m.is_file() && !is_link(&m)))
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        let has_file = |name: &str| files.iter().any(|f| f == name);
+        for marker in files.iter().flat_map(|f| markers_for(f)) {
+            let found = self.marked.entry(*marker).or_default();
+            if found.last().map(PathBuf::as_path) != Some(dir) {
+                found.push(dir.to_path_buf());
+            }
+        }
         if has_file("package.json") {
             self.node.push(dir.to_path_buf());
         }
@@ -133,6 +193,13 @@ impl Projects {
                         | ".angular"
                         | ".parcel-cache"
                         | ".turbo"
+                        | ".gradle"
+                        | ".dart_tool"
+                        | ".terraform"
+                        | ".stack-work"
+                        | "dist-newstyle"
+                        | ".zig-cache"
+                        | "zig-out"
                         | "windows"
                         | "program files"
                         | "program files (x86)"
@@ -164,14 +231,10 @@ impl Projects {
                 }
             })
             .reduce(Self::default, |mut a, b| {
-                a.node.extend(b.node);
-                a.rust.extend(b.rust);
-                a.python.extend(b.python);
+                a.merge(b);
                 a
             });
-        self.node.extend(nested.node);
-        self.rust.extend(nested.rust);
-        self.python.extend(nested.python);
+        self.merge(nested);
     }
 }
 
@@ -217,6 +280,47 @@ mod tests {
         assert!(projects
             .python
             .contains(&second.path().join("pyproject-toml/nested")));
+    }
+
+    #[test]
+    fn discovers_projects_by_manifest_and_ignores_unmarked_folders() {
+        let volume = tempfile::tempdir().unwrap();
+        for (dir, manifest) in [
+            ("gradle", "build.gradle.kts"),
+            ("maven", "pom.xml"),
+            ("flutter", "pubspec.yaml"),
+            ("php", "composer.json"),
+            ("infra", ".terraform.lock.hcl"),
+            ("dotnet", "App.CSPROJ"),
+            ("hs", "stack.yaml"),
+            ("ex", "mix.exs"),
+            ("zig", "build.zig"),
+        ] {
+            fs::create_dir_all(volume.path().join(dir)).unwrap();
+            fs::write(volume.path().join(dir).join(manifest), "").unwrap();
+        }
+        fs::create_dir_all(volume.path().join("plain/build")).unwrap();
+        // A generated tree is never searched for nested projects.
+        fs::create_dir_all(volume.path().join("gradle/.gradle/inner")).unwrap();
+        fs::write(volume.path().join("gradle/.gradle/inner/pom.xml"), "").unwrap();
+        let projects = Projects::from_roots(&[volume.path().into()]);
+        for (marker, dir) in [
+            (Marker::Gradle, "gradle"),
+            (Marker::Maven, "maven"),
+            (Marker::Flutter, "flutter"),
+            (Marker::Composer, "php"),
+            (Marker::Terraform, "infra"),
+            (Marker::Dotnet, "dotnet"),
+            (Marker::Haskell, "hs"),
+            (Marker::Elixir, "ex"),
+            (Marker::Zig, "zig"),
+        ] {
+            assert_eq!(
+                projects.roots(Base::Marked(marker)),
+                [volume.path().join(dir)],
+                "{marker:?}"
+            );
+        }
     }
 
     #[cfg(unix)]

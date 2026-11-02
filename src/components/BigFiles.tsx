@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, type BigFile, type DeleteReport } from "../lib/api";
+import { api, type BigFile, type DeleteReport, type Kind } from "../lib/api";
+import { kindCounts, SORT_OPTIONS, type SortKey, sortFiles } from "../lib/bigfiles";
 import { baseName, formatAge, formatBytes, formatCount } from "../lib/format";
-import { kindColor } from "../lib/kinds";
+import { KIND_ORDER, KINDS, kindColor } from "../lib/kinds";
 import type { Swallow } from "./types";
 
 const MIN_SIZES = [100 * 1024 * 1024, 500 * 1024 * 1024, 1024 * 1024 * 1024];
@@ -26,6 +27,8 @@ export function BigFiles({
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [minSize, setMinSize] = useState(MIN_SIZES[0]);
   const [shown, setShown] = useState(PAGE);
+  const [kind, setKind] = useState<Kind | null>(null);
+  const [sort, setSort] = useState<SortKey>("size");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -46,7 +49,12 @@ export function BigFiles({
     load();
   }, [load]);
 
-  const listed = useMemo(() => (files ?? []).filter((f) => f.size >= minSize), [files, minSize]);
+  const bySize = useMemo(() => (files ?? []).filter((f) => f.size >= minSize), [files, minSize]);
+  const counts = useMemo(() => kindCounts(bySize), [bySize]);
+  const listed = useMemo(
+    () => sortFiles(kind ? bySize.filter((f) => f.kind === kind) : bySize, sort),
+    [bySize, kind, sort],
+  );
   const total = listed.filter((f) => picked.has(f.path)).reduce((sum, f) => sum + f.size, 0);
 
   const toggle = (path: string) =>
@@ -79,9 +87,27 @@ export function BigFiles({
           <p className="text-[11px] font-bold tracking-widest text-amber-400 uppercase">Varredura de volume</p>
           <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">Arquivos grandes</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Os maiores arquivos da área analisada{root ? ` (${root})` : ""}. Ordenados por tamanho, não por idade.
+            Os maiores arquivos da área analisada{root ? ` (${root})` : ""}. Filtre por tipo e ordene por tamanho, idade
+            ou nome.
           </p>
         </div>
+        <label className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+          <span>Ordem</span>
+          <select
+            value={sort}
+            onChange={(e) => {
+              setSort(e.target.value as SortKey);
+              setShown(PAGE);
+            }}
+            className="cursor-pointer rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-200 outline-none focus:border-amber-500"
+          >
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="flex items-center gap-2 text-xs font-semibold text-slate-300">
           <span>Mostrar</span>
           <select
@@ -101,6 +127,30 @@ export function BigFiles({
           </select>
         </label>
       </div>
+
+      {!!bySize.length && (
+        <fieldset className="m-0 flex min-w-0 flex-wrap gap-2 border-0 p-0" aria-label="Filtrar por tipo">
+          {[null, ...KIND_ORDER.filter((k) => counts.has(k))].map((k) => (
+            <button
+              key={k ?? "all"}
+              type="button"
+              aria-pressed={kind === k}
+              onClick={() => {
+                setKind(k);
+                setShown(PAGE);
+                setPicked(new Set());
+              }}
+              className={`cursor-pointer rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${
+                kind === k
+                  ? "border-amber-500/60 bg-amber-500/15 text-amber-300"
+                  : "border-slate-700 bg-slate-800/70 text-slate-300 hover:bg-slate-750"
+              }`}
+            >
+              {k ? `${KINDS[k].label} · ${formatCount(counts.get(k) ?? 0)}` : `Todos · ${formatCount(bySize.length)}`}
+            </button>
+          ))}
+        </fieldset>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4 shadow-md backdrop-blur-md">
         <div className="flex items-center gap-3">
