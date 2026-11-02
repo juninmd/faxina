@@ -50,6 +50,65 @@ impl DupGroup {
     }
 }
 
+/// What the search found for one file, kept so a later delete can be checked against it:
+/// path, size and modification time.
+pub type Expected = (String, u64, u64);
+
+pub fn expected_of(groups: &[DupGroup]) -> Vec<Vec<Expected>> {
+    groups
+        .iter()
+        .map(|g| {
+            g.files
+                .iter()
+                .map(|f| (f.path.clone(), g.size, f.modified))
+                .collect()
+        })
+        .collect()
+}
+
+/// Paths of a delete request that must be refused, with the reason. A request may never take
+/// every copy of a group (the webview could be wrong or compromised), and a file that changed
+/// since the search is no longer the file the user reviewed. Paths outside every group are not
+/// this check's business.
+pub fn refused_selection(
+    groups: &[Vec<Expected>],
+    requested: &[String],
+) -> HashMap<String, String> {
+    let wanted: std::collections::HashSet<&str> = requested.iter().map(String::as_str).collect();
+    let mut refused = HashMap::new();
+    for group in groups {
+        let all_taken = group
+            .iter()
+            .all(|(path, _, _)| wanted.contains(path.as_str()));
+        for (path, size, modified) in group {
+            if !wanted.contains(path.as_str()) {
+                continue;
+            }
+            if all_taken {
+                refused.insert(
+                    path.clone(),
+                    "Uma cópia de cada grupo de duplicatas precisa ficar.".to_string(),
+                );
+            } else if !unchanged(Path::new(path), *size, *modified) {
+                refused.insert(
+                    path.clone(),
+                    "O arquivo mudou desde a busca. Procure as duplicatas de novo.".to_string(),
+                );
+            }
+        }
+    }
+    refused
+}
+
+/// Forgets deleted copies; a group left with one file is no longer a duplicate.
+pub fn forget_deleted(groups: &mut Vec<Vec<Expected>>, deleted: &[String]) {
+    let gone: std::collections::HashSet<&str> = deleted.iter().map(String::as_str).collect();
+    for group in groups.iter_mut() {
+        group.retain(|(path, _, _)| !gone.contains(path.as_str()));
+    }
+    groups.retain(|g| g.len() > 1);
+}
+
 /// One progress sample: which hashing stage runs, and how far it has got.
 #[derive(Serialize, Clone, Copy)]
 #[serde(rename_all = "camelCase")]
@@ -568,6 +627,48 @@ mod tests {
         assert!(!unchanged(&path, 6, mtime(&meta)), "size differs");
         assert!(!unchanged(&path, 5, mtime(&meta) + 1), "mtime differs");
         assert!(!unchanged(&tmp.path().join("gone"), 5, 0), "file vanished");
+    }
+
+    #[test]
+    fn a_request_can_never_take_every_copy_of_a_group() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        fs::write(r.join("a.txt"), b"same bytes").unwrap();
+        fs::write(r.join("b.txt"), b"same bytes").unwrap();
+        fs::write(r.join("c.txt"), b"same bytes").unwrap();
+        let groups = expected_of(&run(r, 1));
+        let path = |n: &str| r.join(n).to_string_lossy().into_owned();
+
+        assert!(refused_selection(&groups, &[path("b.txt"), path("c.txt")]).is_empty());
+        let all = [path("a.txt"), path("b.txt"), path("c.txt")];
+        assert_eq!(refused_selection(&groups, &all).len(), 3);
+        // Unrelated paths are left to the regular guard.
+        assert!(refused_selection(&groups, &[path("elsewhere")]).is_empty());
+    }
+
+    #[test]
+    fn a_file_changed_since_the_search_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        fs::write(r.join("a.txt"), b"same bytes").unwrap();
+        fs::write(r.join("b.txt"), b"same bytes").unwrap();
+        let groups = expected_of(&run(r, 1));
+        let b = r.join("b.txt").to_string_lossy().into_owned();
+        assert!(refused_selection(&groups, std::slice::from_ref(&b)).is_empty());
+        fs::write(r.join("b.txt"), b"edited since the search").unwrap();
+        let refused = refused_selection(&groups, std::slice::from_ref(&b));
+        assert!(refused[&b].contains("mudou"));
+    }
+
+    #[test]
+    fn forgetting_deleted_copies_keeps_the_one_survivor_rule_honest() {
+        let mut groups = vec![vec![
+            ("a".to_string(), 1, 1),
+            ("b".to_string(), 1, 1),
+            ("c".to_string(), 1, 1),
+        ]];
+        forget_deleted(&mut groups, &["b".into(), "c".into()]);
+        assert!(groups.is_empty(), "a lone survivor is not a group anymore");
     }
 
     #[test]

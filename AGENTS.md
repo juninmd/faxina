@@ -27,7 +27,7 @@ CI gates (`.github/workflows/ci.yml`): commitlint (PRs), reusable `validate` (fr
 ## Safety invariants (do not weaken)
 
 - `Node.reclaimable` is set only by name rules or inheritance from a matching ancestor. Never derive it from the display `kind` (a folder *colored* Build still holds source code). Test: `dominant_color_does_not_make_a_folder_reclaimable`.
-- Every path from the webview goes through `guard::check` against the current scan/duplicate roots before removal.
+- Every path from the webview goes through `guard::check` against the current scan/duplicate roots before removal. `delete_paths` also checks the paths against the duplicate groups last shown (`dupes::refused_selection`): it refuses a request that takes every copy of a group and any file whose size or mtime changed since the search. Test: `a_request_can_never_take_every_copy_of_a_group`.
 - Junk cleaning takes IDs, never paths; locations come only from `junk_defs.rs`. Never list cookies, logins, history or profile data (a test scans for those words). The trash/permanent choice picked in the dialog travels down to `junk::clean` — never assume one of them.
 - Anything user-chosen or costly to get back (model stores, emulators, backups, Docker disks) lives in `junk_optin_defs.rs` through `opt_in(..)`: the UI leaves it unticked with the warning. Chat transcripts, cloud credential caches and profile data stay out entirely.
 - Generic names (`cache`, `tmp`, `temp`) are Cache only under app data (`DirHints::under_app_data`); anywhere else they may be user work.
