@@ -21,7 +21,7 @@ const MIN_SIZES = [
   { label: "≥ 100 MB", value: 100 * 1024 * 1024 },
 ];
 
-const IGNORE_KEY = "faxina-dupes-ignore-v1";
+const IGNORE_STORE = "faxina.dupes.ignore";
 
 /** Groups rendered per page: thousands of rows at once freeze the webview. */
 const PAGE = 50;
@@ -41,7 +41,7 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
   const [rule, setRule] = useState<KeeperRule>("oldest");
   const [ignoreText, setIgnoreText] = useState(() => {
     try {
-      return localStorage.getItem(IGNORE_KEY) ?? "";
+      return localStorage.getItem(IGNORE_STORE) ?? "";
     } catch {
       return "";
     }
@@ -75,7 +75,7 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
       return;
     }
     try {
-      localStorage.setItem(IGNORE_KEY, ignoreText);
+      localStorage.setItem(IGNORE_STORE, ignoreText);
     } catch {
       // Private mode or full storage: the list just is not remembered.
     }
