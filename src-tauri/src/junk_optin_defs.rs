@@ -3,6 +3,10 @@
 //! Still out of bounds: chat transcripts, cloud credential caches and browser/profile data.
 
 use crate::junk_defs::{caches, def, matching, opt_in, Base, JunkDef, APPS, DEV};
+use crate::junk_projects::Marker;
+
+const REBUILD: &str =
+    "Será preciso recompilar os projetos. Binários e outros arquivos guardados nessas pastas serão removidos.";
 
 const MODELS: &str = "Modelos que você baixou. Voltam a ser baixados na próxima vez que usar, o que pode levar horas.";
 
@@ -15,6 +19,42 @@ pub fn definitions() -> Vec<JunkDef> {
         opt_in(
             caches("project-rust-builds", "Compilações Rust nas unidades", DEV, Base::RustProjects, &["target"]),
             "Será preciso recompilar os projetos. Binários e outros arquivos guardados em target serão removidos.",
+        ),
+        opt_in(
+            caches("project-gradle-builds", "Compilações Gradle nas unidades", DEV, Base::Marked(Marker::Gradle), &["build", ".gradle"]),
+            REBUILD,
+        ),
+        opt_in(
+            caches("project-maven-builds", "Compilações Maven nas unidades", DEV, Base::Marked(Marker::Maven), &["target"]),
+            REBUILD,
+        ),
+        opt_in(
+            caches("project-flutter-builds", "Compilações Flutter/Dart nas unidades", DEV, Base::Marked(Marker::Flutter), &["build", ".dart_tool"]),
+            REBUILD,
+        ),
+        opt_in(
+            caches("project-composer-deps", "Dependências PHP (vendor) nas unidades", DEV, Base::Marked(Marker::Composer), &["vendor"]),
+            "Será preciso rodar composer install de novo. Pacotes locais ou alterações dentro de vendor podem ser perdidos.",
+        ),
+        opt_in(
+            caches("project-terraform-plugins", "Plugins Terraform (.terraform) nas unidades", DEV, Base::Marked(Marker::Terraform), &[".terraform"]),
+            "Será preciso rodar terraform init de novo. O estado local guardado em .terraform também é removido.",
+        ),
+        opt_in(
+            caches("project-dotnet-builds", "Compilações .NET (bin/obj) nas unidades", DEV, Base::Marked(Marker::Dotnet), &["bin", "obj"]),
+            REBUILD,
+        ),
+        opt_in(
+            caches("project-haskell-builds", "Compilações Haskell nas unidades", DEV, Base::Marked(Marker::Haskell), &[".stack-work", "dist-newstyle"]),
+            REBUILD,
+        ),
+        opt_in(
+            caches("project-elixir-builds", "Compilações Elixir (_build) nas unidades", DEV, Base::Marked(Marker::Elixir), &["_build"]),
+            REBUILD,
+        ),
+        opt_in(
+            caches("project-zig-builds", "Compilações Zig nas unidades", DEV, Base::Marked(Marker::Zig), &[".zig-cache", "zig-out"]),
+            REBUILD,
         ),
         opt_in(
             caches("ollama-models", "Modelos do Ollama", DEV, Base::Home, &[".ollama/models"]),

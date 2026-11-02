@@ -22,6 +22,8 @@ pub enum Base {
     NodeProjects,
     RustProjects,
     PythonProjects,
+    /// Project roots found by a manifest file, on every mounted volume.
+    Marked(crate::junk_projects::Marker),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,6 +87,9 @@ pub struct JunkDef {
     /// Opt-in: the UI leaves it unticked and shows this warning. User-chosen downloads and
     /// anything slow or costly to get back live here, never in the one-click clean.
     pub caution: Option<&'static str>,
+    /// Lower-case process names (without `.exe`) that keep these files open. While one runs the
+    /// cleanup is refused for this definition: wiping a live profile corrupts it.
+    pub procs: &'static [&'static str],
 }
 
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -106,7 +111,14 @@ pub(crate) fn def(
         rules,
         min_age: NOW,
         caution: None,
+        procs: &[],
     }
+}
+
+/// Names the processes that must be closed before this definition can be cleaned.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn needs_closed(def: JunkDef, procs: &'static [&'static str]) -> JunkDef {
+    JunkDef { procs, ..def }
 }
 
 /// Marks a definition as opt-in with the warning the user sees before ticking it.
@@ -166,6 +178,17 @@ chromium_caches!(EDGE_CACHES, "Microsoft/Edge*");
 chromium_caches!(BRAVE_CACHES, "BraveSoftware/Brave-*");
 #[cfg(windows)]
 chromium_caches!(VIVALDI_CACHES, "Vivaldi");
+#[cfg(windows)]
+chromium_caches!(CHROMIUM_CACHES, "Chromium");
+
+/// Opera keeps its profile directly under `Opera Software/Opera*` (no `User Data` level).
+#[cfg(windows)]
+const OPERA_CACHES: &[Rule] = &[
+    whole("Opera Software/Opera*/*Cache*"),
+    whole("Opera Software/Opera*/Service Worker"),
+    whole("Opera Software/Opera*/blob_storage"),
+    whole("Opera Software/Opera*/Shared Dictionary/cache"),
+];
 
 fn common() -> Vec<JunkDef> {
     let mut v = vec![
@@ -294,6 +317,7 @@ pub fn definitions() -> Vec<JunkDef> {
             vec![
                 whole("Microsoft/Windows/WER/ReportArchive"),
                 whole("Microsoft/Windows/WER/ReportQueue"),
+                whole("Microsoft/Windows/WER/Temp"),
             ],
         ),
         def(
@@ -306,6 +330,12 @@ pub fn definitions() -> Vec<JunkDef> {
                 whole("NVIDIA/DXCache"),
                 whole("NVIDIA/GLCache"),
                 whole("AMD/DxCache"),
+                whole("AMD/DxcCache"),
+                whole("AMD/GLCache"),
+                whole("AMD/VkCache"),
+                whole("Intel/D3DSCache"),
+                whole("Intel/ShaderCache"),
+                whole("NVIDIA Corporation/NV_Cache"),
             ],
         ),
         // Microsoft Store / UWP apps: application cache and temp state, plus logs only.
@@ -325,27 +355,54 @@ pub fn definitions() -> Vec<JunkDef> {
                 ),
             ],
         ),
-        def(
-            "chrome",
-            "Google Chrome",
-            WEB,
-            Base::Local,
-            CHROME_CACHES.to_vec(),
+        needs_closed(
+            def(
+                "chrome",
+                "Google Chrome",
+                WEB,
+                Base::Local,
+                CHROME_CACHES.to_vec(),
+            ),
+            &["chrome"],
+        ),
+        needs_closed(
+            def(
+                "edge",
+                "Microsoft Edge",
+                WEB,
+                Base::Local,
+                EDGE_CACHES.to_vec(),
+            ),
+            &["msedge"],
+        ),
+        needs_closed(
+            def("brave", "Brave", WEB, Base::Local, BRAVE_CACHES.to_vec()),
+            &["brave"],
+        ),
+        needs_closed(
+            def(
+                "vivaldi",
+                "Vivaldi",
+                WEB,
+                Base::Local,
+                VIVALDI_CACHES.to_vec(),
+            ),
+            &["vivaldi"],
         ),
         def(
-            "edge",
-            "Microsoft Edge",
+            "chromium",
+            "Chromium",
             WEB,
             Base::Local,
-            EDGE_CACHES.to_vec(),
+            CHROMIUM_CACHES.to_vec(),
         ),
-        def("brave", "Brave", WEB, Base::Local, BRAVE_CACHES.to_vec()),
+        def("opera", "Opera", WEB, Base::Roaming, OPERA_CACHES.to_vec()),
         def(
-            "vivaldi",
-            "Vivaldi",
+            "opera-local",
+            "Opera",
             WEB,
             Base::Local,
-            VIVALDI_CACHES.to_vec(),
+            OPERA_CACHES.to_vec(),
         ),
         def(
             "firefox",
@@ -443,6 +500,40 @@ pub fn definitions() -> Vec<JunkDef> {
             DEV,
             Base::Local,
             vec![whole("NuGet/v3-cache")],
+        ),
+        caches(
+            "win-dev-extras",
+            "Android SDK, NuGet, Dart, Playwright e Corepack (cache)",
+            DEV,
+            Base::Local,
+            &[
+                "Android/Sdk/.temp",
+                "Android/Sdk/temp",
+                "Android/Sdk/cache",
+                "NuGet/plugins-cache",
+                "NuGet/Scratch",
+                ".dartServer",
+                "ms-playwright-go",
+                "ms-playwright-mcp",
+                "selenium",
+                "node/corepack",
+                "npm/cache",
+                "pyenv/pyenv-win/install_cache",
+            ],
+        ),
+        caches(
+            "win-home-tool-caches",
+            "ruff, mypy, Selenium, Corepack e Hex (cache)",
+            DEV,
+            Base::Home,
+            &[
+                ".cache/ruff",
+                ".cache/mypy",
+                ".cache/selenium",
+                ".cache/node/corepack",
+                ".pyenv/pyenv-win/install_cache",
+                ".hex/cache",
+            ],
         ),
     ];
     v.extend(common());

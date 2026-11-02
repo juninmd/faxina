@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { DupGroup } from "./api";
-import { defaultPick, dupNotice, pruneDeleted } from "./dupes";
+import { defaultPick, dupNotice, groupPick, keeperOf, pruneDeleted } from "./dupes";
 
 const group = (hash: string, ...paths: string[]): DupGroup => ({
   hash,
@@ -38,5 +38,42 @@ describe("dupNotice", () => {
 
   test("returns null when neither cancelled nor truncated", () => {
     expect(dupNotice({ cancelled: false, truncated: false })).toBeNull();
+  });
+});
+
+describe("keeper rules", () => {
+  const g: DupGroup = {
+    hash: "k",
+    size: 10,
+    files: [
+      { path: "/a/photos/original-name.png", modified: 100 },
+      { path: "/a/b.png", modified: 300 },
+      { path: "/a/photos/deep/q", modified: 200 },
+    ],
+  };
+
+  test("oldest keeps the first listed file", () => {
+    expect(keeperOf(g, "oldest")).toBe("/a/photos/original-name.png");
+  });
+
+  test("newest keeps the highest mtime", () => {
+    expect(keeperOf(g, "newest")).toBe("/a/b.png");
+  });
+
+  test("shortest path and shortest name pick different copies", () => {
+    expect(keeperOf(g, "shortestPath")).toBe("/a/b.png");
+    expect(keeperOf(g, "shortestName")).toBe("/a/photos/deep/q");
+  });
+
+  test("a group pick never includes the keeper, so one copy always survives", () => {
+    for (const rule of ["oldest", "newest", "shortestPath", "shortestName"] as const) {
+      const picked = groupPick(g, rule);
+      expect(picked).toHaveLength(2);
+      expect(picked).not.toContain(keeperOf(g, rule));
+    }
+  });
+
+  test("defaultPick follows the rule for every group", () => {
+    expect([...defaultPick([g], "newest")].sort()).toEqual(["/a/photos/deep/q", "/a/photos/original-name.png"]);
   });
 });

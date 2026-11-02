@@ -8,7 +8,9 @@ use std::sync::Mutex;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::guard::Protection;
 use crate::listing::{self, Links};
+use crate::scan::mtime;
 
 /// Bytes read for the cheap prefix/suffix probes before committing to a full hash.
 const PARTIAL: usize = 64 * 1024;
@@ -46,6 +48,75 @@ impl DupGroup {
     pub fn wasted(&self) -> u64 {
         self.size * (self.files.len() as u64 - 1)
     }
+}
+
+/// What the search found for one file, kept so a later delete can be checked against it:
+/// path, size and modification time.
+pub type Expected = (String, u64, u64);
+
+pub fn expected_of(groups: &[DupGroup]) -> Vec<Vec<Expected>> {
+    groups
+        .iter()
+        .map(|g| {
+            g.files
+                .iter()
+                .map(|f| (f.path.clone(), g.size, f.modified))
+                .collect()
+        })
+        .collect()
+}
+
+/// Paths of a delete request that must be refused, with the reason. A request may never take
+/// every copy of a group (the webview could be wrong or compromised), and a file that changed
+/// since the search is no longer the file the user reviewed. Paths outside every group are not
+/// this check's business.
+pub fn refused_selection(
+    groups: &[Vec<Expected>],
+    requested: &[String],
+) -> HashMap<String, String> {
+    let wanted: std::collections::HashSet<&str> = requested.iter().map(String::as_str).collect();
+    let mut refused = HashMap::new();
+    // Naming a file twice is a malformed request, not a way to delete it twice.
+    let mut seen = std::collections::HashSet::new();
+    for path in requested {
+        if !seen.insert(path.as_str()) {
+            refused.insert(
+                path.clone(),
+                "O mesmo arquivo foi selecionado mais de uma vez.".to_string(),
+            );
+        }
+    }
+    for group in groups {
+        let all_taken = group
+            .iter()
+            .all(|(path, _, _)| wanted.contains(path.as_str()));
+        for (path, size, modified) in group {
+            if !wanted.contains(path.as_str()) {
+                continue;
+            }
+            if all_taken {
+                refused.insert(
+                    path.clone(),
+                    "Uma cópia de cada grupo de duplicatas precisa ficar.".to_string(),
+                );
+            } else if !unchanged(Path::new(path), *size, *modified) {
+                refused.insert(
+                    path.clone(),
+                    "O arquivo mudou desde a busca. Procure as duplicatas de novo.".to_string(),
+                );
+            }
+        }
+    }
+    refused
+}
+
+/// Forgets deleted copies; a group left with one file is no longer a duplicate.
+pub fn forget_deleted(groups: &mut Vec<Vec<Expected>>, deleted: &[String]) {
+    let gone: std::collections::HashSet<&str> = deleted.iter().map(String::as_str).collect();
+    for group in groups.iter_mut() {
+        group.retain(|(path, _, _)| !gone.contains(path.as_str()));
+    }
+    groups.retain(|g| g.len() > 1);
 }
 
 /// One progress sample: which hashing stage runs, and how far it has got.
@@ -96,12 +167,75 @@ impl<'a> DupProgress<'a> {
 
 type Candidate = (PathBuf, u64, u64);
 
+/// Most names a search may skip: the list is typed by hand, and a long one is a mistake.
+pub const MAX_EXCLUDED_NAMES: usize = 50;
+
+/// Exact file or folder names the user wants left out of the search (`node_modules`,
+/// `Backups`). A name never matches a path, a wildcard or a drive, so an exclusion cannot widen
+/// into something the user did not type.
+#[derive(Default, Clone)]
+pub struct ExcludedNames(std::collections::HashSet<String>);
+
+impl ExcludedNames {
+    pub fn compile(names: &[String]) -> Result<Self, String> {
+        let mut set = std::collections::HashSet::new();
+        for raw in names {
+            let name = raw.trim();
+            if name.is_empty() {
+                continue;
+            }
+            if name.len() > 255
+                || name.contains(['/', '\\', '*', '?', ':', '\0'])
+                || name == "."
+                || name == ".."
+            {
+                return Err(format!("Nome inválido para ignorar: {name}"));
+            }
+            set.insert(Self::key(name));
+        }
+        if set.len() > MAX_EXCLUDED_NAMES {
+            return Err(format!(
+                "Use no máximo {MAX_EXCLUDED_NAMES} nomes para ignorar."
+            ));
+        }
+        Ok(Self(set))
+    }
+
+    /// Windows and default macOS volumes ignore case; everything else is exact.
+    fn key(name: &str) -> String {
+        if cfg!(any(windows, target_os = "macos")) {
+            name.to_lowercase()
+        } else {
+            name.to_string()
+        }
+    }
+
+    fn matches(&self, name: &str) -> bool {
+        !self.0.is_empty() && self.0.contains(&Self::key(name))
+    }
+}
+
 struct Walk<'a> {
     min_size: u64,
     cancel: &'a AtomicBool,
     /// Off on volumes whose file ids are not trustworthy (FAT, exFAT).
     ids: bool,
     links: Links,
+    protection: Protection,
+    excluded: ExcludedNames,
+}
+
+/// Names that are OS bookkeeping rather than user content, never offered as duplicates.
+fn is_noise_file(name: &str) -> bool {
+    matches!(name, ".DS_Store" | "Thumbs.db" | "desktop.ini")
+}
+
+/// Folders below the scan root that hold tool metadata (`.git`, `.cache`, ...) or OS and
+/// credential data. Their files are not the user's to deduplicate: deleting one corrupts a
+/// repository or fails at the guard later, so they are not walked at all. The root itself is
+/// always scanned, even when the user picked a dot-folder on purpose.
+fn skip_dir(name: &str, path: &Path, w: &Walk) -> bool {
+    name.starts_with('.') || w.protection.is_system(path)
 }
 
 /// Parallel directory walk. Hard links share storage, so each file id is kept once; deleting a
@@ -116,9 +250,18 @@ fn walk(dir: &Path, w: &Walk) -> Vec<Candidate> {
     let mut files = Vec::new();
     let mut dirs = Vec::new();
     for e in entries {
+        if w.excluded.matches(&e.name) {
+            continue;
+        }
         if e.is_dir {
-            dirs.push(dir.join(&e.name));
-        } else if e.size >= w.min_size && e.id.is_none_or(|id| w.links.first(id)) {
+            let path = dir.join(&e.name);
+            if !skip_dir(&e.name, &path, w) {
+                dirs.push(path);
+            }
+        } else if e.size >= w.min_size
+            && !is_noise_file(&e.name)
+            && e.id.is_none_or(|id| w.links.first(id))
+        {
             files.push((dir.join(&e.name), e.size, e.modified));
         }
     }
@@ -300,6 +443,13 @@ fn prune_to_cap(map: &mut HashMap<String, CacheEntry>, cap: usize) {
     }
 }
 
+/// A file that changed or was replaced while the search ran must not be grouped with its old
+/// content: the hash describes bytes that are gone. Size and mtime are re-read after hashing.
+fn unchanged(path: &Path, size: u64, modified: u64) -> bool {
+    std::fs::symlink_metadata(path)
+        .is_ok_and(|m| m.is_file() && m.len() == size && mtime(&m) == modified)
+}
+
 /// Hash of a file under `mode`, reusing the cache for full hashes.
 fn hash_file(
     path: &Path,
@@ -362,7 +512,9 @@ fn refine(
                     break;
                 }
                 if let Ok(h) = hash_file(&c.0, mode, c.1, c.2, cache) {
-                    by_hash.entry(h).or_default().push(c);
+                    if unchanged(&c.0, c.1, c.2) {
+                        by_hash.entry(h).or_default().push(c);
+                    }
                 }
                 p.done.fetch_add(1, Ordering::Relaxed);
             }
@@ -374,9 +526,19 @@ fn refine(
         .collect()
 }
 
+#[cfg(test)]
 pub fn find(root: &Path, min_size: u64, p: &DupProgress) -> (Vec<DupGroup>, bool) {
+    find_excluding(root, min_size, p, &ExcludedNames::default())
+}
+
+pub fn find_excluding(
+    root: &Path,
+    min_size: u64,
+    p: &DupProgress,
+    excluded: &ExcludedNames,
+) -> (Vec<DupGroup>, bool) {
     let cache = HashCache::open();
-    find_impl(root, min_size, p, &cache)
+    find_impl(root, min_size, p, &cache, excluded)
 }
 
 fn find_impl(
@@ -384,12 +546,15 @@ fn find_impl(
     min_size: u64,
     p: &DupProgress,
     cache: &HashCache,
+    excluded: &ExcludedNames,
 ) -> (Vec<DupGroup>, bool) {
     let w = Walk {
         min_size: min_size.max(1),
         cancel: p.cancel,
         ids: listing::ids_supported(root),
         links: Links::default(),
+        protection: Protection::new(),
+        excluded: excluded.clone(),
     };
     let files = walk(root, &w);
     let seen: HashMap<PathBuf, (u64, u64)> = files
@@ -499,6 +664,122 @@ mod tests {
         assert_eq!(g[0].wasted(), 10);
         // Written first (older or same second, shorter path): kept as the original.
         assert!(g[0].files[0].path.ends_with("a.jpg") && !g[0].files[0].path.contains("copy"));
+    }
+
+    #[test]
+    fn tool_metadata_folders_and_os_noise_are_not_offered() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        fs::create_dir_all(r.join(".git/objects")).unwrap();
+        fs::create_dir(r.join("docs")).unwrap();
+        fs::write(r.join("a.txt"), b"same bytes").unwrap();
+        fs::write(r.join(".git/objects/copy.txt"), b"same bytes").unwrap();
+        fs::write(r.join("docs/.DS_Store"), b"same bytes").unwrap();
+        fs::write(r.join("docs/Thumbs.db"), b"same bytes").unwrap();
+        assert!(run(r, 1).is_empty());
+        fs::write(r.join("docs/b.txt"), b"same bytes").unwrap();
+        assert_eq!(run(r, 1)[0].files.len(), 2);
+    }
+
+    #[test]
+    fn excluded_names_hide_matching_files_and_folders_everywhere() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        fs::create_dir_all(r.join("Backups")).unwrap();
+        fs::create_dir_all(r.join("work/Backups")).unwrap();
+        fs::write(r.join("a.txt"), b"same bytes").unwrap();
+        fs::write(r.join("Backups/b.txt"), b"same bytes").unwrap();
+        fs::write(r.join("work/Backups/c.txt"), b"same bytes").unwrap();
+        fs::write(r.join("work/skip.me"), b"same bytes").unwrap();
+        let cancel = AtomicBool::new(false);
+        let search = |names: &[&str]| {
+            let names: Vec<String> = names.iter().map(|n| n.to_string()).collect();
+            let ex = ExcludedNames::compile(&names).unwrap();
+            find_excluding(r, 1, &DupProgress::new(&cancel), &ex).0
+        };
+        assert_eq!(search(&[]).first().map(|g| g.files.len()), Some(4));
+        assert!(
+            search(&["Backups", "skip.me"]).is_empty(),
+            "only a.txt is left"
+        );
+    }
+
+    #[test]
+    fn excluded_names_reject_paths_wildcards_and_long_lists() {
+        let one = |n: &str| ExcludedNames::compile(&[n.to_string()]);
+        for bad in ["a/b", "a\\b", "*.tmp", "C:", "..", "."] {
+            assert!(one(bad).is_err(), "{bad}");
+        }
+        assert!(one("  node_modules ").is_ok());
+        assert!(one("").is_ok(), "blank entries are ignored");
+        let many: Vec<String> = (0..=MAX_EXCLUDED_NAMES).map(|i| format!("n{i}")).collect();
+        assert!(ExcludedNames::compile(&many).is_err());
+    }
+
+    #[test]
+    fn a_dot_folder_chosen_as_the_root_is_still_scanned() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join(".archive");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("a.txt"), b"same bytes").unwrap();
+        fs::write(root.join("b.txt"), b"same bytes").unwrap();
+        assert_eq!(run(&root, 1).len(), 1);
+    }
+
+    #[test]
+    fn a_file_changed_after_the_walk_is_not_grouped() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("a.bin");
+        fs::write(&path, b"12345").unwrap();
+        let meta = fs::symlink_metadata(&path).unwrap();
+        assert!(unchanged(&path, 5, mtime(&meta)));
+        assert!(!unchanged(&path, 6, mtime(&meta)), "size differs");
+        assert!(!unchanged(&path, 5, mtime(&meta) + 1), "mtime differs");
+        assert!(!unchanged(&tmp.path().join("gone"), 5, 0), "file vanished");
+    }
+
+    #[test]
+    fn a_request_can_never_take_every_copy_of_a_group() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        fs::write(r.join("a.txt"), b"same bytes").unwrap();
+        fs::write(r.join("b.txt"), b"same bytes").unwrap();
+        fs::write(r.join("c.txt"), b"same bytes").unwrap();
+        let groups = expected_of(&run(r, 1));
+        let path = |n: &str| r.join(n).to_string_lossy().into_owned();
+
+        assert!(refused_selection(&groups, &[path("b.txt"), path("c.txt")]).is_empty());
+        let all = [path("a.txt"), path("b.txt"), path("c.txt")];
+        assert_eq!(refused_selection(&groups, &all).len(), 3);
+        let twice = [path("b.txt"), path("b.txt")];
+        assert!(refused_selection(&groups, &twice)[&path("b.txt")].contains("mais de uma vez"));
+        // Unrelated paths are left to the regular guard.
+        assert!(refused_selection(&groups, &[path("elsewhere")]).is_empty());
+    }
+
+    #[test]
+    fn a_file_changed_since_the_search_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        fs::write(r.join("a.txt"), b"same bytes").unwrap();
+        fs::write(r.join("b.txt"), b"same bytes").unwrap();
+        let groups = expected_of(&run(r, 1));
+        let b = r.join("b.txt").to_string_lossy().into_owned();
+        assert!(refused_selection(&groups, std::slice::from_ref(&b)).is_empty());
+        fs::write(r.join("b.txt"), b"edited since the search").unwrap();
+        let refused = refused_selection(&groups, std::slice::from_ref(&b));
+        assert!(refused[&b].contains("mudou"));
+    }
+
+    #[test]
+    fn forgetting_deleted_copies_keeps_the_one_survivor_rule_honest() {
+        let mut groups = vec![vec![
+            ("a".to_string(), 1, 1),
+            ("b".to_string(), 1, 1),
+            ("c".to_string(), 1, 1),
+        ]];
+        forget_deleted(&mut groups, &["b".into(), "c".into()]);
+        assert!(groups.is_empty(), "a lone survivor is not a group anymore");
     }
 
     #[test]
@@ -699,7 +980,7 @@ mod tests {
         let progress = DupProgress::new(&cancel);
 
         let cache = HashCache::at(cache_file.clone());
-        find_impl(r, 1, &progress, &cache);
+        find_impl(r, 1, &progress, &cache, &ExcludedNames::default());
 
         {
             let loaded = HashCache::at(cache_file.clone());
@@ -709,7 +990,7 @@ mod tests {
 
         fs::remove_file(r.join("b.bin")).unwrap();
 
-        find_impl(r, 1, &progress, &cache);
+        find_impl(r, 1, &progress, &cache, &ExcludedNames::default());
 
         {
             let loaded = HashCache::at(cache_file);

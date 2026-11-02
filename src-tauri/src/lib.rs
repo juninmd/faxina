@@ -37,6 +37,7 @@ pub fn run() {
             commands::delete_paths,
             commands::junk_scan,
             commands::junk_clean,
+            commands::junk_preview,
             commands::find_duplicates,
             commands::find_empty,
             commands::delete_broken_links,

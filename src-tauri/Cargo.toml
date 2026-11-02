@@ -29,7 +29,7 @@ rayon = "1.12.0"
 blake3 = { version = "1.8.7", features = ["mmap", "rayon"] }
 trash = "5.2.9"
 dirs = "7.0.0"
-sysinfo = { version = "0.39.6", default-features = false, features = ["disk"] }
+sysinfo = { version = "0.39.6", default-features = false, features = ["disk", "system"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem"] }
