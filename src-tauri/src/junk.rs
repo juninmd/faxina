@@ -60,7 +60,7 @@ pub fn base_dir(base: Base) -> Option<PathBuf> {
         Base::Cache => dirs::cache_dir(),
         Base::Temp => Some(std::env::temp_dir()),
         Base::Config => dirs::config_dir(),
-        Base::NodeProjects | Base::RustProjects | Base::PythonProjects => None,
+        Base::NodeProjects | Base::RustProjects | Base::PythonProjects | Base::Marked(_) => None,
     }
 }
 
@@ -551,7 +551,10 @@ mod tests {
             .filter(|d| {
                 matches!(
                     d.base,
-                    Base::NodeProjects | Base::RustProjects | Base::PythonProjects
+                    Base::NodeProjects
+                        | Base::RustProjects
+                        | Base::PythonProjects
+                        | Base::Marked(_)
                 )
             })
             .collect();
