@@ -87,6 +87,9 @@ pub struct JunkDef {
     /// Opt-in: the UI leaves it unticked and shows this warning. User-chosen downloads and
     /// anything slow or costly to get back live here, never in the one-click clean.
     pub caution: Option<&'static str>,
+    /// Lower-case process names (without `.exe`) that keep these files open. While one runs the
+    /// cleanup is refused for this definition: wiping a live profile corrupts it.
+    pub procs: &'static [&'static str],
 }
 
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -108,7 +111,14 @@ pub(crate) fn def(
         rules,
         min_age: NOW,
         caution: None,
+        procs: &[],
     }
+}
+
+/// Names the processes that must be closed before this definition can be cleaned.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn needs_closed(def: JunkDef, procs: &'static [&'static str]) -> JunkDef {
+    JunkDef { procs, ..def }
 }
 
 /// Marks a definition as opt-in with the warning the user sees before ticking it.
@@ -345,27 +355,39 @@ pub fn definitions() -> Vec<JunkDef> {
                 ),
             ],
         ),
-        def(
-            "chrome",
-            "Google Chrome",
-            WEB,
-            Base::Local,
-            CHROME_CACHES.to_vec(),
+        needs_closed(
+            def(
+                "chrome",
+                "Google Chrome",
+                WEB,
+                Base::Local,
+                CHROME_CACHES.to_vec(),
+            ),
+            &["chrome"],
         ),
-        def(
-            "edge",
-            "Microsoft Edge",
-            WEB,
-            Base::Local,
-            EDGE_CACHES.to_vec(),
+        needs_closed(
+            def(
+                "edge",
+                "Microsoft Edge",
+                WEB,
+                Base::Local,
+                EDGE_CACHES.to_vec(),
+            ),
+            &["msedge"],
         ),
-        def("brave", "Brave", WEB, Base::Local, BRAVE_CACHES.to_vec()),
-        def(
-            "vivaldi",
-            "Vivaldi",
-            WEB,
-            Base::Local,
-            VIVALDI_CACHES.to_vec(),
+        needs_closed(
+            def("brave", "Brave", WEB, Base::Local, BRAVE_CACHES.to_vec()),
+            &["brave"],
+        ),
+        needs_closed(
+            def(
+                "vivaldi",
+                "Vivaldi",
+                WEB,
+                Base::Local,
+                VIVALDI_CACHES.to_vec(),
+            ),
+            &["vivaldi"],
         ),
         def(
             "chromium",

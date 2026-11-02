@@ -46,6 +46,8 @@ export interface JunkItem {
   paths: string[];
   /** Opt-in item: never ticked by default; this is the warning to show. */
   caution?: string | null;
+  /** Programs that keep these files open right now; the cleanup is refused until they close. */
+  running?: string[];
 }
 
 export interface CleanReport {

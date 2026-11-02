@@ -8,7 +8,9 @@ use std::sync::Mutex;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::guard::Protection;
 use crate::listing::{self, Links};
+use crate::scan::mtime;
 
 /// Bytes read for the cheap prefix/suffix probes before committing to a full hash.
 const PARTIAL: usize = 64 * 1024;
@@ -102,6 +104,20 @@ struct Walk<'a> {
     /// Off on volumes whose file ids are not trustworthy (FAT, exFAT).
     ids: bool,
     links: Links,
+    protection: Protection,
+}
+
+/// Names that are OS bookkeeping rather than user content, never offered as duplicates.
+fn is_noise_file(name: &str) -> bool {
+    matches!(name, ".DS_Store" | "Thumbs.db" | "desktop.ini")
+}
+
+/// Folders below the scan root that hold tool metadata (`.git`, `.cache`, ...) or OS and
+/// credential data. Their files are not the user's to deduplicate: deleting one corrupts a
+/// repository or fails at the guard later, so they are not walked at all. The root itself is
+/// always scanned, even when the user picked a dot-folder on purpose.
+fn skip_dir(name: &str, path: &Path, w: &Walk) -> bool {
+    name.starts_with('.') || w.protection.is_system(path)
 }
 
 /// Parallel directory walk. Hard links share storage, so each file id is kept once; deleting a
@@ -117,8 +133,14 @@ fn walk(dir: &Path, w: &Walk) -> Vec<Candidate> {
     let mut dirs = Vec::new();
     for e in entries {
         if e.is_dir {
-            dirs.push(dir.join(&e.name));
-        } else if e.size >= w.min_size && e.id.is_none_or(|id| w.links.first(id)) {
+            let path = dir.join(&e.name);
+            if !skip_dir(&e.name, &path, w) {
+                dirs.push(path);
+            }
+        } else if e.size >= w.min_size
+            && !is_noise_file(&e.name)
+            && e.id.is_none_or(|id| w.links.first(id))
+        {
             files.push((dir.join(&e.name), e.size, e.modified));
         }
     }
@@ -300,6 +322,13 @@ fn prune_to_cap(map: &mut HashMap<String, CacheEntry>, cap: usize) {
     }
 }
 
+/// A file that changed or was replaced while the search ran must not be grouped with its old
+/// content: the hash describes bytes that are gone. Size and mtime are re-read after hashing.
+fn unchanged(path: &Path, size: u64, modified: u64) -> bool {
+    std::fs::symlink_metadata(path)
+        .is_ok_and(|m| m.is_file() && m.len() == size && mtime(&m) == modified)
+}
+
 /// Hash of a file under `mode`, reusing the cache for full hashes.
 fn hash_file(
     path: &Path,
@@ -362,7 +391,9 @@ fn refine(
                     break;
                 }
                 if let Ok(h) = hash_file(&c.0, mode, c.1, c.2, cache) {
-                    by_hash.entry(h).or_default().push(c);
+                    if unchanged(&c.0, c.1, c.2) {
+                        by_hash.entry(h).or_default().push(c);
+                    }
                 }
                 p.done.fetch_add(1, Ordering::Relaxed);
             }
@@ -390,6 +421,7 @@ fn find_impl(
         cancel: p.cancel,
         ids: listing::ids_supported(root),
         links: Links::default(),
+        protection: Protection::new(),
     };
     let files = walk(root, &w);
     let seen: HashMap<PathBuf, (u64, u64)> = files
@@ -499,6 +531,43 @@ mod tests {
         assert_eq!(g[0].wasted(), 10);
         // Written first (older or same second, shorter path): kept as the original.
         assert!(g[0].files[0].path.ends_with("a.jpg") && !g[0].files[0].path.contains("copy"));
+    }
+
+    #[test]
+    fn tool_metadata_folders_and_os_noise_are_not_offered() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        fs::create_dir_all(r.join(".git/objects")).unwrap();
+        fs::create_dir(r.join("docs")).unwrap();
+        fs::write(r.join("a.txt"), b"same bytes").unwrap();
+        fs::write(r.join(".git/objects/copy.txt"), b"same bytes").unwrap();
+        fs::write(r.join("docs/.DS_Store"), b"same bytes").unwrap();
+        fs::write(r.join("docs/Thumbs.db"), b"same bytes").unwrap();
+        assert!(run(r, 1).is_empty());
+        fs::write(r.join("docs/b.txt"), b"same bytes").unwrap();
+        assert_eq!(run(r, 1)[0].files.len(), 2);
+    }
+
+    #[test]
+    fn a_dot_folder_chosen_as_the_root_is_still_scanned() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join(".archive");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("a.txt"), b"same bytes").unwrap();
+        fs::write(root.join("b.txt"), b"same bytes").unwrap();
+        assert_eq!(run(&root, 1).len(), 1);
+    }
+
+    #[test]
+    fn a_file_changed_after_the_walk_is_not_grouped() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("a.bin");
+        fs::write(&path, b"12345").unwrap();
+        let meta = fs::symlink_metadata(&path).unwrap();
+        assert!(unchanged(&path, 5, mtime(&meta)));
+        assert!(!unchanged(&path, 6, mtime(&meta)), "size differs");
+        assert!(!unchanged(&path, 5, mtime(&meta) + 1), "mtime differs");
+        assert!(!unchanged(&tmp.path().join("gone"), 5, 0), "file vanished");
     }
 
     #[test]

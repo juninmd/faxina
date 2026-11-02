@@ -27,6 +27,8 @@ export type Rule = {
   caution?: string;
   blocked?: boolean;
   busy?: boolean;
+  /** Programs holding these files open; set when `busy` comes from a real process check. */
+  running?: string[];
 };
 
 export const BASE_RULES: Rule[] = [
@@ -360,6 +362,7 @@ export function mergeRulesWithScan(items: JunkItem[]): Rule[] {
       path: item.paths[0] || rule.path,
       paths: item.paths,
       caution: item.caution ?? rule.caution,
+      ...(item.running?.length ? { busy: true, running: item.running } : {}),
     };
   });
 
@@ -379,6 +382,7 @@ export function mergeRulesWithScan(items: JunkItem[]): Rule[] {
           ? `${item.caution} Fica desmarcado até você escolher.`
           : "Caches e arquivos temporários que os aplicativos recriam sozinhos.",
         caution: item.caution ?? undefined,
+        ...(item.running?.length ? { busy: true, running: item.running } : {}),
       });
     }
   }

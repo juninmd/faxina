@@ -161,7 +161,9 @@ export default function Review({
                                 : ignored
                                   ? "Excluído por você"
                                   : r.busy
-                                    ? "App aberto · será ignorado se bloqueado"
+                                    ? r.running?.length
+                                      ? `Feche ${r.running.join(", ")} para limpar · será ignorado`
+                                      : "App aberto · será ignorado se bloqueado"
                                     : r.caution}
                             </span>
                           )}

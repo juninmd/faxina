@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -24,6 +25,8 @@ pub struct JunkItem {
     pub files: u64,
     pub paths: Vec<String>,
     pub caution: Option<&'static str>,
+    /// Programs from the definition that are running right now and keep these files open.
+    pub running: Vec<&'static str>,
 }
 
 #[derive(Default)]
@@ -37,6 +40,29 @@ struct Target {
     canonical: PathBuf,
     rule: Rule,
     min_age: Duration,
+    procs: &'static [&'static str],
+}
+
+/// Lower-case names of the running processes, without a `.exe` suffix.
+fn running_processes() -> HashSet<String> {
+    let mut system = sysinfo::System::new();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    system
+        .processes()
+        .values()
+        .map(|p| {
+            let name = p.name().to_string_lossy().to_lowercase();
+            name.strip_suffix(".exe").map(str::to_owned).unwrap_or(name)
+        })
+        .collect()
+}
+
+fn open_programs(procs: &'static [&'static str], running: &HashSet<String>) -> Vec<&'static str> {
+    procs
+        .iter()
+        .copied()
+        .filter(|p| running.contains(*p))
+        .collect()
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -249,6 +275,11 @@ fn scan_definitions(defs: &[JunkDef], projects: &Projects) -> Vec<JunkItem> {
 }
 
 fn scan_snapshot(defs: &[JunkDef], projects: &Projects) -> (Vec<JunkItem>, Snapshot) {
+    let running = if defs.iter().any(|d| !d.procs.is_empty()) {
+        running_processes()
+    } else {
+        HashSet::new()
+    };
     let results: Vec<_> = defs
         .par_iter()
         .filter_map(|def| {
@@ -262,6 +293,7 @@ fn scan_snapshot(defs: &[JunkDef], projects: &Projects) -> (Vec<JunkItem>, Snaps
                             canonical,
                             rule: *rule,
                             min_age: def.min_age,
+                            procs: def.procs,
                         });
                     }
                 }
@@ -286,6 +318,7 @@ fn scan_snapshot(defs: &[JunkDef], projects: &Projects) -> (Vec<JunkItem>, Snaps
                         files,
                         paths: displayed,
                         caution: def.caution,
+                        running: open_programs(def.procs, &running),
                     },
                     paths,
                 )
@@ -441,11 +474,29 @@ fn merge(a: CleanReport, b: CleanReport) -> CleanReport {
 }
 
 pub fn clean(snapshot: Snapshot, ids: &[String], permanent: bool) -> CleanReport {
+    let running = if snapshot.targets.iter().any(|t| !t.procs.is_empty()) {
+        running_processes()
+    } else {
+        HashSet::new()
+    };
+    clean_unless_open(snapshot, ids, permanent, &running)
+}
+
+/// `running` is checked again here, not only at scan time: the app may have started since.
+fn clean_unless_open(
+    snapshot: Snapshot,
+    ids: &[String],
+    permanent: bool,
+    running: &HashSet<String>,
+) -> CleanReport {
     snapshot
         .targets
         .into_iter()
         .filter(|t| ids.iter().any(|id| id == t.id))
         .map(|target| {
+            if let Some(app) = open_programs(target.procs, running).first() {
+                return failed(&format!("Feche o {app} antes de limpar."));
+            }
             if !real_dir(&target.path)
                 || fs::canonicalize(&target.path).ok().as_ref() != Some(&target.canonical)
             {
@@ -476,6 +527,34 @@ fn clean_with_projects(
 mod tests {
     use super::*;
     use crate::junk_defs::{matching, whole};
+
+    #[test]
+    fn a_running_program_blocks_its_definition_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        for name in ["guarded", "free"] {
+            fs::create_dir_all(tmp.path().join(name)).unwrap();
+            fs::write(tmp.path().join(name).join("cache.bin"), "data").unwrap();
+        }
+        // Build the snapshot by hand: both targets are real folders in the temp dir.
+        let target = |id: &'static str, procs: &'static [&'static str]| Target {
+            id,
+            path: tmp.path().join(id),
+            canonical: fs::canonicalize(tmp.path().join(id)).unwrap(),
+            rule: whole(""),
+            min_age: Duration::ZERO,
+            procs,
+        };
+        let snapshot = Snapshot {
+            targets: vec![target("guarded", &["editor"]), target("free", &[])],
+        };
+        let running = HashSet::from(["editor".to_string()]);
+        let report =
+            clean_unless_open(snapshot, &["guarded".into(), "free".into()], true, &running);
+        assert_eq!(report.failed, 1);
+        assert!(report.reason.unwrap().contains("editor"));
+        assert!(tmp.path().join("guarded/cache.bin").exists());
+        assert!(!tmp.path().join("free/cache.bin").exists());
+    }
 
     #[test]
     fn cleanup_uses_reviewed_locations_not_newly_created_projects() {
