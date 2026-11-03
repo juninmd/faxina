@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.19.0](https://github.com/juninmd/faxina/compare/v1.18.0...v1.19.0) (2026-11-03)
+
+
+### Features
+
+* **tests,a11y:** improve test coverage and UI accessibility ([#82](https://github.com/juninmd/faxina/issues/82)) ([91f71fb](https://github.com/juninmd/faxina/commit/91f71fb7d9e94cd01ded63fa9dcc35155f49c05f))
+
 # [1.18.0](https://github.com/juninmd/faxina/compare/v1.17.0...v1.18.0) (2026-11-03)
 
 
