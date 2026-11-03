@@ -95,6 +95,7 @@ export function BigFiles({
           <span>Ordem</span>
           <select
             value={sort}
+            aria-label="Ordenar arquivos grandes por"
             onChange={(e) => {
               setSort(e.target.value as SortKey);
               setShown(PAGE);
@@ -112,6 +113,7 @@ export function BigFiles({
           <span>Mostrar</span>
           <select
             value={minSize}
+            aria-label="Tamanho mínimo dos arquivos"
             onChange={(e) => {
               setMinSize(Number(e.target.value));
               setShown(PAGE);
@@ -184,7 +186,14 @@ export function BigFiles({
         )}
       </div>
 
-      {error && <p className="text-xs font-semibold text-rose-400">{error}</p>}
+      {error && (
+        <div
+          role="alert"
+          className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs font-semibold text-rose-300"
+        >
+          {error}
+        </div>
+      )}
 
       {files === null && !error && (
         <p className="text-xs text-slate-400" role="status">

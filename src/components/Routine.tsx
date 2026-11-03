@@ -73,6 +73,8 @@ export default function Routine({
             <label className="flex flex-col gap-1.5 text-xs font-semibold text-slate-300">
               <span>Frequência</span>
               <select
+                id="routine-frequency"
+                aria-label="Frequência do lembrete"
                 disabled={!settings.schedule}
                 value={settings.frequency}
                 onChange={(e) => update({ ...settings, frequency: e.target.value })}
@@ -85,6 +87,8 @@ export default function Routine({
             <label className="flex flex-col gap-1.5 text-xs font-semibold text-slate-300">
               <span>Horário</span>
               <input
+                id="routine-time"
+                aria-label="Horário do lembrete"
                 type="time"
                 disabled={!settings.schedule}
                 value={settings.time}

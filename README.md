@@ -20,7 +20,7 @@ Mapa visual do disco no estilo DaisyDisk, limpeza de caches no estilo CCleaner e
 
 ---
 
-**Índice:** [Funcionalidades](#-o-que-ele-faz) · [Telas](#-telas) · [Instalação](#-instalação) · [Uso](#-uso) · [Segurança](#-segurança-primeiro) · [Atalhos](#-atalhos) · [Arquitetura](#-como-funciona) · [Desenvolvimento](#-desenvolvimento) · [Testes e gates de CI](#-testes-e-gates-de-ci) · [Limitações](#-limitações-conhecidas)
+**Índice:** [Funcionalidades](#-o-que-ele-faz) · [Telas](#-telas) · [Instalação](#-instalação) · [Uso](#-uso) · [Segurança](#-segurança-primeiro) · [Atalhos](#-atalhos) · [Arquitetura](#-como-funciona) · [Desenvolvimento](#-desenvolvimento) · [Testes e gates de CI](#-testes-e-gates-de-ci) · [Limitações](#-limitações-conhecidas) · [Próximos passos](#-próximos-passos)
 
 Para quem: quem tem o disco cheio e não sabe por quê. O Faxina mostra onde o espaço foi parar, sugere o que é seguro apagar (caches, `node_modules`, `target/`, duplicatas) e remove com a Lixeira como padrão.
 
@@ -221,7 +221,16 @@ PRs têm os commits validados pelo commitlint. Para publicar, o repositório pre
 - Pastas chamadas só `cache`/`tmp`/`temp` só contam como cache dentro de dados de aplicativo (`AppData`, `~/.cache`, `~/Library`…); em `Documentos/Projeto/tmp` elas são tratadas como suas.
 - Arquivos pequenos (< 512 KB) aparecem agrupados e não podem ser marcados individualmente. A lista de **Arquivos grandes** sai da mesma análise e só mostra o que foi rastreado um a um.
 - A limpeza rápida só mexe em pastas do usuário; nada que exija administrador (Windows Update, `C:\Windows\Temp`).
+- Aplicativos abertos bloqueiam a limpeza de seus caches (ex.: navegadores no Windows com arquivos travados); o app avisa qual programa fechar e pula as entradas bloqueadas por segurança.
 - A caça a duplicatas guarda os hashes em `%LOCALAPPDATA%\faxina\dupes-cache.json`; reanalisar a mesma pasta fica bem mais rápido. O hash só é reaproveitado quando tamanho **e** data de modificação não mudam.
+- Efeitos de redução de movimento do sistema operacional (`prefers-reduced-motion`) ativam a versão curta da animação do buraco negro por padrão, com opção de forçar animações sempre ativas no topo do app.
+
+## 🗺️ Próximos passos
+
+- [ ] **Regras personalizadas pelo usuário:** suporte a inclusão de pastas customizadas com regras de exclusão declarativas.
+- [ ] **Filtros e exportação avançada:** exportação de relatórios em formato CSV/JSON e filtros por extensões personalizadas no caçador de arquivos grandes.
+- [ ] **Melhorias de acessibilidade contínuas:** suporte a alto contraste aprimorado e atalhos de teclado dedicados para painéis secundários (duplicatas e vazios).
+- [ ] **Análise em lote de múltiplos volumes:** varredura simultânea de diferentes discos em segundo plano com agendamento local integrado.
 
 ## 🙏 Inspirações
 

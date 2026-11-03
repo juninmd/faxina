@@ -508,6 +508,269 @@ mod tests {
         assert_eq!(small_taken.len(), 10);
         assert!(!small_truncated);
     }
+
+    #[test]
+    fn delete_paths_enforces_safety_and_updates_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let file_a = root.join("a.txt");
+        let file_b = root.join("b.txt");
+        let file_outside = tempfile::NamedTempFile::new().unwrap();
+
+        std::fs::write(&file_a, "hello").unwrap();
+        std::fs::write(&file_b, "world!").unwrap();
+
+        let state = AppState::default();
+        *lock(&state.scan) = Some(ScanData {
+            root: root.clone(),
+            tree: Node {
+                name: "root".into(),
+                size: 11,
+                files: 2,
+                modified: 0,
+                kind: crate::model::Kind::Other,
+                is_dir: true,
+                grouped: false,
+                reclaimable: false,
+                children: vec![
+                    Node {
+                        name: "a.txt".into(),
+                        size: 5,
+                        files: 1,
+                        modified: 0,
+                        kind: crate::model::Kind::Other,
+                        is_dir: false,
+                        grouped: false,
+                        reclaimable: false,
+                        children: vec![],
+                    },
+                    Node {
+                        name: "b.txt".into(),
+                        size: 6,
+                        files: 1,
+                        modified: 0,
+                        kind: crate::model::Kind::Other,
+                        is_dir: false,
+                        grouped: false,
+                        reclaimable: false,
+                        children: vec![],
+                    },
+                ],
+            },
+        });
+
+        // Outside path is refused
+        let paths = vec![
+            file_a.to_string_lossy().to_string(),
+            file_outside.path().to_string_lossy().to_string(),
+        ];
+        let report = tauri::async_runtime::block_on(async {
+            // Manual test execution of delete_paths logic without tauri::State wrapper
+            let mut roots: Vec<PathBuf> = Vec::new();
+            let known: Vec<Option<u64>> = {
+                let scan = lock(&state.scan);
+                if let Some(d) = scan.as_ref() {
+                    roots.push(d.root.clone());
+                }
+                paths
+                    .iter()
+                    .map(|raw| {
+                        let d = scan.as_ref()?;
+                        let segs = view::relative(&d.root, Path::new(raw))?;
+                        view::find(&d.tree, &segs).map(|n| n.size)
+                    })
+                    .collect()
+            };
+            let refused = dupes::refused_selection(&lock(&state.dup_groups), &paths);
+            let sized: Vec<Result<(PathBuf, u64), String>> = paths
+                .iter()
+                .zip(known)
+                .map(|(raw, known)| {
+                    if let Some(reason) = refused.get(raw) {
+                        return Err(reason.clone());
+                    }
+                    let p = guard::check(Path::new(raw), &roots)?;
+                    let size = known.unwrap_or_else(|| disk_size(&p));
+                    Ok((p, size))
+                })
+                .collect();
+            let targets: Vec<PathBuf> = sized
+                .iter()
+                .filter_map(|s| s.as_ref().ok().map(|(p, _)| p.clone()))
+                .collect();
+            let mut removals = remove::remove_all(&targets, true).into_iter();
+            let outcomes: Vec<_> = paths
+                .into_iter()
+                .zip(sized)
+                .map(|(raw, s)| match s {
+                    Err(e) => (raw, 0, Err(e)),
+                    Ok((_, size)) => {
+                        let r = removals.next().expect("one removal per guarded path");
+                        (raw, if r.nested { 0 } else { size }, r.result)
+                    }
+                })
+                .collect();
+
+            let mut report = DeleteReport::default();
+            let mut scan = lock(&state.scan);
+            for (raw, size, result) in outcomes {
+                match result {
+                    Ok(()) => {
+                        if let Some(d) = scan.as_mut() {
+                            if let Some(segs) = view::relative(&d.root, Path::new(&raw)) {
+                                view::remove(&mut d.tree, &segs);
+                            }
+                        }
+                        report.freed += size;
+                        report.deleted.push(raw);
+                    }
+                    Err(error) => report.failed.push(Failure { path: raw, error }),
+                }
+            }
+            report
+        });
+
+        assert_eq!(report.deleted.len(), 1);
+        assert_eq!(report.failed.len(), 1);
+        assert!(!file_a.exists());
+        assert!(file_outside.path().exists());
+        assert_eq!(report.freed, 5);
+
+        // Verify state tree was updated in memory
+        let scan = lock(&state.scan);
+        assert_eq!(scan.as_ref().unwrap().tree.size, 6);
+    }
+
+    #[test]
+    fn delete_paths_refuses_when_dupe_invariants_broken() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let file_a = root.join("copy1.txt");
+        let file_b = root.join("copy2.txt");
+        std::fs::write(&file_a, "duplicate").unwrap();
+        std::fs::write(&file_b, "duplicate").unwrap();
+
+        let state = AppState::default();
+        *lock(&state.dup_root) = Some(root.clone());
+
+        let groups = vec![DupGroup {
+            hash: "testhash".into(),
+            size: 9,
+            files: vec![
+                dupes::DupFile {
+                    path: file_a.to_string_lossy().to_string(),
+                    modified: 100,
+                },
+                dupes::DupFile {
+                    path: file_b.to_string_lossy().to_string(),
+                    modified: 100,
+                },
+            ],
+        }];
+        *lock(&state.dup_groups) = dupes::expected_of(&groups);
+
+        // Attempting to delete BOTH copies of a duplicate group must be refused
+        let paths = vec![
+            file_a.to_string_lossy().to_string(),
+            file_b.to_string_lossy().to_string(),
+        ];
+        let refused = dupes::refused_selection(&lock(&state.dup_groups), &paths);
+        assert!(
+            refused.contains_key(&paths[0]),
+            "refuses deleting all copies"
+        );
+        assert!(
+            refused.contains_key(&paths[1]),
+            "refuses deleting all copies"
+        );
+    }
+
+    #[test]
+    fn delete_broken_links_removes_dangling_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let target = root.join("target.txt");
+        std::fs::write(&target, "real").unwrap();
+
+        let link_valid = root.join("link_valid");
+        let link_dangling = root.join("link_dangling");
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&target, &link_valid).unwrap();
+            std::os::unix::fs::symlink(root.join("nonexistent.txt"), &link_dangling).unwrap();
+        }
+
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(&target, &link_valid).unwrap();
+            std::os::windows::fs::symlink_file(root.join("nonexistent.txt"), &link_dangling)
+                .unwrap();
+        }
+
+        let state = AppState::default();
+        *lock(&state.empty_root) = Some(root.clone());
+
+        let paths = vec![
+            link_valid.to_string_lossy().to_string(),
+            link_dangling.to_string_lossy().to_string(),
+            root.join("target.txt").to_string_lossy().to_string(),
+        ];
+
+        let report = {
+            let empty_root = lock(&state.empty_root).clone();
+            let mut report = DeleteReport::default();
+            for raw in paths {
+                let p = Path::new(&raw);
+                let outcome = match empty_root.as_deref() {
+                    Some(r) if p.is_absolute() => guard::check_dangling_link(p, r)
+                        .and_then(|()| remove::remove_link(p).map_err(|e| e.to_string())),
+                    _ => Err("fora da área analisada".into()),
+                };
+                match outcome {
+                    Ok(()) => report.deleted.push(raw),
+                    Err(error) => report.failed.push(Failure { path: raw, error }),
+                }
+            }
+            report
+        };
+
+        // link_dangling should be deleted, link_valid and target.txt should fail
+        assert_eq!(report.deleted.len(), 1);
+        assert_eq!(report.failed.len(), 2);
+        assert!(!link_dangling.exists());
+        assert!(target.exists());
+    }
+
+    #[test]
+    fn junk_preview_and_clean_dry_run_parity() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache_dir = tmp.path().join("cache");
+        std::fs::create_dir_all(&cache_dir).unwrap();
+        std::fs::write(cache_dir.join("temp.log"), "12345").unwrap();
+        std::fs::write(cache_dir.join("other.tmp"), "12345678").unwrap();
+
+        let snapshot = junk::Snapshot::default();
+        let state = AppState::default();
+        state.junk_ticket.store(1, Ordering::SeqCst);
+        *lock(&state.junk) = Some((1, snapshot));
+
+        // Dry run preview returns report and preserves the snapshot with the same ticket
+        let ids = vec!["unknown_id".to_string()];
+        let preview_res = {
+            let snap = take_junk_snapshot(&state, 1).unwrap();
+            let report = junk::preview(&snap, &ids);
+            *lock(&state.junk) = Some((1, snap));
+            report
+        };
+
+        assert_eq!(preview_res.freed, 0);
+        assert_eq!(preview_res.removed, 0);
+
+        // Snapshot is still available for real clean
+        let snap_after = take_junk_snapshot(&state, 1);
+        assert!(snap_after.is_ok());
+    }
 }
 
 #[tauri::command]

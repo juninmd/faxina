@@ -89,7 +89,7 @@ export default function ConfirmDialog({
         <strong className="font-mono text-slate-200">{gb(amount)}</strong> selecionados para limpeza.
       </p>
 
-      <div className="flex flex-col gap-3">
+      <fieldset className="flex flex-col gap-3 border-0 p-0 m-0" aria-label="Destino da limpeza">
         <label
           className={`flex cursor-pointer items-start gap-4 rounded-2xl border p-4 transition-all ${
             destination === "trash"
@@ -139,7 +139,7 @@ export default function ConfirmDialog({
             </span>
           </div>
         </label>
-      </div>
+      </fieldset>
 
       {destination === "permanent" && (
         <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs leading-relaxed text-rose-200">
