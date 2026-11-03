@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.18.0](https://github.com/juninmd/faxina/compare/v1.17.0...v1.18.0) (2026-11-03)
+
+
+### Features
+
+* project ecosystems, safer duplicates, app-running gate and review UX ([#78](https://github.com/juninmd/faxina/issues/78)) ([046c233](https://github.com/juninmd/faxina/commit/046c233452149bb9fde0e3f15bc5672782cb8458))
+
 # [1.17.0](https://github.com/juninmd/faxina/compare/v1.16.0...v1.17.0) (2026-11-02)
 
 
