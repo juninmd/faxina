@@ -231,7 +231,17 @@ describe("domain logic", () => {
     localStorage.setItem("faxina-settings-v1", "invalid json");
     expect(readSettings()).toEqual(DEFAULT_SETTINGS);
 
+    localStorage.setItem("faxina-settings-v1", JSON.stringify("not-an-object"));
+    expect(readSettings()).toEqual(DEFAULT_SETTINGS);
+
+    localStorage.setItem("faxina-settings-v1", JSON.stringify({ frequency: "InvalidFreq", time: "invalid-time" }));
+    expect(readSettings().frequency).toBe("Semanal");
+    expect(readSettings().time).toBe("18:00");
+
     localStorage.setItem("faxina-history-v1", JSON.stringify([{ id: "1", invalid: true }]));
+    expect(readHistory()).toEqual([]);
+
+    localStorage.setItem("faxina-history-v1", JSON.stringify("not-an-array"));
     expect(readHistory()).toEqual([]);
   });
 

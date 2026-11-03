@@ -263,7 +263,14 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
         {ignore.error && <span className="font-normal text-rose-400">{ignore.error}</span>}
       </label>
 
-      {error && <p className="text-xs font-semibold text-rose-400">{error}</p>}
+      {error && (
+        <div
+          role="alert"
+          className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs font-semibold text-rose-300"
+        >
+          {error}
+        </div>
+      )}
       {dupNotice(dupMeta) && (
         <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200" role="status">
           {dupNotice(dupMeta)}
@@ -271,11 +278,15 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
       )}
 
       {groups?.length === 0 && (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-3xl border border-slate-800/80 bg-slate-900/60 p-12 text-center shadow-lg backdrop-blur-md">
+        <div
+          role="status"
+          className="flex flex-col items-center justify-center gap-3 rounded-3xl border border-slate-800/80 bg-slate-900/60 p-12 text-center shadow-lg backdrop-blur-md"
+        >
           <span className="text-4xl" aria-hidden="true">
             🎉
           </span>
-          <p className="text-sm font-semibold text-white">Nenhuma duplicata encontrada.</p>
+          <h2 className="text-sm font-semibold text-white">Nenhuma duplicata encontrada.</h2>
+          <p className="text-xs text-slate-400">Todos os arquivos verificados nesta pasta têm conteúdo único.</p>
         </div>
       )}
 

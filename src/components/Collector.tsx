@@ -60,12 +60,15 @@ export function Collector({ items, onClear, onUnmark, onDelete }: Props) {
               type="button"
               onClick={() => onUnmark(m.path)}
               title={`${m.path} — clique para tirar`}
+              aria-label={`Remover ${m.name} da seleção`}
               className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-900/60 px-3 py-1 text-xs text-slate-200 transition-colors hover:border-rose-500 hover:text-white"
             >
               <span className="h-2 w-2 rounded-full" style={{ background: kindColor(m.kind) }} />
               <span className="max-w-40 truncate">{m.name}</span>
               <span className="font-mono text-slate-400">{formatBytes(m.size)}</span>
-              <span className="text-slate-400 hover:text-rose-400">×</span>
+              <span className="text-slate-400 hover:text-rose-400" aria-hidden="true">
+                ×
+              </span>
             </button>
           ))}
           {items.length > 12 && <span className="text-xs text-slate-400">+{items.length - 12}</span>}
