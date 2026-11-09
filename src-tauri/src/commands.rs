@@ -12,7 +12,7 @@ use crate::history::{self, Growth};
 use crate::junk::{self, CleanReport, JunkItem};
 use crate::model::{BigFile, Node, Suggestion, ViewNode};
 use crate::scan::{self, Progress};
-use crate::{guard, remove, view};
+use crate::{guard, remove, view, worktrees};
 
 const MAX_DUP_GROUPS: usize = 500;
 
@@ -30,6 +30,8 @@ pub struct AppState {
     dup_groups: Mutex<Vec<Vec<dupes::Expected>>>,
     dup_cancel: Arc<AtomicBool>,
     empty_root: Mutex<Option<PathBuf>>,
+    /// Folder the worktree list was built from; every removal must stay inside it.
+    worktree_root: Mutex<Option<PathBuf>>,
     growth: Mutex<Option<Growth>>,
     junk: Mutex<Option<(u64, junk::Snapshot)>>,
     junk_ticket: AtomicU64,
@@ -460,6 +462,55 @@ pub async fn delete_broken_links(
             match outcome {
                 Ok(()) => report.deleted.push(raw),
                 Err(error) => report.failed.push(Failure { path: raw, error }),
+            }
+        }
+        report
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Linked Git worktrees under `path`. Unlike the duplicate and empty searches, the chosen folder
+/// is never a target itself (a worktree is always below it), so a home or volume root can be
+/// searched; `guard::check` still refuses anything outside this root at removal time.
+#[tauri::command]
+pub async fn find_worktrees(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<Vec<worktrees::Worktree>, String> {
+    let root = PathBuf::from(&path);
+    if !root.is_dir() {
+        return Err("pasta não encontrada".into());
+    }
+    *lock(&state.worktree_root) = Some(root.clone());
+    tauri::async_runtime::spawn_blocking(move || worktrees::find(&root))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Removes worktrees from the list last shown. Each one is re-checked by git first: a checkout
+/// that gained a local edit, a lock or a commit outside the remote stays where it is.
+#[tauri::command]
+pub async fn delete_worktrees(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+    permanent: bool,
+) -> Result<worktrees::Removed, String> {
+    let root = lock(&state.worktree_root).clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut report = worktrees::Removed::default();
+        for raw in paths {
+            let outcome = match root.as_deref() {
+                Some(r) => guard::check(Path::new(&raw), &[r.to_path_buf()])
+                    .and_then(|p| worktrees::remove(&p, permanent)),
+                None => Err("fora da área analisada".into()),
+            };
+            match outcome {
+                Ok(freed) => {
+                    report.freed += freed;
+                    report.removed.push(raw);
+                }
+                Err(error) => report.failed.push(worktrees::Failure { path: raw, error }),
             }
         }
         report

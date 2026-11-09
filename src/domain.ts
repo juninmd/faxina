@@ -10,6 +10,7 @@ export type Page =
   | "growth"
   | "dupes"
   | "empty"
+  | "worktrees"
   | "coverage"
   | "routine"
   | "updates";

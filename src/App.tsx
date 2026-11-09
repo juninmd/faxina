@@ -13,6 +13,7 @@ import ReportPanel from "./components/ReportPanel";
 import Review from "./components/Review";
 import Routine from "./components/Routine";
 import Updates from "./components/Updates";
+import { WorktreesPanel } from "./components/WorktreesPanel";
 import {
   BASE_RULES,
   createReport,
@@ -44,6 +45,7 @@ const NAV: { id: Page; label: string; icon: IconName; caption?: string }[] = [
   { id: "report", label: "Resultados", icon: "file" },
   { id: "dupes", label: "Duplicatas", icon: "copy" },
   { id: "empty", label: "Vazios e links", icon: "trash" },
+  { id: "worktrees", label: "Worktrees", icon: "git" },
   { id: "coverage", label: "Aplicativos", icon: "box", caption: "PERSONALIZAR" },
   { id: "routine", label: "Minha rotina", icon: "clock" },
   { id: "updates", label: "Atualizações", icon: "download" },
@@ -427,6 +429,7 @@ export default function App() {
 
             {page === "dupes" && <DupesPanel swallow={swallow} defaultRoot={scan.root || home} />}
             {page === "empty" && <EmptyPanel swallow={swallow} defaultRoot={scan.root || home} />}
+            {page === "worktrees" && <WorktreesPanel swallow={swallow} defaultRoot={scan.root || home} />}
 
             {page === "coverage" && <Coverage rules={rules} excluded={settings.excluded} onExclude={exclude} />}
 

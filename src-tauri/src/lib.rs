@@ -18,6 +18,7 @@ mod model;
 mod remove;
 mod scan;
 mod view;
+mod worktrees;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -41,6 +42,8 @@ pub fn run() {
             commands::find_duplicates,
             commands::find_empty,
             commands::delete_broken_links,
+            commands::find_worktrees,
+            commands::delete_worktrees,
             commands::cancel_duplicates,
             disks::disk_info,
             disks::list_disks,

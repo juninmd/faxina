@@ -12,7 +12,8 @@ export type IconName =
   | "search"
   | "close"
   | "file"
-  | "copy";
+  | "copy"
+  | "git";
 
 const paths: Record<IconName, string> = {
   spark: "m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z",
@@ -29,6 +30,7 @@ const paths: Record<IconName, string> = {
   close: "m6 6 12 12M6 18 18 6",
   file: "M5 3h9l5 5v13H5V3Zm9 0v6h5M8 13h8m-8 4h6",
   copy: "M8 4v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7.2l-4.5-4.5H10a2 2 0 0 0-2 2Zm-4 4v12a2 2 0 0 0 2 2h12",
+  git: "M6 3v12M21 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM18 9a9 9 0 0 1-9 9",
 };
 
 export default function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
