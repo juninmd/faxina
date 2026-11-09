@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.20.0](https://github.com/juninmd/faxina/compare/v1.19.0...v1.20.0) (2026-11-09)
+
+
+### Features
+
+* **worktrees:** clean checkouts already synced with the remote ([#88](https://github.com/juninmd/faxina/issues/88)) ([faefee8](https://github.com/juninmd/faxina/commit/faefee8d1c3769935553fe09e0448a8c26277f82))
+
 # [1.19.0](https://github.com/juninmd/faxina/compare/v1.18.0...v1.19.0) (2026-11-03)
 
 
