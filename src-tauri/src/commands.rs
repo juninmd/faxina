@@ -12,7 +12,7 @@ use crate::history::{self, Growth};
 use crate::junk::{self, CleanReport, JunkItem};
 use crate::model::{BigFile, Node, Suggestion, ViewNode};
 use crate::scan::{self, Progress};
-use crate::{guard, remove, view};
+use crate::{guard, remove, view, worktrees};
 
 const MAX_DUP_GROUPS: usize = 500;
 
@@ -30,6 +30,11 @@ pub struct AppState {
     dup_groups: Mutex<Vec<Vec<dupes::Expected>>>,
     dup_cancel: Arc<AtomicBool>,
     empty_root: Mutex<Option<PathBuf>>,
+    /// Root and worktrees last shown, published together so a removal can never pair a new root
+    /// with an old list.
+    worktree_list: Mutex<Option<(PathBuf, Vec<PathBuf>)>>,
+    /// Bumped by every search; an older overlapping search must not overwrite a newer result.
+    worktree_epoch: AtomicU64,
     growth: Mutex<Option<Growth>>,
     junk: Mutex<Option<(u64, junk::Snapshot)>>,
     junk_ticket: AtomicU64,
@@ -468,6 +473,89 @@ pub async fn delete_broken_links(
     .map_err(|e| e.to_string())
 }
 
+/// Linked Git worktrees under `path`. Unlike the duplicate and empty searches, the chosen folder
+/// is never a target itself (a worktree is always below it), so a home or volume root can be
+/// searched; `guard::check` still refuses anything outside this root at removal time.
+#[tauri::command]
+pub async fn find_worktrees(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<Vec<worktrees::Worktree>, String> {
+    let root = PathBuf::from(&path);
+    if !root.is_dir() {
+        return Err("pasta não encontrada".into());
+    }
+    let mine = state.worktree_epoch.fetch_add(1, Ordering::SeqCst) + 1;
+    *lock(&state.worktree_list) = None;
+    let store_root = root.clone();
+    let found = tauri::async_runtime::spawn_blocking(move || worktrees::find(&root))
+        .await
+        .map_err(|e| e.to_string())?;
+    // A search that lost the race keeps its result on screen but never authorises a removal.
+    if state.worktree_epoch.load(Ordering::SeqCst) == mine {
+        let paths = found.iter().map(|w| PathBuf::from(&w.path)).collect();
+        *lock(&state.worktree_list) = Some((store_root, paths));
+    }
+    Ok(found)
+}
+
+/// Root of the listing that contains `raw`, or why the request is refused.
+fn shown_root<'a>(
+    list: Option<&'a (PathBuf, Vec<PathBuf>)>,
+    raw: &str,
+) -> Result<&'a PathBuf, String> {
+    let (root, paths) = list.ok_or("fora da área analisada")?;
+    let path = Path::new(raw);
+    paths
+        .iter()
+        .any(|p| p == path || worktrees::same_path(p, path))
+        .then_some(root)
+        .ok_or_else(|| "a worktree não está na última lista mostrada".to_string())
+}
+
+/// Removes worktrees from the list last shown. Each path must be one of them, and each one is
+/// re-checked by git first: a checkout that gained a local edit, a lock or a commit outside the
+/// remote stays where it is. Removal goes to the OS trash; this screen never deletes for good.
+#[tauri::command]
+pub async fn delete_worktrees(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<worktrees::Removed, String> {
+    let list = lock(&state.worktree_list).clone();
+    let report = tauri::async_runtime::spawn_blocking(move || {
+        let mut report = worktrees::Removed::default();
+        for raw in paths {
+            let outcome = match shown_root(list.as_ref(), &raw) {
+                Ok(root) => guard::check(Path::new(&raw), std::slice::from_ref(root))
+                    .and_then(|p| worktrees::remove(&p)),
+                Err(error) => Err(error),
+            };
+            match outcome {
+                Ok(outcome) => {
+                    report.freed += outcome.freed;
+                    report.warnings.extend(outcome.warnings);
+                    report.removed.push(raw);
+                }
+                Err(error) => report.failed.push(worktrees::Failure { path: raw, error }),
+            }
+        }
+        report
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    // A removed checkout must not stay authorised for a later request, even if something is
+    // restored at the same path.
+    if let Some((_, listed)) = lock(&state.worktree_list).as_mut() {
+        listed.retain(|p| {
+            !report
+                .removed
+                .iter()
+                .any(|r| p == Path::new(r) || worktrees::same_path(p, Path::new(r)))
+        });
+    }
+    Ok(report)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -770,6 +858,20 @@ mod tests {
         // Snapshot is still available for real clean
         let snap_after = take_junk_snapshot(&state, 1);
         assert!(snap_after.is_ok());
+    }
+
+    #[test]
+    fn a_removal_is_bound_to_the_worktrees_last_shown() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shown = tmp.path().join("shown");
+        let hidden = tmp.path().join("hidden");
+        std::fs::create_dir_all(&shown).unwrap();
+        std::fs::create_dir_all(&hidden).unwrap();
+        let list = (tmp.path().to_path_buf(), vec![shown.clone()]);
+
+        assert!(shown_root(Some(&list), shown.to_str().unwrap()).is_ok());
+        assert!(shown_root(Some(&list), hidden.to_str().unwrap()).is_err());
+        assert!(shown_root(None, shown.to_str().unwrap()).is_err());
     }
 }
 

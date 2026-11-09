@@ -33,6 +33,7 @@ Para quem: quem tem o disco cheio e não sabe por quê. O Faxina mostra onde o e
 | 🔎 **Arquivos grandes** | Os maiores arquivos da área analisada, de qualquer idade — para quando o que pesa não é cache nem duplicata. |
 | 🧹 **Limpeza rápida** | Caches de Windows, navegadores (Chrome, Edge, Brave, Vivaldi, Firefox, Thunderbird), apps (VS Code, Discord, Slack, Spotify), apps da Microsoft Store e ferramentas de dev (npm, Yarn, pnpm, pip, uv, Poetry, Bun, Cargo, Gradle, Rustup, Maven, Ivy, Coursier, go, NuGet, Composer, Dart/Flutter, JetBrains, Cypress/Playwright/Electron, modelos baixados do Hugging Face/PyTorch), além de caches do Cursor, Teams e do cache de mídia da Adobe. **Nunca** toca em cookies, senhas ou histórico. |
 | 👯 **Duplicatas** | Comparação por conteúdo em 4 etapas (tamanho → prefixo → sufixo → BLAKE3 completo, com memória mapeada em arquivos grandes). Mantém a cópia mais antiga e nunca deixa você marcar todas as cópias de um arquivo. |
+| 🌿 **Worktrees do Git** | Encontra checkouts criados com `git worktree add` e libera só os que já têm todos os commits no remoto, sem alterações locais nem trava. O resto fica listado com o motivo (commits fora do remoto, arquivos não commitados, worktree travada). A conferência usa o `git` do PATH, só leitura, e a remoção vai para a Lixeira. |
 | 🕳️ **Buraco negro** | Ao excluir, os blocos se desintegram, espiralam para dentro de um buraco negro, que colapsa numa onda de choque com o total liberado. |
 | 🔄 **Auto-update** | O app verifica novas versões no GitHub Releases ao abrir; pacotes são assinados e você decide quando instalar. |
 
@@ -76,6 +77,7 @@ O Faxina é um app de janela (sem linha de comando). O fluxo básico:
 2. **Navegue.** Enter ou duplo clique entra na pasta; Backspace volta; `t` alterna entre Blocos e Anéis.
 3. **Marque e exclua.** Espaço ou botão direito marca o bloco; confirme no diálogo (Lixeira por padrão). O contador mostra o espaço liberado.
 4. **Caches e duplicatas.** “Revisar limpeza” e “Duplicatas”, na barra lateral, trabalham por ID de cache e por conteúdo, nunca por caminho vindo da interface.
+5. **Worktrees.** “Worktrees” procura checkouts do Git na pasta escolhida e só deixa remover os que já estão inteiros no remoto; um comentário local ou um commit não enviado mantém a worktree fora da seleção.
 
 Para experimentar sem tocar nos seus arquivos, gere uma pasta de demonstração (caches, builds e duplicatas falsos) e analise-a no app:
 
