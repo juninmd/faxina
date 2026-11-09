@@ -1,5 +1,5 @@
 import { confirm, open } from "@tauri-apps/plugin-dialog";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type Worktree } from "../lib/api";
 import { formatAge, formatBytes, formatCount } from "../lib/format";
 import type { Swallow } from "./types";
@@ -18,33 +18,47 @@ export function WorktreesPanel({ swallow, defaultRoot }: { swallow: Swallow; def
   const [shown, setShown] = useState(PAGE);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  // Results belong to the folder they were searched with: a new folder makes them stale, and a
+  // search still running when that happens must not write its results under the new folder.
+  const epoch = useRef(0);
 
   useEffect(() => setRoot((r) => r || defaultRoot), [defaultRoot]);
 
   const pickable = (items ?? []).filter((w) => w.synced);
   const chosen = (items ?? []).filter((w) => picked.has(w.path));
   const chosenSize = chosen.reduce((s, w) => s + w.size, 0);
+  const chosenIgnored = chosen.reduce((s, w) => s + w.ignored, 0);
   const found = (items ?? []).reduce((s, w) => s + w.size, 0);
 
   const reset = () => {
+    epoch.current += 1;
     setItems(null);
     setPicked(new Set());
+    setBusy(false);
     setError("");
+    setNotice("");
   };
 
   const search = async () => {
+    epoch.current += 1;
+    const mine = epoch.current;
     setError("");
+    setNotice("");
     setItems(null);
+    setPicked(new Set());
     setBusy(true);
     try {
       const list = await api.findWorktrees(root);
+      if (mine !== epoch.current) return;
       setItems(list);
       setPicked(new Set(list.filter((w) => w.synced).map((w) => w.path)));
       setShown(PAGE);
     } catch (e) {
-      setError(String(e));
+      if (mine === epoch.current) setError(String(e));
     } finally {
-      setBusy(false);
+      if (mine === epoch.current) setBusy(false);
     }
   };
 
@@ -58,8 +72,12 @@ export function WorktreesPanel({ swallow, defaultRoot }: { swallow: Swallow; def
   const toggleAll = () => setPicked(picked.size === pickable.length ? new Set() : new Set(pickable.map((w) => w.path)));
 
   const remove = async () => {
+    const ignored =
+      chosenIgnored > 0
+        ? ` Inclui ${formatCount(chosenIgnored)} itens ignorados (build, dependências, .env) que só existem nesse checkout.`
+        : "";
     const ok = await confirm(
-      `${formatCount(chosen.length)} worktrees (${formatBytes(chosenSize)}) vão para a Lixeira. Os commits e as branches continuam no repositório principal.`,
+      `${formatCount(chosen.length)} worktrees (${formatBytes(chosenSize)}) vão para a Lixeira. Os commits e as branches continuam no repositório principal.${ignored}`,
       { title: "Remover worktrees?", kind: "warning", okLabel: "Mandar para a Lixeira", cancelLabel: "Cancelar" },
     );
     if (!ok) return;
@@ -67,11 +85,9 @@ export function WorktreesPanel({ swallow, defaultRoot }: { swallow: Swallow; def
     swallow(
       chosen.map((w) => w.path),
       async () => {
-        const report = await api.deleteWorktrees(
-          chosen.map((w) => w.path),
-          false,
-        );
+        const report = await api.deleteWorktrees(chosen.map((w) => w.path));
         removed = report.removed;
+        setNotice(report.warnings.join(" "));
         return { freed: report.freed, failed: report.failed.length, reason: report.failed[0]?.error };
       },
       () => {
@@ -164,6 +180,15 @@ export function WorktreesPanel({ swallow, defaultRoot }: { swallow: Swallow; def
         </div>
       )}
 
+      {notice && (
+        <div
+          role="status"
+          className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs font-medium text-amber-200"
+        >
+          {notice}
+        </div>
+      )}
+
       {items?.length === 0 && (
         <div
           role="status"
@@ -221,6 +246,7 @@ export function WorktreesPanel({ swallow, defaultRoot }: { swallow: Swallow; def
                     {w.head && <span className="font-mono text-slate-400">{w.head}</span>}
                     <span>{formatBytes(w.size)}</span>
                     <span>{formatCount(w.files)} arquivos</span>
+                    {!!w.ignored && <span>{formatCount(w.ignored)} ignorados</span>}
                     <span>último commit {formatAge(w.modified)}</span>
                   </span>
                   {w.synced ? (

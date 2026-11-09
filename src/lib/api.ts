@@ -83,6 +83,8 @@ export interface Worktree {
   modified: number;
   size: number;
   files: number;
+  /** Ignored entries that leave with the checkout (build output, dependencies, `.env`). */
+  ignored: number;
   /** Everything is on the remote: safe to remove. */
   synced: boolean;
   /** Why the worktree is blocked from removal; null when synced. */
@@ -93,6 +95,8 @@ export interface WorktreeReport {
   freed: number;
   removed: string[];
   failed: { path: string; error: string }[];
+  /** Cleanup that did not stop the removal; the checkout is gone either way. */
+  warnings: string[];
 }
 
 export interface FolderGrowth {
@@ -136,8 +140,7 @@ export const api = {
   findEmpty: (path: string) => invoke<EmptyItem[]>("find_empty", { path }),
   deleteBrokenLinks: (paths: string[]) => invoke<DeleteReport>("delete_broken_links", { paths }),
   findWorktrees: (path: string) => invoke<Worktree[]>("find_worktrees", { path }),
-  deleteWorktrees: (paths: string[], permanent: boolean) =>
-    invoke<WorktreeReport>("delete_worktrees", { paths, permanent }),
+  deleteWorktrees: (paths: string[]) => invoke<WorktreeReport>("delete_worktrees", { paths }),
   cancelDuplicates: () => invoke<void>("cancel_duplicates"),
   diskInfo: (path: string) => invoke<DiskInfo | null>("disk_info", { path }),
   listDisks: () => invoke<DiskInfo[]>("list_disks"),
