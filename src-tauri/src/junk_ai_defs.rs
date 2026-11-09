@@ -110,6 +110,13 @@ fn platform() -> Vec<JunkDef> {
             &["npm-cache/_npx", "npm-cache/_logs"],
         ),
         caches(
+            "uv-local",
+            "uv (cache de pacotes Python, Windows)",
+            DEV,
+            Base::Local,
+            &["uv/cache"],
+        ),
+        caches(
             "claude-cli",
             "Claude Code (cache da CLI)",
             DEV,
@@ -137,6 +144,13 @@ fn platform() -> Vec<JunkDef> {
 #[cfg(target_os = "macos")]
 fn platform() -> Vec<JunkDef> {
     let mut v = home_cache();
+    v.push(caches(
+        "uv-macos",
+        "uv (cache de pacotes Python, macOS)",
+        DEV,
+        Base::Cache,
+        &["uv"],
+    ));
     v.push(caches(
         "jupyter-runtime",
         "Jupyter (arquivos de kernel em execução)",
