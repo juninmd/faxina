@@ -478,6 +478,7 @@ pub async fn delete_broken_links(
 /// searched; `guard::check` still refuses anything outside this root at removal time.
 #[tauri::command]
 pub async fn find_worktrees(
+    app: AppHandle,
     state: State<'_, AppState>,
     path: String,
 ) -> Result<Vec<worktrees::Worktree>, String> {
@@ -488,9 +489,20 @@ pub async fn find_worktrees(
     let mine = state.worktree_epoch.fetch_add(1, Ordering::SeqCst) + 1;
     *lock(&state.worktree_list) = None;
     let store_root = root.clone();
-    let found = tauri::async_runtime::spawn_blocking(move || worktrees::find(&root))
-        .await
-        .map_err(|e| e.to_string())?;
+    let found = tauri::async_runtime::spawn_blocking(move || {
+        // Ticks are throttled to ~10/s so the webview is not flooded; the last one always passes.
+        let last = Mutex::new(std::time::Instant::now());
+        worktrees::find(&root, &|tick| {
+            let mut at = lock(&last);
+            let edge = tick.total > 0 && tick.done == tick.total;
+            if edge || at.elapsed() >= std::time::Duration::from_millis(100) {
+                *at = std::time::Instant::now();
+                let _ = app.emit("worktrees-progress", tick);
+            }
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?;
     // A search that lost the race keeps its result on screen but never authorises a removal.
     if state.worktree_epoch.load(Ordering::SeqCst) == mine {
         let paths = found.iter().map(|w| PathBuf::from(&w.path)).collect();
