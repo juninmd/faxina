@@ -187,7 +187,7 @@ fn walk(
         return Vec::new();
     }
     let n = visited.fetch_add(1, Ordering::Relaxed) + 1;
-    if n % 200 == 0 {
+    if n.is_multiple_of(200) {
         progress(Tick {
             phase: "walk",
             done: n,

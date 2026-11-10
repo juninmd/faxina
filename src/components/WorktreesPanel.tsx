@@ -1,6 +1,6 @@
+import { listen } from "@tauri-apps/api/event";
 import { confirm, open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { api, type Worktree, type WorktreeTick } from "../lib/api";
 import { formatAge, formatBytes, formatCount } from "../lib/format";
 import type { Swallow } from "./types";
