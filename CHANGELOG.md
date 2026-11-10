@@ -1,5 +1,17 @@
 # Changelog
 
+# [1.21.0](https://github.com/juninmd/faxina/compare/v1.20.0...v1.21.0) (2026-11-10)
+
+
+### Bug Fixes
+
+* **worktrees:** hide git console windows, cap concurrency, show search progress ([#90](https://github.com/juninmd/faxina/issues/90)) ([8926699](https://github.com/juninmd/faxina/commit/89266996391bab010d0b353488bcc4fa1746f910))
+
+
+### Features
+
+* **junk:** add uv cache locations for Windows and macOS ([#89](https://github.com/juninmd/faxina/issues/89)) ([539d14e](https://github.com/juninmd/faxina/commit/539d14e097e7faee865884417d9b41dc214555ae))
+
 # [1.20.0](https://github.com/juninmd/faxina/compare/v1.19.0...v1.20.0) (2026-11-09)
 
 
