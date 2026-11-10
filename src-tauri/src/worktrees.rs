@@ -17,6 +17,7 @@ use std::io::Read;
 use std::path::{Component, Prefix};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -31,6 +32,11 @@ const MAX_ITEMS: usize = 500;
 const GIT_FILE_LIMIT: u64 = 4096;
 /// A hostile checkout (pipe-shaped config, pathologically slow index) must not hang a search.
 const GIT_TIMEOUT: Duration = Duration::from_secs(30);
+/// Each inspection spawns several git processes; a handful at a time keeps the machine responsive.
+const INSPECT_THREADS: usize = 4;
+/// Windows flag: git is a console program and would otherwise flash a terminal per call.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Generated trees never hold a checkout of their own; walking them only costs time.
 const SKIP_DIRS: &[&str] = &[
@@ -87,6 +93,17 @@ pub struct Worktree {
     pub reason: Option<String>,
 }
 
+/// Search progress: `walk` counts folders visited, `check` counts worktrees verified by git.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Tick {
+    pub phase: &'static str,
+    pub done: u64,
+    pub total: u64,
+    pub found: u64,
+    pub current: String,
+}
+
 #[derive(Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Removed {
@@ -113,15 +130,43 @@ pub struct Outcome {
 
 /// Linked worktrees under `root`, safe-to-remove first, then biggest. `root` itself is never
 /// listed: the screen only offers folders below the one the user chose to search.
-pub fn find(root: &Path) -> Vec<Worktree> {
+pub fn find(root: &Path, progress: &(dyn Fn(Tick) + Sync)) -> Vec<Worktree> {
     let protection = Protection::new();
-    let mut paths = walk(root, &protection, 0);
+    let visited = AtomicU64::new(0);
+    let mut paths = walk(root, &protection, 0, &visited, progress);
+    progress(Tick {
+        phase: "walk",
+        done: visited.load(Ordering::Relaxed),
+        total: 0,
+        found: paths.len() as u64,
+        current: String::new(),
+    });
     let root_canon = fs::canonicalize(root).ok();
     paths.retain(|p| fs::canonicalize(p).ok() != root_canon);
     paths.sort_unstable();
     paths.dedup();
     paths.truncate(MAX_ITEMS);
-    let mut trees: Vec<Worktree> = paths.par_iter().map(|p| inspect(p)).collect();
+    let total = paths.len() as u64;
+    let done = AtomicU64::new(0);
+    let check = |p: &PathBuf| {
+        let item = inspect(p);
+        progress(Tick {
+            phase: "check",
+            done: done.fetch_add(1, Ordering::Relaxed) + 1,
+            total,
+            found: total,
+            current: item.path.clone(),
+        });
+        item
+    };
+    // A bounded pool: the global one would start a git process per core, times several calls each.
+    let mut trees: Vec<Worktree> = match rayon::ThreadPoolBuilder::new()
+        .num_threads(INSPECT_THREADS)
+        .build()
+    {
+        Ok(pool) => pool.install(|| paths.par_iter().map(check).collect()),
+        Err(_) => paths.iter().map(check).collect(),
+    };
     trees.sort_unstable_by(|a, b| {
         b.synced
             .cmp(&a.synced)
@@ -131,9 +176,25 @@ pub fn find(root: &Path) -> Vec<Worktree> {
     trees
 }
 
-fn walk(dir: &Path, protection: &Protection, depth: usize) -> Vec<PathBuf> {
+fn walk(
+    dir: &Path,
+    protection: &Protection,
+    depth: usize,
+    visited: &AtomicU64,
+    progress: &(dyn Fn(Tick) + Sync),
+) -> Vec<PathBuf> {
     if depth > MAX_DEPTH {
         return Vec::new();
+    }
+    let n = visited.fetch_add(1, Ordering::Relaxed) + 1;
+    if n % 200 == 0 {
+        progress(Tick {
+            phase: "walk",
+            done: n,
+            total: 0,
+            found: 0,
+            current: dir.to_string_lossy().into_owned(),
+        });
     }
     let Ok(entries) = fs::read_dir(dir) else {
         return Vec::new();
@@ -162,7 +223,7 @@ fn walk(dir: &Path, protection: &Protection, depth: usize) -> Vec<PathBuf> {
         .collect();
     subdirs
         .par_iter()
-        .flat_map_iter(|sub| walk(sub, protection, depth + 1))
+        .flat_map_iter(|sub| walk(sub, protection, depth + 1, visited, progress))
         .collect()
 }
 
@@ -521,6 +582,11 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
             command.env(key, value);
         }
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
     let mut child = command
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_TERMINAL_PROMPT", "0")
@@ -713,7 +779,7 @@ mod tests {
         let lonely = volume.path().join("lonely");
         worktree(&local, &lonely, "feature/lonely");
 
-        let found = find(volume.path());
+        let found = find(volume.path(), &|_| {});
         let ok = by_name(&found, "synced");
         assert!(ok.synced, "{}", ok.reason.as_deref().unwrap_or(""));
         assert_eq!(ok.branch, "feature/synced");
@@ -754,7 +820,7 @@ mod tests {
         // The main checkout is a `.git` directory, not a linked worktree.
         assert!(!found.iter().any(|w| w.path.ends_with("repo")));
         // Searching from inside a worktree never offers that same folder for deletion.
-        assert!(find(&synced).is_empty());
+        assert!(find(&synced, &|_| {}).is_empty());
     }
 
     #[test]
@@ -804,7 +870,7 @@ mod tests {
         worktree(&repo, &checkout, "feature/locked");
         git_ok(&repo, &["worktree", "lock", checkout.to_str().unwrap()]);
 
-        let found = find(volume.path());
+        let found = find(volume.path(), &|_| {});
         let item = by_name(&found, "locked");
         assert!(!item.synced);
         assert!(item.reason.as_deref().unwrap().contains("travada"));
@@ -826,7 +892,7 @@ mod tests {
         // destroy commits that exist nowhere else.
         fs::create_dir_all(admin.join("modules/lib")).unwrap();
 
-        let found = find(volume.path());
+        let found = find(volume.path(), &|_| {});
         let item = by_name(&found, "with-submodule");
         assert!(!item.synced);
         assert!(item.reason.as_deref().unwrap().contains("submódulos"));
@@ -874,7 +940,7 @@ mod tests {
         );
         fs::remove_file(&marker).unwrap();
 
-        let found = find(volume.path());
+        let found = find(volume.path(), &|_| {});
         let item = by_name(&found, "filtered");
         assert!(!item.synced);
         assert!(item.reason.as_deref().unwrap().contains("filtros"));
@@ -913,7 +979,7 @@ mod tests {
         .unwrap();
 
         assert!(linked_worktree_admin(&checkout).is_none());
-        assert!(find(volume.path()).is_empty());
+        assert!(find(volume.path(), &|_| {}).is_empty());
         assert!(checkout.exists());
     }
 
@@ -949,7 +1015,7 @@ mod tests {
             return;
         }
 
-        let found = find(volume.path());
+        let found = find(volume.path(), &|_| {});
         let item = by_name(&found, "relative");
         assert_eq!(item.branch, "feature/relative");
     }
@@ -992,7 +1058,7 @@ mod tests {
         )
         .unwrap();
 
-        let found = find(volume.path());
+        let found = find(volume.path(), &|_| {});
         assert!(found.is_empty(), "{found:?}");
     }
 }

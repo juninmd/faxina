@@ -1,6 +1,7 @@
 import { confirm, open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
-import { api, type Worktree } from "../lib/api";
+import { listen } from "@tauri-apps/api/event";
+import { api, type Worktree, type WorktreeTick } from "../lib/api";
 import { formatAge, formatBytes, formatCount } from "../lib/format";
 import type { Swallow } from "./types";
 
@@ -19,12 +20,20 @@ export function WorktreesPanel({ swallow, defaultRoot }: { swallow: Swallow; def
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [tick, setTick] = useState<WorktreeTick | null>(null);
 
   // Results belong to the folder they were searched with: a new folder makes them stale, and a
   // search still running when that happens must not write its results under the new folder.
   const epoch = useRef(0);
 
   useEffect(() => setRoot((r) => r || defaultRoot), [defaultRoot]);
+
+  useEffect(() => {
+    const un = listen<WorktreeTick>("worktrees-progress", (e) => setTick(e.payload));
+    return () => {
+      un.then((f) => f());
+    };
+  }, []);
 
   const pickable = (items ?? []).filter((w) => w.synced);
   const chosen = (items ?? []).filter((w) => picked.has(w.path));
@@ -48,6 +57,7 @@ export function WorktreesPanel({ swallow, defaultRoot }: { swallow: Swallow; def
     setNotice("");
     setItems(null);
     setPicked(new Set());
+    setTick(null);
     setBusy(true);
     try {
       const list = await api.findWorktrees(root);
@@ -58,7 +68,10 @@ export function WorktreesPanel({ swallow, defaultRoot }: { swallow: Swallow; def
     } catch (e) {
       if (mine === epoch.current) setError(String(e));
     } finally {
-      if (mine === epoch.current) setBusy(false);
+      if (mine === epoch.current) {
+        setBusy(false);
+        setTick(null);
+      }
     }
   };
 
@@ -171,6 +184,8 @@ export function WorktreesPanel({ swallow, defaultRoot }: { swallow: Swallow; def
         </span>
       </p>
 
+      {busy && <SearchProgress tick={tick} />}
+
       {error && (
         <div
           role="alert"
@@ -273,6 +288,45 @@ export function WorktreesPanel({ swallow, defaultRoot }: { swallow: Swallow; def
         >
           Mostrar mais {Math.min(PAGE, items.length - shown)} (faltam {formatCount(items.length - shown)})
         </button>
+      )}
+    </div>
+  );
+}
+
+function SearchProgress({ tick }: { tick: WorktreeTick | null }) {
+  const checking = tick?.phase === "check" && tick.total > 0;
+  const pct = checking ? Math.min(100, Math.round((tick.done / tick.total) * 100)) : 0;
+  const label = !tick
+    ? "Iniciando a busca…"
+    : checking
+      ? `Verificando com o git: ${formatCount(tick.done)} de ${formatCount(tick.total)} worktrees`
+      : `Procurando pastas… ${formatCount(tick.done)} visitadas${tick.found ? ` · ${formatCount(tick.found)} worktrees` : ""}`;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex flex-col gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3"
+    >
+      <div className="flex items-center justify-between gap-3 text-xs font-semibold text-amber-200">
+        <span>{label}</span>
+        {checking && <span className="font-mono">{pct}%</span>}
+      </div>
+      <div
+        className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={checking ? pct : undefined}
+      >
+        <div
+          className={`h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-300 transition-[width] duration-200 ${checking ? "" : "w-1/3 animate-pulse"}`}
+          style={checking ? { width: `${pct}%` } : undefined}
+        />
+      </div>
+      {tick?.current && (
+        <code className="truncate font-mono text-[10px] text-slate-400" title={tick.current}>
+          {tick.current}
+        </code>
       )}
     </div>
   );

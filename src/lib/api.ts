@@ -146,3 +146,11 @@ export const api = {
   listDisks: () => invoke<DiskInfo[]>("list_disks"),
   homeDir: () => invoke<string>("home_dir"),
 };
+
+export interface WorktreeTick {
+  phase: "walk" | "check";
+  done: number;
+  total: number;
+  found: number;
+  current: string;
+}
