@@ -77,6 +77,8 @@ const SKIP_DIRS: &[&str] = &[
 #[serde(rename_all = "camelCase")]
 pub struct Worktree {
     pub path: String,
+    /// `"worktree"` (linked checkout) or `"repository"` (a main checkout with its own `.git`).
+    pub kind: &'static str,
     pub branch: String,
     pub head: String,
     /// Last commit, seconds since the epoch.
@@ -128,12 +130,18 @@ pub struct Outcome {
     pub warnings: Vec<String>,
 }
 
-/// Linked worktrees under `root`, safe-to-remove first, then biggest. `root` itself is never
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Kind {
+    Worktree,
+    Repository,
+}
+
+/// Linked worktrees and main repositories under `root`, safe-to-remove first, then biggest. `root` itself is never
 /// listed: the screen only offers folders below the one the user chose to search.
 pub fn find(root: &Path, progress: &(dyn Fn(Tick) + Sync)) -> Vec<Worktree> {
     let protection = Protection::new();
     let visited = AtomicU64::new(0);
-    let mut paths = walk(root, &protection, 0, &visited, progress);
+    let mut paths = walk(root, &protection, 0, false, &visited, progress);
     progress(Tick {
         phase: "walk",
         done: visited.load(Ordering::Relaxed),
@@ -142,13 +150,13 @@ pub fn find(root: &Path, progress: &(dyn Fn(Tick) + Sync)) -> Vec<Worktree> {
         current: String::new(),
     });
     let root_canon = fs::canonicalize(root).ok();
-    paths.retain(|p| fs::canonicalize(p).ok() != root_canon);
+    paths.retain(|(p, _)| fs::canonicalize(p).ok() != root_canon);
     paths.sort_unstable();
     paths.dedup();
     paths.truncate(MAX_ITEMS);
     let total = paths.len() as u64;
     let done = AtomicU64::new(0);
-    let check = |p: &PathBuf| {
+    let check = |(p, _): &(PathBuf, Kind)| {
         let item = inspect(p);
         progress(Tick {
             phase: "check",
@@ -180,9 +188,10 @@ fn walk(
     dir: &Path,
     protection: &Protection,
     depth: usize,
+    in_repo: bool,
     visited: &AtomicU64,
     progress: &(dyn Fn(Tick) + Sync),
-) -> Vec<PathBuf> {
+) -> Vec<(PathBuf, Kind)> {
     if depth > MAX_DEPTH {
         return Vec::new();
     }
@@ -200,11 +209,18 @@ fn walk(
         return Vec::new();
     };
     let entries: Vec<fs::DirEntry> = entries.flatten().collect();
+    let has_git = entries.iter().any(|e| e.file_name() == OsStr::new(".git"));
     // One checkout is one unit: nested repositories inside it are not separate worktrees here.
-    if entries.iter().any(|e| e.file_name() == OsStr::new(".git"))
-        && linked_worktree_admin(dir).is_some()
-    {
-        return vec![dir.to_path_buf()];
+    if has_git && linked_worktree_admin(dir).is_some() {
+        return vec![(dir.to_path_buf(), Kind::Worktree)];
+    }
+    let mut found = Vec::new();
+    let mut inside = in_repo;
+    // A main checkout is listed once; below it only linked worktrees are still collected (a
+    // repository nested in another one is that repository's own business).
+    if has_git && !in_repo && main_git_dir(dir).is_some() {
+        found.push((dir.to_path_buf(), Kind::Repository));
+        inside = true;
     }
     let subdirs: Vec<PathBuf> = entries
         .iter()
@@ -221,10 +237,20 @@ fn walk(
             Some(entry.path())
         })
         .collect();
-    subdirs
-        .par_iter()
-        .flat_map_iter(|sub| walk(sub, protection, depth + 1, visited, progress))
-        .collect()
+    found.extend(
+        subdirs
+            .par_iter()
+            .flat_map_iter(|sub| walk(sub, protection, depth + 1, inside, visited, progress))
+            .collect::<Vec<_>>(),
+    );
+    found
+}
+
+/// `<dir>/.git` when it is a real directory (a main checkout), never a link or pointer file.
+fn main_git_dir(dir: &Path) -> Option<PathBuf> {
+    let git_dir = dir.join(".git");
+    let meta = fs::symlink_metadata(&git_dir).ok()?;
+    (meta.is_dir() && !is_link(&meta)).then_some(git_dir)
 }
 
 /// Admin directory of a linked worktree (`<repo>/.git/worktrees/<id>`, or the same layout under a
@@ -334,10 +360,12 @@ struct State {
 
 fn inspect(path: &Path) -> Worktree {
     let admin = linked_worktree_admin(path);
-    let state = match admin.as_deref() {
-        Some(admin) => read_state(path, admin),
-        None => State {
-            blocked: Some("não é mais uma worktree vinculada".into()),
+    let main = admin.is_none() && main_git_dir(path).is_some();
+    let state = match (admin.as_deref(), main) {
+        (Some(admin), _) => read_state(path, Some(admin)),
+        (None, true) => read_state(path, None),
+        (None, false) => State {
+            blocked: Some("não é mais um checkout Git".into()),
             ..State::default()
         },
     };
@@ -352,6 +380,7 @@ fn inspect(path: &Path) -> Worktree {
     let (size, files) = crate::junk::dir_size(path);
     Worktree {
         path: path.to_string_lossy().into_owned(),
+        kind: if main { "repository" } else { "worktree" },
         branch: state.branch,
         head: state.head,
         modified: state.modified,
@@ -367,7 +396,9 @@ fn inspect(path: &Path) -> Worktree {
 /// the same destination, so a restore from the Recycle Bin keeps the pair usable. This screen has
 /// no permanent-delete option: both halves always go to the trash.
 pub fn remove(path: &Path) -> Result<Outcome, String> {
-    let admin = linked_worktree_admin(path).ok_or("não é mais uma worktree vinculada")?;
+    let Some(admin) = linked_worktree_admin(path) else {
+        return remove_repository(path);
+    };
     if admin.join("locked").exists() {
         return Err("worktree travada: rode `git worktree unlock` antes".into());
     }
@@ -377,7 +408,7 @@ pub fn remove(path: &Path) -> Result<Outcome, String> {
         return Err("os metadados desta worktree não estão no repositório esperado".into());
     }
     // Re-checked here, not only at search time: a commit or a local edit may have appeared since.
-    if let Some(reason) = read_state(path, &admin).blocked {
+    if let Some(reason) = read_state(path, Some(&admin)).blocked {
         return Err(reason);
     }
     let (size, _) = crate::junk::dir_size(path);
@@ -416,10 +447,29 @@ pub fn remove(path: &Path) -> Result<Outcome, String> {
     })
 }
 
+/// Removes a main checkout (its `.git` included) to the trash once git confirms, again, that
+/// every branch, tag and stash is on a remote-tracking ref and nothing local would be lost.
+fn remove_repository(path: &Path) -> Result<Outcome, String> {
+    main_git_dir(path).ok_or("não é mais um checkout Git")?;
+    if let Some(reason) = read_state(path, None).blocked {
+        return Err(reason);
+    }
+    let (size, _) = crate::junk::dir_size(path);
+    let targets = [path.to_path_buf()];
+    crate::remove::remove_all(&targets, false)
+        .pop()
+        .ok_or("nada para remover")?
+        .result?;
+    Ok(Outcome {
+        freed: size,
+        warnings: Vec::new(),
+    })
+}
+
 /// Everything git has to confirm before a checkout may leave the disk. The reasons are shown in
 /// the UI, so they say what to do next; branch and head are filled even when a check blocks the
 /// removal, so a kept worktree is still identified on screen.
-fn read_state(path: &Path, admin: &Path) -> State {
+fn read_state(path: &Path, admin: Option<&Path>) -> State {
     let top = match git(path, &["rev-parse", "--show-toplevel"]) {
         Ok(top) => top,
         Err(reason) => {
@@ -438,9 +488,13 @@ fn read_state(path: &Path, admin: &Path) -> State {
         state.blocked = Some("não foi possível localizar o repositório desta worktree".into());
         return state;
     };
-    if !admin_under_common(admin, &common) {
+    let consistent = match admin {
+        Some(admin) => admin_under_common(admin, &common),
+        None => same_path(&common, &path.join(".git")),
+    };
+    if !consistent {
         state.blocked =
-            Some("os metadados desta worktree não estão no repositório esperado".into());
+            Some("os metadados deste checkout não estão no repositório esperado".into());
         return state;
     }
     // A filter declared by the repository would run as a command during `git status`; refuse
@@ -501,10 +555,23 @@ fn read_state(path: &Path, admin: &Path) -> State {
     }
     // For a linked worktree, submodule git dirs live below its admin dir; moving that dir would
     // destroy commits that only exist there (git itself refuses such checkouts too).
-    if admin.join("modules").is_dir() {
+    let modules = admin.unwrap_or(&common).join("modules");
+    if modules.is_dir() {
         state.blocked =
             Some("tem submódulos inicializados: confira com `git status` no checkout".into());
         return state;
+    }
+    if admin.is_none() {
+        let linked = fs::read_dir(common.join("worktrees")).is_ok_and(|mut d| d.next().is_some());
+        if linked {
+            state.blocked =
+                Some("tem worktrees vinculadas: remova-as primeiro (`git worktree list`)".into());
+            return state;
+        }
+        if git(path, &["rev-parse", "--verify", "--quiet", "refs/stash"]).is_ok() {
+            state.blocked = Some("tem alterações guardadas no stash".into());
+            return state;
+        }
     }
     match git(
         path,
@@ -524,7 +591,10 @@ fn read_state(path: &Path, admin: &Path) -> State {
     if state.blocked.is_some() {
         return state;
     }
-    match git(path, &["rev-list", "--count", "HEAD", "--not", "--remotes"]) {
+    // A main checkout owns every branch and tag, so all of them must be on the remote; a linked
+    // worktree only answers for its own HEAD (the branches stay in the main repository).
+    let scope = if admin.is_none() { "--all" } else { "HEAD" };
+    match git(path, &["rev-list", "--count", scope, "--not", "--remotes"]) {
         Ok(ahead) => match ahead.trim().parse::<u64>() {
             Ok(0) => {}
             Ok(1) => state.blocked = Some("1 commit local fora do remoto".into()),
@@ -817,8 +887,15 @@ mod tests {
             .unwrap()
             .contains("alterações locais"));
 
-        // The main checkout is a `.git` directory, not a linked worktree.
-        assert!(!found.iter().any(|w| w.path.ends_with("repo")));
+        // The main checkout is listed as a repository, and it is held back by its linked worktrees.
+        let main = by_name(&found, "repo");
+        assert_eq!(main.kind, "repository");
+        assert!(!main.synced);
+        assert!(main
+            .reason
+            .as_deref()
+            .unwrap()
+            .contains("worktrees vinculadas"));
         // Searching from inside a worktree never offers that same folder for deletion.
         assert!(find(&synced, &|_| {}).is_empty());
     }
@@ -1059,6 +1136,46 @@ mod tests {
         .unwrap();
 
         let found = find(volume.path(), &|_| {});
-        assert!(found.is_empty(), "{found:?}");
+        assert!(found.iter().all(|w| w.kind != "worktree"), "{found:?}");
+        assert!(found.iter().all(|w| !w.synced), "{found:?}");
+    }
+
+    #[test]
+    fn a_repository_is_removable_only_when_everything_is_on_the_remote() {
+        if !available() {
+            return;
+        }
+        let volume = tempfile::tempdir().unwrap();
+        let work = volume.path().join("work");
+        fs::create_dir_all(&work).unwrap();
+        let repo = repo_with_remote(&work);
+        // `repo_with_remote` also made the bare origin next to it; keep only repos in the search.
+        let found = find(&work, &|_| {});
+        let listed = by_name(&found, "repo");
+        assert_eq!(listed.kind, "repository");
+        assert!(listed.synced, "{listed:?}");
+
+        // A local branch that was never pushed is work that would be lost.
+        git_ok(&repo, &["checkout", "-b", "wip"]);
+        fs::write(repo.join("wip.txt"), "x\n").unwrap();
+        git_ok(&repo, &["add", "."]);
+        git_ok(&repo, &["commit", "-m", "wip"]);
+        git_ok(&repo, &["checkout", "main"]);
+        let found = find(&work, &|_| {});
+        let listed = by_name(&found, "repo");
+        assert!(!listed.synced);
+        assert!(listed.reason.as_deref().unwrap().contains("fora do remoto"));
+        assert!(remove(&repo).is_err());
+        assert!(repo.exists());
+
+        // Pushed again, it is removable; untracked files block it.
+        git_ok(&repo, &["push", "origin", "wip"]);
+        fs::write(repo.join("scratch.txt"), "x\n").unwrap();
+        assert!(remove(&repo).unwrap_err().contains("alterações locais"));
+        fs::remove_file(repo.join("scratch.txt")).unwrap();
+
+        let outcome = remove(&repo).unwrap();
+        assert!(outcome.freed > 0);
+        assert!(!repo.exists(), "the repository must leave the disk");
     }
 }

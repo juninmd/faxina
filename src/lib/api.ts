@@ -77,6 +77,8 @@ export interface EmptyItem {
 
 export interface Worktree {
   path: string;
+  /** Linked worktree, or a main repository checkout with its own `.git`. */
+  kind: "worktree" | "repository";
   branch: string;
   head: string;
   /** Last commit, seconds since the epoch. */
