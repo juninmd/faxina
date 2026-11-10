@@ -43,7 +43,7 @@ pub fn definitions() -> Vec<JunkDef> {
         ),
         caches(
             "ai-agents",
-            "Agentes de IA (Claude Code, Codex, Ollama: snapshots e logs)",
+            "Agentes de IA (Claude Code, Codex, Gemini, opencode, Ollama: snapshots e logs)",
             DEV,
             Base::Home,
             &[
@@ -51,6 +51,8 @@ pub fn definitions() -> Vec<JunkDef> {
                 ".claude/statsig",
                 ".codex/log",
                 ".ollama/logs",
+                ".gemini/tmp",
+                ".local/share/opencode/log",
             ],
         ),
         caches(
@@ -94,6 +96,13 @@ fn home_cache() -> Vec<JunkDef> {
             DEV,
             Base::Home,
             &[".cache/uv"],
+        ),
+        caches(
+            "ai-tools-cache",
+            "opencode e Unsloth (cache)",
+            DEV,
+            Base::Home,
+            &[".cache/opencode", ".cache/unsloth"],
         ),
     ]
 }

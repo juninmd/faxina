@@ -45,7 +45,7 @@ const NAV: { id: Page; label: string; icon: IconName; caption?: string }[] = [
   { id: "report", label: "Resultados", icon: "file" },
   { id: "dupes", label: "Duplicatas", icon: "copy" },
   { id: "empty", label: "Vazios e links", icon: "trash" },
-  { id: "worktrees", label: "Worktrees", icon: "git" },
+  { id: "worktrees", label: "Repositórios", icon: "git" },
   { id: "coverage", label: "Aplicativos", icon: "box", caption: "PERSONALIZAR" },
   { id: "routine", label: "Minha rotina", icon: "clock" },
   { id: "updates", label: "Atualizações", icon: "download" },

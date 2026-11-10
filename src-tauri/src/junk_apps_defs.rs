@@ -47,6 +47,7 @@ pub fn definitions() -> Vec<JunkDef> {
         electron!("windsurf", "Windsurf (cache e logs)", "Windsurf"),
         electron!("trae", "Trae (cache e logs)", "Trae"),
         electron!("kiro", "Kiro (cache e logs)", "Kiro"),
+        electron!("antigravity", "Antigravity (cache e logs)", "Antigravity"),
         electron!("claude-desktop", "Claude Desktop (cache e logs)", "Claude"),
         electron!(
             "lmstudio-app",
