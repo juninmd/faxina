@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.22.0](https://github.com/juninmd/faxina/compare/v1.21.0...v1.22.0) (2026-11-10)
+
+
+### Features
+
+* **repos:** clean repositories synced with the remote, add AI tool caches ([#91](https://github.com/juninmd/faxina/issues/91)) ([bf7068b](https://github.com/juninmd/faxina/commit/bf7068b4e2eeabd94318f95b6f9c58ea62108346))
+
 # [1.21.0](https://github.com/juninmd/faxina/compare/v1.20.0...v1.21.0) (2026-11-10)
 
 
