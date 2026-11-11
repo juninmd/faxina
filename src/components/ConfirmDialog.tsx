@@ -8,6 +8,7 @@ export default function ConfirmDialog({
   amount,
   marks = { count: 0, size: 0 },
   caches = 0,
+  trashOnly = 0,
   onPreview,
   onClose,
   onConfirm,
@@ -17,6 +18,8 @@ export default function ConfirmDialog({
   marks?: { count: number; size: number };
   /** Number of cache categories in the batch. */
   caches?: number;
+  /** Dangling links and repositories: their commands always use the trash. */
+  trashOnly?: number;
   /** Dry run: asks the backend what the cache cleanup would do, without removing anything. */
   onPreview: () => Promise<CleanReport>;
   onClose: () => void;
@@ -105,7 +108,7 @@ export default function ConfirmDialog({
       <p className="mt-1 mb-5 text-sm text-slate-400">
         <strong className="font-mono text-slate-200">{gb(amount)}</strong> no total
         {caches > 0 && ` · ${caches} ${caches === 1 ? "categoria de cache" : "categorias de cache"}`}
-        {marks.count > 0 && ` · ${marks.count} ${marks.count === 1 ? "item do mapa" : "itens do mapa"}`}.
+        {marks.count > 0 && ` · ${marks.count} ${marks.count === 1 ? "item marcado" : "itens marcados"}`}.
       </p>
 
       <fieldset className="flex flex-col gap-3 border-0 p-0 m-0" aria-label="Destino da limpeza">
@@ -159,6 +162,13 @@ export default function ConfirmDialog({
           </div>
         </label>
       </fieldset>
+
+      {destination === "permanent" && trashOnly > 0 && (
+        <p className="mt-3 text-xs text-slate-400">
+          {formatCount(trashOnly)} {trashOnly === 1 ? "link ou repositório vai" : "links ou repositórios vão"} para a
+          Lixeira mesmo assim: esses itens nunca são apagados direto.
+        </p>
+      )}
 
       {destination === "permanent" && (
         <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs leading-relaxed text-rose-200">

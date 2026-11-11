@@ -533,3 +533,15 @@ h2 {
 .palette input:focus-visible {
   outline: none;
 }
+
+.rail-dot {
+  position: absolute;
+  top: 6px;
+  right: 16px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid #0a0b12;
+  border-radius: 50%;
+  background: #5fd3b5;
+  box-shadow: 0 0 10px #5fd3b5;
+}

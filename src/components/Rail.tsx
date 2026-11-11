@@ -4,6 +4,7 @@ import Icon from "./Icon";
 export default function Rail({
   space,
   badges,
+  dots = {},
   onSpace,
   onPalette,
   motionLabel,
@@ -11,6 +12,8 @@ export default function Rail({
 }: {
   space: Space;
   badges: Partial<Record<Space, number>>;
+  /** A small dot for news without a count, such as an available update. */
+  dots?: Partial<Record<Space, boolean>>;
   onSpace: (s: Space) => void;
   onPalette: () => void;
   motionLabel: string;
@@ -31,7 +34,11 @@ export default function Rail({
         >
           <Icon name={s.icon} size={22} />
           <span>{s.label}</span>
-          {!!badges[s.id] && <span className="rail-badge">{badges[s.id]}</span>}
+          {badges[s.id] ? (
+            <span className="rail-badge">{badges[s.id]}</span>
+          ) : (
+            dots[s.id] && <span className="rail-dot" title="Nova versão disponível" />
+          )}
         </button>
       ))}
       <div className="flex-1" />

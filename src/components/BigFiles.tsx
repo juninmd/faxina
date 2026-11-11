@@ -3,6 +3,8 @@ import { api, type BigFile, type DeleteReport, type Kind } from "../lib/api";
 import { kindCounts, SORT_OPTIONS, type SortKey, sortFiles } from "../lib/bigfiles";
 import { baseName, formatAge, formatBytes, formatCount } from "../lib/format";
 import { KIND_ORDER, KINDS, kindColor } from "../lib/kinds";
+import type { OrbitItem } from "../lib/orbit";
+import OrbitButton from "./OrbitButton";
 import type { Swallow } from "./types";
 
 const MIN_SIZES = [100 * 1024 * 1024, 500 * 1024 * 1024, 1024 * 1024 * 1024];
@@ -17,11 +19,13 @@ export function BigFiles({
   root,
   onAnalyze,
   onDeleted,
+  onOrbit,
 }: {
   swallow: Swallow;
   root: string;
   onAnalyze: () => void;
   onDeleted: (r: DeleteReport) => void;
+  onOrbit?: (items: OrbitItem[]) => void;
 }) {
   const [files, setFiles] = useState<BigFile[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -63,6 +67,22 @@ export function BigFiles({
       n.has(path) ? n.delete(path) : n.add(path);
       return n;
     });
+
+  const toOrbit = () => {
+    onOrbit?.(
+      (files ?? [])
+        .filter((f) => picked.has(f.path))
+        .map((f) => ({
+          path: f.path,
+          name: f.name,
+          size: f.size,
+          color: kindColor(f.kind),
+          route: "path",
+          source: "Grandes",
+        })),
+    );
+    setPicked(new Set());
+  };
 
   const remove = () => {
     const paths = [...picked];
@@ -172,6 +192,7 @@ export function BigFiles({
           )}
         </div>
 
+        {!!picked.size && onOrbit && <OrbitButton count={picked.size} onClick={toOrbit} />}
         {!!picked.size && (
           <button
             type="button"

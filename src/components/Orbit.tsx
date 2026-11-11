@@ -3,6 +3,7 @@ import type { Rule } from "../domain";
 import { formatBytes } from "../lib/format";
 import { kindColor } from "../lib/kinds";
 import type { Mark } from "../lib/marks";
+import { groupBySource, type OrbitItem } from "../lib/orbit";
 import CountUp from "./CountUp";
 import HoleCanvas from "./HoleCanvas";
 import Icon from "./Icon";
@@ -16,24 +17,31 @@ const JUNK_COLOR = "#ffae4a";
  */
 export default function Orbit({
   marks,
+  queued,
   junk,
   eating,
   onUnmark,
+  onUnqueue,
   onUnpick,
   onClear,
   onSwallow,
 }: {
   marks: Mark[];
+  queued: OrbitItem[];
   junk: Rule[];
   eating: boolean;
   onUnmark: (path: string) => void;
+  onUnqueue: (path: string) => void;
   onUnpick: (id: string) => void;
   onClear: () => void;
   onSwallow: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const count = marks.length + junk.length;
-  const total = marks.reduce((s, m) => s + m.size, 0) + junk.reduce((s, r) => s + r.size, 0);
+  const count = marks.length + queued.length + junk.length;
+  const total =
+    marks.reduce((s, m) => s + m.size, 0) +
+    queued.reduce((s, q) => s + q.size, 0) +
+    junk.reduce((s, r) => s + r.size, 0);
   const [pulse, setPulse] = useState(0);
   const last = useRef(count);
   useEffect(() => {
@@ -82,8 +90,9 @@ export default function Orbit({
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
           {!count && (
             <div className="rounded-2xl border border-dashed border-slate-700 p-6 text-center text-sm leading-relaxed text-slate-400">
-              Marque pastas no <strong className="text-slate-200">Mapa</strong> ou caches em{" "}
-              <strong className="text-slate-200">Limpar</strong>. Tudo espera aqui até você decidir.
+              Marque pastas no <strong className="text-slate-200">Mapa</strong>, caches em{" "}
+              <strong className="text-slate-200">Limpar</strong> ou use "Pôr na Órbita" nos outros painéis. Tudo espera
+              aqui até você decidir.
             </div>
           )}
           {junk.length > 0 && (
@@ -116,6 +125,21 @@ export default function Orbit({
               ))}
             </Group>
           )}
+          {groupBySource(queued).map(([source, items]) => (
+            <Group key={source} title={source} total={items.reduce((s, q) => s + q.size, 0)}>
+              {items.map((q) => (
+                <Row
+                  key={q.path}
+                  dataPath={q.path}
+                  color={q.color}
+                  name={q.name}
+                  sub={q.path}
+                  size={q.size}
+                  onRemove={() => onUnqueue(q.path)}
+                />
+              ))}
+            </Group>
+          ))}
         </div>
 
         <div className="grid gap-2 border-t border-slate-800 p-3">

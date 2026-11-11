@@ -1,3 +1,4 @@
+import { check } from "@tauri-apps/plugin-updater";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { BigFiles } from "./components/BigFiles";
@@ -41,6 +42,7 @@ import { formatBytes } from "./lib/format";
 import { kindColor } from "./lib/kinds";
 import type { Mark } from "./lib/marks";
 import { getMotionPref, MOTION_LABELS, type MotionPref, setMotionPref, shouldAnimate } from "./lib/motion";
+import { type OrbitItem, planOrbit } from "./lib/orbit";
 import { platformName } from "./lib/platform";
 import { PAGE_COMMANDS, SPACES, type Space, spaceOf } from "./lib/spaces";
 
@@ -77,6 +79,10 @@ export default function App() {
   const [disks, setDisks] = useState<DiskInfo[]>([]);
   const [diskMount, setDiskMount] = useState("");
   const [marked, setMarked] = useState<Map<string, Mark>>(new Map());
+  // What the Grandes, Duplicatas, Vazios and Repositórios panels put in the Órbita.
+  const [queued, setQueued] = useState<Map<string, OrbitItem>>(new Map());
+  const [epoch, setEpoch] = useState(0);
+  const [updateReady, setUpdateReady] = useState(false);
   const [motion, setMotion] = useState<MotionPref>(getMotionPref);
 
   const scan = useScan();
@@ -90,6 +96,16 @@ export default function App() {
   };
 
   useEffect(() => trackPointer(), []);
+  // A quiet look for a new version marks Ajustes; the Atualizações tab does the real install.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      check({ timeout: 15000 }).then(
+        (u) => setUpdateReady(!!u),
+        () => setUpdateReady(false),
+      );
+    }, 4000);
+    return () => clearTimeout(t);
+  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
@@ -204,12 +220,12 @@ export default function App() {
    * through `junk_clean` by ID. The destination picked in the dialog travels to both.
    */
   const swallowOrbit = (destination: "trash" | "permanent") => {
-    const paths = [...marked.keys()];
+    const plan = planOrbit(marked.keys(), queued.values());
     const batch = picked;
     const ids = batch.map((r) => r.id);
     const permanent = destination === "permanent";
     swallow(
-      [...paths, ...ids.map((id) => `junk:${id}`)],
+      [...plan.paths, ...plan.links, ...plan.worktrees, ...ids.map((id) => `junk:${id}`)],
       async () => {
         if (ids.length && junkScanId.current === null) throw new Error("Analise novamente antes de limpar.");
         let freed = 0;
@@ -217,15 +233,30 @@ export default function App() {
         let skipped = 0;
         let removed = 0;
         let reason: string | undefined;
-        if (paths.length) {
-          const r = await api.deletePaths(paths, permanent);
-          setMarked((prev) => new Map([...prev].filter(([p]) => !r.deleted.includes(p))));
+        const gone = new Set<string>();
+        const tally = (r: { freed: number; failed: { error: string }[] }, done: string[]) => {
+          for (const p of done) gone.add(p);
           freed += r.freed;
           failed += r.failed.length;
           skipped += r.failed.length;
-          removed += r.deleted.length;
-          reason = r.failed[0]?.error;
+          removed += done.length;
+          reason ??= r.failed[0]?.error;
+        };
+        if (plan.paths.length) {
+          const r = await api.deletePaths(plan.paths, permanent);
+          tally(r, r.deleted);
         }
+        // Dangling links and worktrees have their own commands and checks; both always use the trash.
+        if (plan.links.length) {
+          const r = await api.deleteBrokenLinks(plan.links);
+          tally(r, r.deleted);
+        }
+        if (plan.worktrees.length) {
+          const r = await api.deleteWorktrees(plan.worktrees);
+          tally(r, r.removed);
+        }
+        setMarked((prev) => new Map([...prev].filter(([p]) => !gone.has(p))));
+        setQueued((prev) => new Map([...prev].filter(([p]) => !gone.has(p))));
         if (ids.length && junkScanId.current !== null) {
           const r = await api.junkClean(ids, permanent, junkScanId.current);
           freed += r.freed;
@@ -245,10 +276,22 @@ export default function App() {
         return { freed, failed, reason };
       },
       async () => {
-        if (paths.length) await scan.refresh();
+        // Panels showing removed rows start over, so nothing deleted stays listed.
+        setEpoch((n) => n + 1);
+        if (plan.paths.length && scan.root) await scan.refresh();
         if (ids.length) await loadJunk();
       },
     );
+  };
+
+  const addToOrbit = (items: OrbitItem[]) => {
+    if (!items.length) return;
+    flyToOrbit(items[0].color);
+    setQueued((prev) => {
+      const next = new Map(prev);
+      for (const it of items) next.set(it.path, it);
+      return next;
+    });
   };
 
   const orbitRecommended = () => {
@@ -292,7 +335,9 @@ export default function App() {
       label: "Engolir a Órbita",
       hint: "ação",
       keywords: "excluir apagar limpar",
-      run: () => (marked.size || picked.length) && setConfirm(true),
+      run: () => {
+        if (marked.size || queued.size || picked.length) setConfirm(true);
+      },
     },
     {
       id: "motion",
@@ -308,6 +353,7 @@ export default function App() {
   const cleanupDue = settings.reminder && isCleanupDue(settings, history);
 
   const orbitMarks = [...marked.values()];
+  const otherSize = orbitMarks.reduce((n, m) => n + m.size, 0) + [...queued.values()].reduce((n, q) => n + q.size, 0);
   const space = spaceOf(page);
 
   return (
@@ -321,6 +367,7 @@ export default function App() {
       <Rail
         space={space.id}
         badges={{ limpar: scanned ? picked.length : 0 }}
+        dots={{ ajustes: updateReady }}
         onSpace={goSpace}
         onPalette={() => setPalette(true)}
         motionLabel={MOTION_LABELS[motion]}
@@ -416,7 +463,14 @@ export default function App() {
             />
 
             {page === "bigfiles" && (
-              <BigFiles swallow={swallow} root={scan.root} onAnalyze={() => setPage("map")} onDeleted={recordDeleted} />
+              <BigFiles
+                key={epoch}
+                swallow={swallow}
+                root={scan.root}
+                onAnalyze={() => setPage("map")}
+                onDeleted={recordDeleted}
+                onOrbit={addToOrbit}
+              />
             )}
 
             {page === "growth" && <Growth root={scan.root} onAnalyze={() => setPage("map")} />}
@@ -442,9 +496,15 @@ export default function App() {
 
             {page === "report" && <ReportPanel report={history[0] ?? null} history={history} navigate={setPage} />}
 
-            {page === "dupes" && <DupesPanel swallow={swallow} defaultRoot={scan.root || home} />}
-            {page === "empty" && <EmptyPanel swallow={swallow} defaultRoot={scan.root || home} />}
-            {page === "worktrees" && <WorktreesPanel swallow={swallow} defaultRoot={scan.root || home} />}
+            {page === "dupes" && (
+              <DupesPanel key={epoch} swallow={swallow} defaultRoot={scan.root || home} onOrbit={addToOrbit} />
+            )}
+            {page === "empty" && (
+              <EmptyPanel key={epoch} swallow={swallow} defaultRoot={scan.root || home} onOrbit={addToOrbit} />
+            )}
+            {page === "worktrees" && (
+              <WorktreesPanel key={epoch} swallow={swallow} defaultRoot={scan.root || home} onOrbit={addToOrbit} />
+            )}
 
             {page === "coverage" && <Coverage rules={rules} excluded={settings.excluded} onExclude={exclude} />}
 
@@ -469,8 +529,17 @@ export default function App() {
         eating={hole !== null}
         onUnmark={unmark}
         onUnpick={(id) => setSelected((s) => s.filter((x) => x !== id))}
+        queued={[...queued.values()]}
+        onUnqueue={(path) =>
+          setQueued((prev) => {
+            const next = new Map(prev);
+            next.delete(path);
+            return next;
+          })
+        }
         onClear={() => {
           setMarked(new Map());
+          setQueued(new Map());
           setSelected([]);
         }}
         onSwallow={() => setConfirm(true)}
@@ -504,9 +573,10 @@ export default function App() {
 
       {confirm && (
         <ConfirmDialog
-          amount={totalSize(picked) + orbitMarks.reduce((n, m) => n + m.size, 0)}
+          amount={totalSize(picked) + otherSize}
           caches={picked.length}
-          marks={{ count: orbitMarks.length, size: orbitMarks.reduce((n, m) => n + m.size, 0) }}
+          marks={{ count: orbitMarks.length + queued.size, size: otherSize }}
+          trashOnly={[...queued.values()].filter((q) => q.route !== "path").length}
           onPreview={() => {
             if (junkScanId.current === null) throw new Error("Analise novamente antes de simular.");
             return api.junkPreview(
