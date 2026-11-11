@@ -5,6 +5,8 @@ import { api, type DupGroup } from "../lib/api";
 import { defaultPick, dupNotice, groupPick, KEEPER_RULES, type KeeperRule, keeperOf, pruneDeleted } from "../lib/dupes";
 import { parseExcludedNames } from "../lib/exclusions";
 import { baseName, formatAge, formatBytes, formatCount } from "../lib/format";
+import type { OrbitItem } from "../lib/orbit";
+import OrbitButton from "./OrbitButton";
 import type { Swallow } from "./types";
 
 /** Progress sample from the backend: the stage now running and how far it is. */
@@ -26,7 +28,15 @@ const IGNORE_STORE = "faxina.dupes.ignore";
 /** Groups rendered per page: thousands of rows at once freeze the webview. */
 const PAGE = 50;
 
-export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; defaultRoot: string }) {
+export function DupesPanel({
+  swallow,
+  defaultRoot,
+  onOrbit,
+}: {
+  swallow: Swallow;
+  defaultRoot: string;
+  onOrbit?: (items: OrbitItem[]) => void;
+}) {
   const [root, setRoot] = useState(defaultRoot);
   const [minSize, setMinSize] = useState(MIN_SIZES[1].value);
   const [groups, setGroups] = useState<DupGroup[] | null>(null);
@@ -119,6 +129,25 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
     });
 
   const wasted = (groups ?? []).reduce((s, g) => s + g.files.filter((f) => picked.has(f.path)).length * g.size, 0);
+
+  // The backend still refuses a batch that would take every copy of a group, however it was queued.
+  const toOrbit = () => {
+    onOrbit?.(
+      (groups ?? []).flatMap((g) =>
+        g.files
+          .filter((f) => picked.has(f.path))
+          .map((f) => ({
+            path: f.path,
+            name: f.path.split(/[\\/]/).filter(Boolean).pop() ?? f.path,
+            size: g.size,
+            color: "#7aa8ff",
+            route: "path" as const,
+            source: "Duplicatas",
+          })),
+      ),
+    );
+    setPicked(new Set());
+  };
 
   const remove = async () => {
     const paths = [...picked];
@@ -233,11 +262,16 @@ export function DupesPanel({ swallow, defaultRoot }: { swallow: Swallow; default
           </button>
         )}
 
+        {!!picked.size && onOrbit && (
+          <span className="ml-auto">
+            <OrbitButton count={picked.size} onClick={toOrbit} />
+          </span>
+        )}
         {!!picked.size && (
           <button
             type="button"
             onClick={remove}
-            className="ml-auto inline-flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-r from-rose-500 to-rose-600 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-rose-500/25 transition-all hover:brightness-110 active:scale-[0.98]"
+            className=" inline-flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-r from-rose-500 to-rose-600 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-rose-500/25 transition-all hover:brightness-110 active:scale-[0.98]"
           >
             <span aria-hidden="true">🕳️</span>
             <span>

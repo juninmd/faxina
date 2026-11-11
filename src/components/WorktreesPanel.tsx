@@ -3,6 +3,8 @@ import { confirm, open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
 import { api, type Worktree, type WorktreeTick } from "../lib/api";
 import { formatAge, formatBytes, formatCount } from "../lib/format";
+import type { OrbitItem } from "../lib/orbit";
+import OrbitButton from "./OrbitButton";
 import type { Swallow } from "./types";
 
 const PAGE = 50;
@@ -12,7 +14,15 @@ const PAGE = 50;
  * every commit is on a remote-tracking ref and nothing local was changed; the rest stays visible,
  * disabled and explained, so the user knows what to push before cleaning.
  */
-export function WorktreesPanel({ swallow, defaultRoot }: { swallow: Swallow; defaultRoot: string }) {
+export function WorktreesPanel({
+  swallow,
+  defaultRoot,
+  onOrbit,
+}: {
+  swallow: Swallow;
+  defaultRoot: string;
+  onOrbit?: (items: OrbitItem[]) => void;
+}) {
   const [root, setRoot] = useState(defaultRoot);
   const [items, setItems] = useState<Worktree[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -83,6 +93,21 @@ export function WorktreesPanel({ swallow, defaultRoot }: { swallow: Swallow; def
     });
 
   const toggleAll = () => setPicked(picked.size === pickable.length ? new Set() : new Set(pickable.map((w) => w.path)));
+
+  // `delete_worktrees` re-runs the git check per path when the Órbita is swallowed.
+  const toOrbit = () => {
+    onOrbit?.(
+      chosen.map((w) => ({
+        path: w.path,
+        name: `${w.path.split(/[\\/]/).filter(Boolean).pop() ?? w.path}${w.branch ? ` · ${w.branch}` : ""}`,
+        size: w.size,
+        color: "#5fd3b5",
+        route: "worktree",
+        source: "Repositórios",
+      })),
+    );
+    setPicked(new Set());
+  };
 
   const remove = async () => {
     const ignored =
@@ -171,11 +196,16 @@ export function WorktreesPanel({ swallow, defaultRoot }: { swallow: Swallow; def
           </button>
         )}
 
+        {!!picked.size && onOrbit && (
+          <span className="ml-auto">
+            <OrbitButton count={picked.size} onClick={toOrbit} />
+          </span>
+        )}
         {!!picked.size && (
           <button
             type="button"
             onClick={remove}
-            className="ml-auto inline-flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-r from-rose-500 to-rose-600 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-rose-500/25 transition-all hover:brightness-110 active:scale-[0.98]"
+            className=" inline-flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-r from-rose-500 to-rose-600 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-rose-500/25 transition-all hover:brightness-110 active:scale-[0.98]"
           >
             <span aria-hidden="true">🕳️</span>
             <span>

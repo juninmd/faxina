@@ -2,12 +2,22 @@ import { confirm, open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import { api, type EmptyItem } from "../lib/api";
 import { formatCount } from "../lib/format";
+import type { OrbitItem } from "../lib/orbit";
+import OrbitButton from "./OrbitButton";
 import type { Swallow } from "./types";
 
 const LABEL = { folder: "pasta vazia", link: "link quebrado" } as const;
 const PAGE = 50;
 
-export function EmptyPanel({ swallow, defaultRoot }: { swallow: Swallow; defaultRoot: string }) {
+export function EmptyPanel({
+  swallow,
+  defaultRoot,
+  onOrbit,
+}: {
+  swallow: Swallow;
+  defaultRoot: string;
+  onOrbit?: (items: OrbitItem[]) => void;
+}) {
   const [root, setRoot] = useState(defaultRoot);
   const [items, setItems] = useState<EmptyItem[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -38,6 +48,22 @@ export function EmptyPanel({ swallow, defaultRoot }: { swallow: Swallow; default
       if (!n.delete(path)) n.add(path);
       return n;
     });
+
+  const toOrbit = () => {
+    onOrbit?.(
+      (items ?? [])
+        .filter((i) => picked.has(i.path))
+        .map((i) => ({
+          path: i.path,
+          name: i.path.split(/[\\/]/).filter(Boolean).pop() ?? i.path,
+          size: 0,
+          color: i.kind === "link" ? "#ffcf5a" : "#76748f",
+          route: i.kind === "link" ? "link" : "path",
+          source: "Vazios e links",
+        })),
+    );
+    setPicked(new Set());
+  };
 
   const remove = async () => {
     const chosen = (items ?? []).filter((i) => picked.has(i.path));
@@ -120,11 +146,16 @@ export function EmptyPanel({ swallow, defaultRoot }: { swallow: Swallow; default
           </button>
         )}
 
+        {!!picked.size && onOrbit && (
+          <span className="ml-auto">
+            <OrbitButton count={picked.size} onClick={toOrbit} />
+          </span>
+        )}
         {!!picked.size && (
           <button
             type="button"
             onClick={remove}
-            className="ml-auto inline-flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-r from-rose-500 to-rose-600 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-rose-500/25 transition-all hover:brightness-110 active:scale-[0.98]"
+            className=" inline-flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-r from-rose-500 to-rose-600 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-rose-500/25 transition-all hover:brightness-110 active:scale-[0.98]"
           >
             <span aria-hidden="true">🕳️</span>
             <span>Limpar {formatCount(picked.size)}</span>

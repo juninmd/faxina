@@ -6,12 +6,21 @@ import Icon from "./Icon";
 
 export default function ConfirmDialog({
   amount,
+  marks = { count: 0, size: 0 },
+  caches = 0,
+  trashOnly = 0,
   onPreview,
   onClose,
   onConfirm,
 }: {
   amount: number;
-  /** Dry run: asks the backend what the cleanup would do, without removing anything. */
+  /** Folders and files marked in the map that go along with the caches. */
+  marks?: { count: number; size: number };
+  /** Number of cache categories in the batch. */
+  caches?: number;
+  /** Dangling links and repositories: their commands always use the trash. */
+  trashOnly?: number;
+  /** Dry run: asks the backend what the cache cleanup would do, without removing anything. */
   onPreview: () => Promise<CleanReport>;
   onClose: () => void;
   onConfirm: (destination: Report["destination"]) => void;
@@ -22,7 +31,18 @@ export default function ConfirmDialog({
   const [preview, setPreview] = useState<{ text: string; ok: boolean } | null>(null);
   const [previewing, setPreviewing] = useState(false);
 
+  const marksLine = () =>
+    marks.count
+      ? `${formatCount(marks.count)} ${marks.count === 1 ? "item do mapa iria" : "itens do mapa iriam"} ${
+          destination === "trash" ? "para a Lixeira" : "embora sem Lixeira"
+        } (${formatBytes(marks.size)}).`
+      : "";
+
   const simulate = async () => {
+    if (!caches) {
+      setPreview({ ok: true, text: `${marksLine()} Nada foi removido.` });
+      return;
+    }
     setPreviewing(true);
     try {
       const r = await onPreview();
@@ -32,7 +52,7 @@ export default function ConfirmDialog({
       ].filter(Boolean);
       setPreview({
         ok: r.failed === 0,
-        text: `Liberaria ${formatBytes(r.freed)} em ${formatCount(r.removed)} arquivos${notes.length ? ` · ${notes.join(" · ")}` : ""}. Nada foi removido.`,
+        text: `Caches: liberaria ${formatBytes(r.freed)} em ${formatCount(r.removed)} arquivos${notes.length ? ` · ${notes.join(" · ")}` : ""}. ${marksLine()} Nada foi removido.`,
       });
     } catch (e) {
       setPreview({ ok: false, text: String(e) });
@@ -83,10 +103,12 @@ export default function ConfirmDialog({
 
       <p className="mt-4 text-[10px] font-bold tracking-widest text-amber-400 uppercase">Última revisão</p>
       <h2 id="confirm-title" className="mt-1 text-2xl font-bold tracking-tight text-white">
-        Como você quer limpar?
+        Para onde vai o que está na Órbita?
       </h2>
       <p className="mt-1 mb-5 text-sm text-slate-400">
-        <strong className="font-mono text-slate-200">{gb(amount)}</strong> selecionados para limpeza.
+        <strong className="font-mono text-slate-200">{gb(amount)}</strong> no total
+        {caches > 0 && ` · ${caches} ${caches === 1 ? "categoria de cache" : "categorias de cache"}`}
+        {marks.count > 0 && ` · ${marks.count} ${marks.count === 1 ? "item marcado" : "itens marcados"}`}.
       </p>
 
       <fieldset className="flex flex-col gap-3 border-0 p-0 m-0" aria-label="Destino da limpeza">
@@ -141,6 +163,13 @@ export default function ConfirmDialog({
         </label>
       </fieldset>
 
+      {destination === "permanent" && trashOnly > 0 && (
+        <p className="mt-3 text-xs text-slate-400">
+          {formatCount(trashOnly)} {trashOnly === 1 ? "link ou repositório vai" : "links ou repositórios vão"} para a
+          Lixeira mesmo assim: esses itens nunca são apagados direto.
+        </p>
+      )}
+
       {destination === "permanent" && (
         <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs leading-relaxed text-rose-200">
           <input
@@ -180,7 +209,7 @@ export default function ConfirmDialog({
           className="cursor-pointer rounded-xl border border-slate-700 bg-slate-800 px-5 py-2.5 text-xs font-semibold text-slate-300 transition-colors hover:bg-slate-750"
           onClick={onClose}
         >
-          Voltar à revisão
+          Voltar
         </button>
         <button
           type="button"
@@ -188,7 +217,7 @@ export default function ConfirmDialog({
           disabled={destination === "permanent" && !acknowledged}
           onClick={() => onConfirm(destination)}
         >
-          <span>Limpar agora</span>
+          <span>Engolir agora</span>
           <Icon name="arrow" size={15} />
         </button>
       </div>

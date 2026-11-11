@@ -159,7 +159,10 @@ export function MapView({ scan, marked, onToggleMark }: Props) {
         </div>
 
         <div className="min-h-0 flex-1 rounded-xl border border-slate-800/80 bg-slate-950/60 p-1">
-          {mode === "treemap" ? <Treemap {...mapProps} /> : <Sunburst {...mapProps} onUp={up} />}
+          {/* Remounting on each folder plays the zoom-in, so drilling down reads as moving closer. */}
+          <div key={`${mode}:${view.path}`} className="map-zoom h-full">
+            {mode === "treemap" ? <Treemap {...mapProps} /> : <Sunburst {...mapProps} onUp={up} />}
+          </div>
         </div>
 
         <footer className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
