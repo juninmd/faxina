@@ -4,7 +4,6 @@ import type { useScan } from "../hooks/useScan";
 import { api, type DiskInfo } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import type { Mark } from "../lib/marks";
-import { Collector } from "./Collector";
 import Icon from "./Icon";
 import { MapView } from "./MapView";
 import ScanProgress from "./ScanProgress";
@@ -16,8 +15,6 @@ export default function DiskMap({
   marked,
   onToggleMark,
   onClearMarked,
-  onUnmark,
-  onDeleteMarked,
 }: {
   active: boolean;
   scan: ReturnType<typeof useScan>;
@@ -25,8 +22,6 @@ export default function DiskMap({
   marked: Map<string, Mark>;
   onToggleMark: (m: Mark) => void;
   onClearMarked: () => void;
-  onUnmark: (path: string) => void;
-  onDeleteMarked: (permanent: boolean) => void;
 }) {
   const [disks, setDisks] = useState<DiskInfo[]>([]);
   const [expanded, setExpanded] = useState(false);
@@ -87,8 +82,6 @@ export default function DiskMap({
       setNotice(`Não foi possível abrir o seletor: ${e}`);
     }
   };
-
-  const markedList = [...marked.values()];
 
   return (
     // aria-modal is valid only with role="dialog", which is set on the same element in the same render.
@@ -182,7 +175,6 @@ export default function DiskMap({
       ) : scan.view ? (
         <div className="native-map flex min-h-[520px] flex-1 flex-col overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-900/60 shadow-xl backdrop-blur-md">
           <MapView scan={scan} marked={marked} onToggleMark={onToggleMark} />
-          <Collector items={markedList} onClear={onClearMarked} onUnmark={onUnmark} onDelete={onDeleteMarked} />
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center gap-6 rounded-3xl border border-slate-800/80 bg-slate-900/60 p-12 text-center shadow-lg backdrop-blur-md">

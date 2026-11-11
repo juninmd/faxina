@@ -1,9 +1,14 @@
-import type { Page } from "../domain";
+import { useEffect, useState } from "react";
+import type { Page, Rule } from "../domain";
 import { gb } from "../domain";
 import type { DiskInfo } from "../lib/api";
+import { api, type FolderGrowth } from "../lib/api";
 import { platformName } from "../lib/platform";
 import CountUp from "./CountUp";
 import Icon from "./Icon";
+import Planet, { type Ring } from "./Planet";
+
+const GROUP_COLORS = ["#ffae4a", "#7aa8ff", "#b79cff", "#5fd3b5", "#f38fb8", "#ffcf5a", "#ff6a3d"];
 
 export default function Overview({
   disk,
@@ -17,6 +22,9 @@ export default function Overview({
   onScan,
   onCancel,
   navigate,
+  rules,
+  onOrbit,
+  root,
 }: {
   disk: DiskInfo | null;
   disks: DiskInfo[];
@@ -29,7 +37,21 @@ export default function Overview({
   onScan: () => void;
   onCancel: () => void;
   navigate: (page: Page) => void;
+  rules: Rule[];
+  /** Puts the recommended cache categories in the Órbita. */
+  onOrbit: () => void;
+  /** Last mapped folder; growth is compared against its previous scan. */
+  root: string;
 }) {
+  const [grown, setGrown] = useState<FolderGrowth[]>([]);
+  useEffect(() => {
+    if (!root) return;
+    api.growth().then(
+      (g) => setGrown(g ? [...g.grown].sort((a, b) => Math.abs(b.growth) - Math.abs(a.growth)).slice(0, 3) : []),
+      () => setGrown([]),
+    );
+  }, [root]);
+
   // Without a reading, show placeholders rather than invented capacity.
   const known = !!disk;
   const total = disk?.total ?? 0;
@@ -38,8 +60,18 @@ export default function Overview({
   const usedPct = Math.round((used / (total || 1)) * 100);
   const freePct = 100 - usedPct;
 
-  const circumference = 2 * Math.PI * 72;
-  const strokeDashoffset = known ? circumference - (freePct / 100) * circumference : circumference;
+  const groups = new Map<string, number>();
+  for (const r of rules) if (r.size > 0) groups.set(r.group, (groups.get(r.group) ?? 0) + r.size);
+  const top = [...groups].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const biggest = top[0]?.[1] ?? 1;
+  const rings: Ring[] = [
+    { label: `Ocupado · ${usedPct}%`, share: known ? used / (total || 1) : 0, color: "#ff8c3a" },
+    ...top.map(([label, size], i) => ({
+      label: `${label} · ${gb(size)}`,
+      share: (size / biggest) * 0.85,
+      color: GROUP_COLORS[(i + 1) % GROUP_COLORS.length],
+    })),
+  ];
 
   return (
     <div className="flex flex-col gap-6">
@@ -94,30 +126,24 @@ export default function Overview({
       )}
 
       <section
-        className="grain aurora relative flex flex-col items-center gap-10 overflow-hidden rounded-3xl border border-slate-800/80 bg-gradient-to-br from-slate-900/90 via-[#0d1424] to-slate-950 p-8 shadow-2xl backdrop-blur-xl sm:p-10 md:flex-row md:items-stretch"
+        className="grain aurora relative flex flex-col items-center gap-10 overflow-hidden rounded-3xl border border-slate-800/80 bg-gradient-to-br from-slate-900/90 via-[#120f1f] to-slate-950 p-8 shadow-2xl backdrop-blur-xl sm:p-10 md:flex-row md:items-stretch"
         aria-label="Diagnóstico do disco"
       >
-        <div className="flex shrink-0 flex-col items-center justify-center">
-          <div className="relative flex h-52 w-52 items-center justify-center">
-            <svg className="h-full w-full -rotate-90 transform" viewBox="0 0 160 160" aria-hidden="true">
-              <circle cx="80" cy="80" r="72" className="stroke-slate-800/80" strokeWidth="8" fill="none" />
-              <circle
-                cx="80"
-                cy="80"
-                r="72"
-                className="stroke-amber-400 transition-all duration-1000 ease-out"
-                strokeWidth="8"
-                strokeDasharray={circumference}
-                strokeDashoffset={strokeDashoffset}
-                strokeLinecap="round"
-                fill="none"
-              />
-            </svg>
-            <div className="absolute flex flex-col items-center justify-center text-center">
+        <div className="flex w-full max-w-72 shrink-0 flex-col items-center justify-center">
+          <div className="relative w-full">
+            <Planet
+              rings={rings}
+              label={
+                known
+                  ? `Disco ${disk?.mount ?? ""}: ${gb(used)} ocupados de ${gb(total)}; anéis internos mostram caches por grupo`
+                  : "Lendo o disco"
+              }
+            />
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
               <span className="text-[10px] font-bold tracking-widest text-slate-400 uppercase">
                 DISCO {disk?.mount ? `· ${disk.mount}` : "LOCAL"}
               </span>
-              <span className="mt-1 font-mono text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
+              <span className="mt-1 font-display text-3xl font-extrabold tracking-tight text-white tabular-nums">
                 {known ? <CountUp value={free} format={gb} /> : "—"}
               </span>
               <span className="mt-0.5 text-xs text-slate-400">
@@ -125,10 +151,14 @@ export default function Overview({
               </span>
             </div>
           </div>
-          <div className="mt-3 flex items-center gap-2 text-xs text-slate-400">
-            <span className="h-2 w-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]" />
-            <span>Espaço livre no disco</span>
-          </div>
+          <ul className="mt-3 grid w-full grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-400">
+            {rings.map((r) => (
+              <li key={r.label} className="flex min-w-0 items-center gap-1.5">
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.color }} />
+                <span className="truncate">{r.label}</span>
+              </li>
+            ))}
+          </ul>
         </div>
 
         <div className="flex flex-1 flex-col justify-between">
@@ -156,7 +186,7 @@ export default function Overview({
                   : "Uma análise rápida encontra caches e temporários. Seus arquivos pessoais continuam no lugar."}
             </p>
             <div className="mt-5 flex flex-col">
-              <div className="font-mono text-5xl font-extrabold tracking-tight text-amber-400 sm:text-6xl">
+              <div className="font-display text-5xl font-extrabold tracking-tight text-amber-400 tabular-nums sm:text-6xl">
                 {loading ? "…" : scanned ? <CountUp value={reclaimable} format={gb} /> : "—"}
               </div>
               <span className="mt-1 text-xs font-semibold tracking-wider text-slate-400 uppercase">
@@ -182,16 +212,22 @@ export default function Overview({
               </div>
             ) : (
               <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  className={`glow-button inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 px-6 py-3.5 text-sm font-bold text-slate-950 shadow-xl shadow-amber-500/20 transition-all hover:brightness-110 active:scale-[0.98] ${
-                    scanned && reclaimable > 0 ? "" : ""
-                  }`}
-                  onClick={scanned && reclaimable > 0 ? () => navigate("review") : onScan}
-                >
-                  <Icon name={scanned && reclaimable > 0 ? "arrow" : "search"} size={16} />
-                  <span>{scanned && reclaimable > 0 ? "Revisar limpeza" : "Analisar meu computador"}</span>
-                </button>
+                {scanned && reclaimable > 0 ? (
+                  <>
+                    <button type="button" className="btn btn-hot glow-button px-6 py-3.5 text-sm" onClick={onOrbit}>
+                      <Icon name="orbit" size={16} />
+                      <span>Pôr {gb(reclaimable)} na Órbita</span>
+                    </button>
+                    <button type="button" className="btn px-4 py-3 text-sm" onClick={() => navigate("review")}>
+                      Revisar item a item
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" className="btn btn-hot glow-button px-6 py-3.5 text-sm" onClick={onScan}>
+                    <Icon name="search" size={16} />
+                    <span>Analisar meu computador</span>
+                  </button>
+                )}
                 {scanned && (
                   <button
                     type="button"
@@ -208,6 +244,26 @@ export default function Overview({
               <Icon name="shield" size={15} />
               <span>Você decide. Proteção total a arquivos de trabalho.</span>
             </div>
+            {grown.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                {grown.map((g) => (
+                  <span key={g.path} className={`chip ${g.growth > 0 ? "chip-up" : "chip-down"}`} title={g.path}>
+                    <span className="max-w-40 truncate">{g.path.split(/[\\/]/).filter(Boolean).pop()}</span>
+                    <b>
+                      {g.growth > 0 ? "+" : "−"}
+                      {gb(Math.abs(g.growth))}
+                    </b>
+                  </span>
+                ))}
+                <button
+                  type="button"
+                  className="chip cursor-pointer hover:text-white"
+                  onClick={() => navigate("growth")}
+                >
+                  ver o que cresceu →
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </section>

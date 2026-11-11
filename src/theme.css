@@ -2,13 +2,13 @@
 
 :root {
   color-scheme: dark;
-  --bg: #090d16;
-  --surface: #111726;
-  --surface-raised: #182235;
-  --border: #232f46;
-  --muted: #94a3b8;
-  --text: #f1f5f9;
-  --yellow: #f59e0b;
+  --bg: #07070c;
+  --surface: #141522;
+  --surface-raised: #1b1d2d;
+  --border: #262940;
+  --muted: #9a98b3;
+  --text: #eceaf6;
+  --yellow: #ffae4a;
   --green: #10b981;
   --blue: #3b82f6;
   --purple: #a855f7;
@@ -19,7 +19,7 @@
 body {
   overflow: auto;
   user-select: auto;
-  font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
 }
 button,
 input,

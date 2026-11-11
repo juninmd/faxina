@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { BigFiles } from "./components/BigFiles";
 import { BlackHole } from "./components/BlackHole";
+import CommandPalette, { type PaletteCommand } from "./components/CommandPalette";
 import ConfirmDialog from "./components/ConfirmDialog";
 import Coverage from "./components/Coverage";
 import DiskMap from "./components/DiskMap";
 import { DupesPanel } from "./components/DupesPanel";
 import { EmptyPanel } from "./components/EmptyPanel";
 import Growth from "./components/Growth";
-import Icon, { type IconName } from "./components/Icon";
+import Icon from "./components/Icon";
+import Orbit from "./components/Orbit";
 import Overview from "./components/Overview";
+import Rail from "./components/Rail";
 import ReportPanel from "./components/ReportPanel";
 import Review from "./components/Review";
 import Routine from "./components/Routine";
+import SpaceTabs from "./components/SpaceTabs";
 import Updates from "./components/Updates";
 import { WorktreesPanel } from "./components/WorktreesPanel";
 import {
@@ -31,28 +36,31 @@ import {
 import { useHole } from "./hooks/useHole";
 import { useScan } from "./hooks/useScan";
 import { api, type DeleteReport, type DiskInfo } from "./lib/api";
+import { flyToOrbit, trackPointer } from "./lib/fly";
 import { formatBytes } from "./lib/format";
+import { kindColor } from "./lib/kinds";
 import type { Mark } from "./lib/marks";
-import { getMotionPref, MOTION_LABELS, type MotionPref, setMotionPref } from "./lib/motion";
+import { getMotionPref, MOTION_LABELS, type MotionPref, setMotionPref, shouldAnimate } from "./lib/motion";
 import { platformName } from "./lib/platform";
-
-const NAV: { id: Page; label: string; icon: IconName; caption?: string }[] = [
-  { id: "overview", label: "Visão geral", icon: "grid" },
-  { id: "map", label: "Mapa do disco", icon: "grid" },
-  { id: "bigfiles", label: "Arquivos grandes", icon: "file" },
-  { id: "growth", label: "O que cresceu", icon: "clock" },
-  { id: "review", label: "Revisar limpeza", icon: "spark" },
-  { id: "report", label: "Resultados", icon: "file" },
-  { id: "dupes", label: "Duplicatas", icon: "copy" },
-  { id: "empty", label: "Vazios e links", icon: "trash" },
-  { id: "worktrees", label: "Repositórios", icon: "git" },
-  { id: "coverage", label: "Aplicativos", icon: "box", caption: "PERSONALIZAR" },
-  { id: "routine", label: "Minha rotina", icon: "clock" },
-  { id: "updates", label: "Atualizações", icon: "download" },
-];
+import { PAGE_COMMANDS, SPACES, type Space, spaceOf } from "./lib/spaces";
 
 export default function App() {
-  const [page, setPage] = useState<Page>("overview");
+  const [page, setPageState] = useState<Page>("overview");
+  const [palette, setPalette] = useState(false);
+  // Each space reopens on the tab the user left it at.
+  const lastTab = useRef<Partial<Record<Space, Page>>>({});
+  const setPage = useCallback((next: Page) => {
+    lastTab.current[spaceOf(next).id] = next;
+    const apply = () => flushSync(() => setPageState(next));
+    // The stage morphs between pages where the webview supports view transitions; elsewhere it just swaps.
+    const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+    if (doc.startViewTransition && shouldAnimate()) doc.startViewTransition(apply);
+    else apply();
+  }, []);
+  const goSpace = (s: Space) => {
+    const def = SPACES.find((d) => d.id === s) ?? SPACES[0];
+    setPage(lastTab.current[s] ?? def.tabs[0].page);
+  };
   const [settings, setSettings] = useState(readSettings);
   const [history, setHistory] = useState(readHistory);
   const [rules, setRules] = useState<Rule[]>(BASE_RULES);
@@ -80,6 +88,18 @@ export default function App() {
     setMotionPref(next);
     setMotion(next);
   };
+
+  useEffect(() => trackPointer(), []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPalette((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Read through a ref so changing a setting does not re-run the whole junk scan.
   const settingsRef = useRef(settings);
@@ -131,7 +151,10 @@ export default function App() {
     if (page) main.current?.focus({ preventScroll: true });
   }, [page]);
 
+  const markedRef = useRef(marked);
+  markedRef.current = marked;
   const toggleMark = useCallback((m: Mark) => {
+    if (!markedRef.current.has(m.path)) flyToOrbit(kindColor(m.kind));
     setMarked((prev) => {
       const next = new Map(prev);
       if (next.has(m.path)) next.delete(m.path);
@@ -150,22 +173,6 @@ export default function App() {
       return next;
     });
   }, []);
-
-  const deleteMarked = (permanent: boolean) => {
-    const paths = [...marked.keys()];
-    swallow(
-      paths,
-      async () => {
-        const r = await api.deletePaths(paths, permanent);
-        setMarked((prev) => new Map([...prev].filter(([p]) => !r.deleted.includes(p))));
-        const rep = createReport([], permanent ? "permanent" : "trash", r.freed, r.failed.length, r.deleted.length);
-        setHistory((h) => [rep, ...h].slice(0, 12));
-        setNotice(`${formatBytes(r.freed)} ${permanent ? "excluídos definitivamente" : "enviados à Lixeira"}.`);
-        return { freed: r.freed, failed: r.failed.length, reason: r.failed[0]?.error };
-      },
-      scan.refresh,
-    );
-  };
 
   // Deletions made outside the map still land in the history and refresh the map's totals.
   const recordDeleted = (r: DeleteReport) => {
@@ -192,150 +199,154 @@ export default function App() {
     [rules, selected, settings.excluded],
   );
 
-  const cleanJunk = (destination: "trash" | "permanent") => {
-    const ids = picked.map((r) => r.id);
+  /**
+   * One swallow for the whole Órbita: map marks go through `delete_paths` (and its guard), caches
+   * through `junk_clean` by ID. The destination picked in the dialog travels to both.
+   */
+  const swallowOrbit = (destination: "trash" | "permanent") => {
+    const paths = [...marked.keys()];
+    const batch = picked;
+    const ids = batch.map((r) => r.id);
+    const permanent = destination === "permanent";
     swallow(
-      ids.map((id) => `junk:${id}`),
+      [...paths, ...ids.map((id) => `junk:${id}`)],
       async () => {
-        if (junkScanId.current === null) throw new Error("Analise novamente antes de limpar.");
-        const r = await api.junkClean(ids, destination === "permanent", junkScanId.current);
-        const report = createReport(picked, destination, r.freed, r.skipped, r.removed);
+        if (ids.length && junkScanId.current === null) throw new Error("Analise novamente antes de limpar.");
+        let freed = 0;
+        let failed = 0;
+        let skipped = 0;
+        let removed = 0;
+        let reason: string | undefined;
+        if (paths.length) {
+          const r = await api.deletePaths(paths, permanent);
+          setMarked((prev) => new Map([...prev].filter(([p]) => !r.deleted.includes(p))));
+          freed += r.freed;
+          failed += r.failed.length;
+          skipped += r.failed.length;
+          removed += r.deleted.length;
+          reason = r.failed[0]?.error;
+        }
+        if (ids.length && junkScanId.current !== null) {
+          const r = await api.junkClean(ids, permanent, junkScanId.current);
+          freed += r.freed;
+          failed += r.failed;
+          skipped += r.skipped;
+          removed += r.removed;
+          reason ??= r.reason ?? undefined;
+        }
+        const report = createReport(batch, destination, freed, skipped, removed);
         setHistory((h) => [report, ...h].slice(0, 12));
-        setPage("report");
+        if (ids.length) setPage("report");
         setNotice(
-          r.failed
-            ? `${formatBytes(r.freed)} processados, ${r.failed} item(ns) mantidos${r.reason ? `: ${r.reason}` : ""}.`
-            : `Limpeza concluída: ${formatBytes(r.freed)} ${
-                destination === "trash" ? "enviados à Lixeira" : "liberados"
-              }.`,
+          failed
+            ? `${formatBytes(freed)} processados, ${failed} item(ns) mantidos${reason ? `: ${reason}` : ""}.`
+            : `${formatBytes(freed)} ${permanent ? "excluídos definitivamente" : "enviados à Lixeira"}.`,
         );
-        return { freed: r.freed, failed: r.failed, reason: r.reason ?? undefined };
+        return { freed, failed, reason };
       },
-      loadJunk,
+      async () => {
+        if (paths.length) await scan.refresh();
+        if (ids.length) await loadJunk();
+      },
     );
   };
+
+  const orbitRecommended = () => {
+    const rec = recommended(rules, settings).map((r) => r.id);
+    if (rec.some((id) => !selected.includes(id))) flyToOrbit("#ffae4a");
+    setSelected((s) => [...new Set([...s, ...rec])]);
+  };
+
+  const commands: PaletteCommand[] = [
+    ...PAGE_COMMANDS.map((c) => ({ ...c, run: () => setPage(c.page) })),
+    { id: "scan-junk", label: "Analisar caches de novo", hint: "ação", keywords: "varrer escanear", run: loadJunk },
+    ...(home
+      ? [
+          {
+            id: "map-home",
+            label: "Mapear pasta pessoal",
+            hint: "ação",
+            keywords: "scan home",
+            run: () => {
+              setMarked(new Map());
+              scan.scan(home);
+              setPage("map");
+            },
+          },
+        ]
+      : []),
+    ...disks.map((d) => ({
+      id: `map-${d.mount}`,
+      label: `Mapear disco ${d.mount}`,
+      hint: "ação",
+      keywords: "unidade drive",
+      run: () => {
+        setMarked(new Map());
+        scan.scan(d.mount);
+        setPage("map");
+      },
+    })),
+    { id: "orbit-rec", label: "Pôr recomendados na Órbita", hint: "ação", keywords: "caches", run: orbitRecommended },
+    {
+      id: "orbit-swallow",
+      label: "Engolir a Órbita",
+      hint: "ação",
+      keywords: "excluir apagar limpar",
+      run: () => (marked.size || picked.length) && setConfirm(true),
+    },
+    {
+      id: "motion",
+      label: `Animações: trocar (agora ${MOTION_LABELS[motion]})`,
+      hint: "preferência",
+      run: cycleMotion,
+    },
+  ];
 
   const primaryDisk = disks.find((d) => d.mount === diskMount) ?? disks[0] ?? null;
   const reclaimableAmount = totalSize(recommended(rules, settings));
   // The routine is local: the app opens, looks at the history and nudges. No background service.
   const cleanupDue = settings.reminder && isCleanupDue(settings, history);
 
+  const orbitMarks = [...marked.values()];
+  const space = spaceOf(page);
+
   return (
-    <div className="flex h-screen max-h-screen overflow-hidden bg-[var(--color-ink)] text-[var(--color-text)]">
+    <div className="shell">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-amber-500 focus:px-4 focus:py-2 focus:font-semibold focus:text-slate-950"
       >
         Pular para o conteúdo
       </a>
-      <aside className="flex w-60 min-w-60 shrink-0 flex-col border-r border-slate-800/70 bg-[#0b101b]/95 p-4 backdrop-blur-xl">
-        <button
-          type="button"
-          className="group flex cursor-pointer items-center gap-3 px-2 py-1 text-left transition-transform hover:scale-[1.01]"
-          onClick={() => setPage("overview")}
-        >
-          <span className="grid grid-cols-2 gap-1 rounded-lg bg-slate-900/80 p-1.5 shadow-sm transition-transform duration-300 group-hover:rotate-6">
-            <i className="h-2 w-2 rounded-xs bg-amber-400" />
-            <i className="h-2 w-2 rounded-xs bg-blue-500" />
-            <i className="h-2 w-2 rounded-xs bg-emerald-400" />
-            <i className="h-2 w-2 rounded-xs bg-rose-400" />
-          </span>
-          <span className="text-xl font-bold tracking-tight text-white">
-            faxina<span className="text-amber-400">.</span>
-          </span>
-        </button>
-        <span className="mt-1 px-2 text-[11px] font-medium tracking-wide text-slate-400/80">
-          Espaço para o que importa.
-        </span>
-        <nav aria-label="Navegação principal" className="mt-5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
-          {NAV.map((n) => (
-            <div key={n.id}>
-              {n.caption && (
-                <span className="block px-3 pt-4 pb-1 text-[10px] font-bold tracking-widest text-slate-400 uppercase">
-                  {n.caption}
-                </span>
-              )}
-              <button
-                type="button"
-                className={`group flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-150 ${
-                  page === n.id
-                    ? "border border-amber-500/25 bg-amber-500/10 font-semibold text-amber-300 shadow-xs"
-                    : "border border-transparent text-slate-400 hover:bg-slate-800/40 hover:text-slate-200"
-                }`}
-                aria-current={page === n.id ? "page" : undefined}
-                onClick={() => setPage(n.id)}
-              >
-                <Icon name={n.icon} size={18} />
-                <span>{n.label}</span>
-                {n.id === "review" && scanned && picked.length > 0 && (
-                  <span className="ml-auto rounded-full border border-amber-500/30 bg-amber-500/20 px-2 py-0.5 font-mono text-[11px] font-bold text-amber-300 shadow-xs">
-                    {picked.length}
-                  </span>
-                )}
-              </button>
-            </div>
-          ))}
-        </nav>
-        <div className="mt-auto flex shrink-0 flex-col gap-3 pt-3 border-t border-slate-800/60">
-          <button
-            type="button"
-            onClick={cycleMotion}
-            title="Animação de exclusão: seguir o sistema, sempre ou nunca"
-            className="flex w-full cursor-pointer items-center justify-between rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs text-slate-300 shadow-xs transition-colors hover:bg-slate-800/70"
-          >
-            <span className="flex items-center gap-2">
-              <span aria-hidden="true">✨</span>
-              <span>Animações</span>
-            </span>
-            <span className="font-medium text-amber-400/90">{MOTION_LABELS[motion]}</span>
-          </button>
-          <div className="rounded-2xl border border-slate-800/80 bg-gradient-to-b from-slate-900/60 to-slate-950/80 p-3.5 text-xs text-slate-400 shadow-xs">
-            <div className="mb-2 flex items-center gap-2 text-emerald-400">
-              <Icon name="shield" size={18} />
-              <strong className="text-slate-200">Seu espaço é seu.</strong>
-            </div>
-            <p className="leading-relaxed">
-              Você escolhe o que limpar.
-              <br />
-              Seus dados ficam com você.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 px-1 pt-1 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-            </span>
-            <span>PROTEÇÃO ATIVA</span>
-          </div>
-        </div>
-      </aside>
+      <Rail
+        space={space.id}
+        badges={{ limpar: scanned ? picked.length : 0 }}
+        onSpace={goSpace}
+        onPalette={() => setPalette(true)}
+        motionLabel={MOTION_LABELS[motion]}
+        onMotion={cycleMotion}
+      />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center justify-between border-b border-slate-800/70 bg-[#0b101b]/80 px-8 text-xs text-slate-400 backdrop-blur-md">
-          <div className="flex items-center gap-2">
-            <span>Meu computador</span>
-            <span className="text-slate-400">/</span>
-            <strong className="font-semibold text-slate-100">{NAV.find((n) => n.id === page)?.label}</strong>
+        <header className="stage-head">
+          <div className="flex min-w-0 items-baseline gap-3">
+            <h1 className="font-display text-2xl font-extrabold tracking-tight text-white">{space.label}</h1>
+            <span className="hidden truncate text-xs text-slate-500 sm:inline">
+              {platformName()} · protegido · você decide o que sai
+            </span>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={cycleMotion}
-              title="Animação de exclusão: seguir o sistema, sempre ou nunca"
-              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/80 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:text-white"
-            >
-              <span aria-hidden="true">✨</span>
-              <span>Animações: {MOTION_LABELS[motion]}</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <SpaceTabs space={space} page={page} onPage={setPage} />
+            <button type="button" className="kbtn" onClick={() => setPalette(true)}>
+              <Icon name="search" size={15} />
+              <span>Buscar</span>
+              <kbd className="kbd">Ctrl K</kbd>
             </button>
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 shadow-xs">
-              <Icon name="shield" size={14} />
-              <span>Protegido · {platformName()}</span>
-            </div>
           </div>
         </header>
 
-        <main id="main" ref={main} tabIndex={-1} className="flex min-h-0 flex-1 flex-col overflow-y-auto outline-none">
+        <main id="main" ref={main} tabIndex={-1} className="stage">
           <div
-            className={`mx-auto flex w-full max-w-7xl flex-1 flex-col p-8 sm:p-10 ${page === "map" ? "p-0 sm:p-0 max-w-none" : ""}`}
+            className={`mx-auto flex w-full max-w-7xl flex-1 flex-col p-6 sm:p-8 ${page === "map" ? "max-w-none p-0 sm:p-0" : ""}`}
           >
             {storageError && (
               <div
@@ -389,6 +400,9 @@ export default function App() {
                   setJunkLoading(false);
                 }}
                 navigate={setPage}
+                rules={rules}
+                onOrbit={orbitRecommended}
+                root={scan.root}
               />
             )}
 
@@ -399,8 +413,6 @@ export default function App() {
               marked={marked}
               onToggleMark={toggleMark}
               onClearMarked={() => setMarked(new Map())}
-              onUnmark={unmark}
-              onDeleteMarked={deleteMarked}
             />
 
             {page === "bigfiles" && (
@@ -416,7 +428,10 @@ export default function App() {
                 selected={selected}
                 excluded={settings.excluded}
                 detail={detail}
-                onSelect={(id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))}
+                onSelect={(id) => {
+                  if (!selected.includes(id)) flyToOrbit("#ffae4a");
+                  setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+                }}
                 onDetail={setDetail}
                 onExclude={exclude}
                 onConfirm={() => setConfirm(true)}
@@ -444,16 +459,24 @@ export default function App() {
             )}
 
             {page === "updates" && <Updates />}
-
-            {page !== "map" && (
-              <footer className="mt-16 flex flex-wrap items-center justify-between gap-4 border-t border-slate-800/60 pt-6 text-xs text-slate-500">
-                <span>Feito para liberar espaço. Pensado para preservar o que importa.</span>
-                <span className="font-mono text-slate-600">faxina · desktop cleaner</span>
-              </footer>
-            )}
           </div>
         </main>
       </div>
+
+      <Orbit
+        marks={orbitMarks}
+        junk={scanned ? picked : []}
+        eating={hole !== null}
+        onUnmark={unmark}
+        onUnpick={(id) => setSelected((s) => s.filter((x) => x !== id))}
+        onClear={() => {
+          setMarked(new Map());
+          setSelected([]);
+        }}
+        onSwallow={() => setConfirm(true)}
+      />
+
+      {palette && <CommandPalette commands={commands} onClose={() => setPalette(false)} />}
 
       <div
         className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-2xl border border-slate-700/80 bg-slate-900/95 px-5 py-3 text-sm font-medium text-slate-100 shadow-2xl backdrop-blur-xl transition-all duration-300 ${
@@ -481,7 +504,9 @@ export default function App() {
 
       {confirm && (
         <ConfirmDialog
-          amount={totalSize(picked)}
+          amount={totalSize(picked) + orbitMarks.reduce((n, m) => n + m.size, 0)}
+          caches={picked.length}
+          marks={{ count: orbitMarks.length, size: orbitMarks.reduce((n, m) => n + m.size, 0) }}
           onPreview={() => {
             if (junkScanId.current === null) throw new Error("Analise novamente antes de simular.");
             return api.junkPreview(
@@ -492,7 +517,7 @@ export default function App() {
           onClose={() => setConfirm(false)}
           onConfirm={(destination) => {
             setConfirm(false);
-            cleanJunk(destination);
+            swallowOrbit(destination);
           }}
         />
       )}
