@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.23.0](https://github.com/juninmd/faxina/compare/v1.22.0...v1.23.0) (2026-11-11)
+
+
+### Features
+
+* **ui:** redesign the shell as Órbita with spaces, a unified tray and Ctrl K ([#92](https://github.com/juninmd/faxina/issues/92)) ([5848645](https://github.com/juninmd/faxina/commit/5848645c12e75b415a469cc7e6be7e46b2f6f684))
+
 # [1.22.0](https://github.com/juninmd/faxina/compare/v1.21.0...v1.22.0) (2026-11-10)
 
 
