@@ -4,6 +4,8 @@
 
 use crate::junk_defs::{caches, def, matching, opt_in, Base, JunkDef, APPS, DEV};
 use crate::junk_projects::Marker;
+#[cfg(windows)]
+use std::time::Duration;
 
 const REBUILD: &str =
     "Será preciso recompilar os projetos. Binários e outros arquivos guardados nessas pastas serão removidos.";
@@ -93,7 +95,17 @@ pub fn definitions() -> Vec<JunkDef> {
 
 #[cfg(windows)]
 fn platform() -> Vec<JunkDef> {
+    let windows_temp = opt_in(
+        caches("windows-temp", "Temporários do Windows", crate::junk_defs::SYS, Base::WindowsTemp, &[""]),
+        "Arquivos temporários do sistema. Itens com menos de um dia são preservados; alguns arquivos em uso ou sem permissão podem permanecer.",
+    );
+    let windows_temp = JunkDef {
+        min_age: Duration::from_secs(24 * 60 * 60),
+        ..windows_temp
+    };
+
     vec![
+        windows_temp,
         opt_in(
             caches("android-images", "Imagens de sistema do Android SDK", DEV, Base::Local, &["Android/Sdk/system-images"]),
             "Cada imagem tem GBs e precisa ser baixada de novo pelo SDK Manager para criar emuladores.",

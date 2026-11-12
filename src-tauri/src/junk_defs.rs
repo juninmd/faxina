@@ -17,6 +17,8 @@ pub enum Base {
     Roaming,
     Cache,
     Temp,
+    /// `%SystemRoot%\Temp`, separate from the current user's process temp directory.
+    WindowsTemp,
     /// `~/.config` on Linux, `Application Support` on macOS, Roaming on Windows (Electron's home).
     Config,
     NodeProjects,
