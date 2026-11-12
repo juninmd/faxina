@@ -19,6 +19,10 @@ pub enum Base {
     Temp,
     /// `%SystemRoot%\Temp`, separate from the current user's process temp directory.
     WindowsTemp,
+    /// `%SystemRoot%`: setup, update and servicing leftovers that live outside `Temp`.
+    Windows,
+    /// `%ProgramData%`: installer and update caches shared by every account.
+    ProgramData,
     /// The root of the system drive, derived from `%SystemRoot%`.
     SystemDrive,
     /// `~/.config` on Linux, `Application Support` on macOS, Roaming on Windows (Electron's home).
@@ -156,6 +160,10 @@ const WEB: &str = "Navegadores";
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) const APPS: &str = "Apps";
 pub(crate) const DEV: &str = "Desenvolvimento";
+/// Leftovers of installers and upgrades: payloads kept for repair, update downloads and the copy of
+/// the previous Windows. Big and slow to get back, so these are opt-in.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) const INSTALLERS: &str = "Instaladores";
 
 /// Caches every Chromium-family browser keeps next to its profiles. `root` is the browser data
 /// folder (the parent of `User Data`); `*Cache*` catches Cache, Code Cache, GPUCache, Media Cache
@@ -257,6 +265,7 @@ fn common() -> Vec<JunkDef> {
     v.extend(crate::junk_ai_defs::definitions());
     v.extend(crate::junk_native_defs::definitions());
     v.extend(crate::junk_apps_defs::definitions());
+    v.extend(crate::junk_leftovers_defs::definitions());
     v.extend(crate::junk_optin_defs::definitions());
     v.push(caches(
         "project-node-caches",

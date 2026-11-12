@@ -31,6 +31,14 @@ describe("explainFolder", () => {
     expect(explainFolder("/tmp/constructor")).toBeNull();
     expect(explainFolder("")).toBeNull();
   });
+
+  test("hidden installer and upgrade folders explain the risk", () => {
+    expect(explainFolder("C:\\Windows.old")?.ifRemoved).toContain("voltar");
+    expect(explainFolder("C:\\Windows\\SoftwareDistribution\\Download")?.whatItIs).toContain("Windows Update");
+    expect(explainFolder("C:\\ProgramData\\Package Cache")?.ifRemoved).toContain("instalador");
+    expect(explainFolder("C:\\Windows\\Prefetch")?.whatItIs).toContain("abrir programas");
+    expect(explainFolder("C:\\Windows\\WinSxS")?.ifRemoved).toContain("Limpeza de Disco");
+  });
 });
 
 describe("assistantPrompt", () => {
