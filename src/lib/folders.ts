@@ -44,13 +44,51 @@ const BY_NAME: Record<string, FolderInfo> = {
     whatItIs: "O sistema operacional.",
     ifRemoved: "O computador pode não iniciar mais. Nunca apague.",
   },
-  winsxs: {
-    whatItIs: "Componentes e versões antigas do Windows, usados nas atualizações.",
-    ifRemoved: "Pode quebrar o Windows. Libere espaço pela Limpeza de Disco, nunca à mão.",
-  },
   "$recycle.bin": {
     whatItIs: "A Lixeira do disco: arquivos que você já apagou mas ainda ocupam espaço.",
     ifRemoved: "Use a ação Lixeira do Windows na página Limpar. Os arquivos não poderão ser restaurados depois.",
+  },
+  "windows.old": {
+    whatItIs: "A cópia da instalação anterior do Windows, guardada para você poder voltar atrás.",
+    ifRemoved:
+      "Você perde a opção de voltar à versão anterior do Windows. O próprio Windows apaga esta pasta 10 dias após a atualização.",
+  },
+  "$windows.~bt": {
+    whatItIs: "Arquivos que o Windows usa para instalar ou desfazer uma atualização de versão.",
+    ifRemoved: "Uma atualização em andamento pode falhar. Deixe o Windows terminar e limpe pela Limpeza de Disco.",
+  },
+  "$windows.~ws": {
+    whatItIs: "Arquivos temporários da instalação do Windows.",
+    ifRemoved: "Uma atualização em andamento pode falhar. Deixe o Windows terminar e limpe pela Limpeza de Disco.",
+  },
+  $winreagent: {
+    whatItIs: "Arquivos temporários usados para atualizar o ambiente de recuperação do Windows.",
+    ifRemoved: "A recuperação do sistema pode deixar de funcionar. Deixe o Windows cuidar desta pasta.",
+  },
+  softwaredistribution: {
+    whatItIs: "Onde o Windows Update guarda as atualizações baixadas antes de instalá-las.",
+    ifRemoved: "As atualizações são baixadas de novo. Não limpe com uma atualização pendente.",
+  },
+  "package cache": {
+    whatItIs:
+      "Pacotes de instalação guardados por instaladores como o do Visual Studio para reparar ou remover programas.",
+    ifRemoved: "Reparar, alterar ou desinstalar esses programas passa a pedir o instalador original.",
+  },
+  "downloaded installations": {
+    whatItIs: "Cópias de instaladores MSI que alguns programas guardam ao serem instalados.",
+    ifRemoved: "Reparar ou desinstalar esses programas pode pedir o instalador original.",
+  },
+  prefetch: {
+    whatItIs: "Arquivos que o Windows usa para abrir programas mais rápido.",
+    ifRemoved: "Os programas abrem um pouco mais devagar nas primeiras vezes; o Windows recria tudo.",
+  },
+  installer: {
+    whatItIs: "Banco de dados do Windows Installer (MSI), usado para reparar e remover programas.",
+    ifRemoved: "Programas podem não ser mais reparados nem desinstalados. Nunca apague esta pasta à mão.",
+  },
+  winsxs: {
+    whatItIs: "Componentes e versões antigas do Windows, usados nas atualizações.",
+    ifRemoved: "Pode quebrar o Windows. Libere espaço pela Limpeza de Disco, nunca à mão.",
   },
   library: {
     whatItIs: "Configurações e dados dos aplicativos no macOS.",
@@ -115,14 +153,25 @@ function segments(path: string): string[] {
   return path.split(/[\\/]/).filter(Boolean);
 }
 
+/** Folders whose generic name means nothing without its parent (`SoftwareDistribution/Download`). */
+const BY_PATH: Record<string, FolderInfo> = {
+  "softwaredistribution/download": {
+    whatItIs: "As atualizações que o Windows Update já baixou e ainda vai instalar (ou já instalou).",
+    ifRemoved: "São baixadas de novo na próxima atualização. Não limpe com uma atualização pendente.",
+  },
+};
+
 // Maps, not plain lookups: a folder called `constructor` must not resolve to an Object.prototype member.
 const BY_NAME_MAP = new Map(Object.entries(BY_NAME));
+const BY_PATH_MAP = new Map(Object.entries(BY_PATH));
 const APP_DATA_MAP = new Map(Object.entries(APP_DATA_CHILDREN));
 
 export function explainFolder(path: string): FolderInfo | null {
   const parts = segments(path).map((p) => p.toLowerCase());
   const name = parts[parts.length - 1];
   if (!name) return null;
+  const pair = parts.slice(-2).join("/");
+  if (BY_PATH_MAP.has(pair)) return BY_PATH_MAP.get(pair) ?? null;
   const inAppData = parts[parts.length - 2] === "appdata" || (name === "temp" && parts[parts.length - 3] === "appdata");
   if (inAppData && APP_DATA_MAP.has(name)) return APP_DATA_MAP.get(name) ?? null;
   return BY_NAME_MAP.get(name) ?? null;

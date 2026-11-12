@@ -85,16 +85,19 @@ pub fn base_dir(base: Base) -> Option<PathBuf> {
         Base::Roaming => dirs::data_dir(),
         Base::Cache => dirs::cache_dir(),
         Base::Temp => Some(std::env::temp_dir()),
-        Base::WindowsTemp => std::env::var_os("SystemRoot")
-            .or_else(|| std::env::var_os("WINDIR"))
-            .map(PathBuf::from)
-            .map(|root| root.join("Temp")),
-        Base::SystemDrive => std::env::var_os("SystemRoot")
-            .or_else(|| std::env::var_os("WINDIR"))
-            .and_then(|root| PathBuf::from(root).parent().map(Path::to_path_buf)),
+        Base::WindowsTemp => system_root().map(|root| root.join("Temp")),
+        Base::Windows => system_root(),
+        Base::ProgramData => std::env::var_os("ProgramData").map(PathBuf::from),
+        Base::SystemDrive => system_root().and_then(|root| root.parent().map(Path::to_path_buf)),
         Base::Config => dirs::config_dir(),
         Base::NodeProjects | Base::RustProjects | Base::PythonProjects | Base::Marked(_) => None,
     }
+}
+
+fn system_root() -> Option<PathBuf> {
+    std::env::var_os("SystemRoot")
+        .or_else(|| std::env::var_os("WINDIR"))
+        .map(PathBuf::from)
 }
 
 /// A directory we may step into: never a symlink or junction, which could point anywhere.
@@ -552,7 +555,7 @@ fn run(
             let Some(parent) = target.canonical.parent() else {
                 return failed("caminho inválido");
             };
-            match crate::guard::check(&target.path, &[parent.to_path_buf()]) {
+            match crate::guard::check_reviewed_cache(&target.path, &[parent.to_path_buf()]) {
                 Ok(path) => clean_tree(
                     &path,
                     &target.rule,
@@ -669,6 +672,37 @@ mod tests {
         assert!(unreviewed.join(".next/cache/data").exists());
     }
 
+    /// The reviewed-cache check is what lets a Windows Update cleaner run at all; a dry run proves
+    /// the path reaches the plan without touching anything.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "reads the real Windows Update cache; preview only, removes nothing"]
+    fn preview_accepts_a_system_cache_inside_windows() {
+        let dir = PathBuf::from(std::env::var_os("SystemRoot").unwrap())
+            .join("SoftwareDistribution/Download");
+        let Ok(canonical) = fs::canonicalize(&dir) else {
+            eprintln!("no Windows Update cache on this machine: {dir:?}");
+            return;
+        };
+        let snapshot = Snapshot {
+            targets: vec![Target {
+                id: "windows-update-cache",
+                path: dir,
+                canonical,
+                rule: whole(""),
+                min_age: Duration::ZERO,
+                procs: &[],
+            }],
+        };
+        let report = preview(&snapshot, &["windows-update-cache".to_string()]);
+        println!("{report:?}");
+        assert_eq!(
+            report.failed, 0,
+            "the reviewed cache was refused: {report:?}"
+        );
+        assert!(report.removed > 0, "nothing to preview: {report:?}");
+    }
+
     /// Manual smoke for the real mounted-volume discovery; never deletes anything.
     #[test]
     #[ignore = "reads all mounted volumes; run explicitly with --ignored --nocapture"]
@@ -691,6 +725,20 @@ mod tests {
                 item.size,
                 item.files,
                 item.paths.len()
+            );
+        }
+        // The leftovers that no one finds by browsing: installer payloads, update downloads, logs.
+        for item in items
+            .iter()
+            .filter(|i| i.group == crate::junk_defs::INSTALLERS || i.id.starts_with("win-"))
+        {
+            println!(
+                "{} [{}]: bytes={} files={} first={}",
+                item.id,
+                item.group,
+                item.size,
+                item.files,
+                item.paths.first().map(String::as_str).unwrap_or("-")
             );
         }
     }

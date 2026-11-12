@@ -2,6 +2,28 @@ use std::path::{Component, Path, PathBuf};
 
 /// Everything a deletion request must pass: the webview is not trusted to send sane paths.
 pub fn check(target: &Path, allowed_roots: &[PathBuf]) -> Result<PathBuf, String> {
+    let canon = validated(target, allowed_roots)?;
+    if is_protected(&canon) {
+        return Err("pasta protegida do sistema".into());
+    }
+    // Remove exactly what was validated, not the raw input.
+    Ok(canon)
+}
+
+/// A cache location a reviewed definition pointed at (`junk_defs`). Those legitimately live inside
+/// `%SystemRoot%` and `%ProgramData%` — trees `check` refuses whole — so only the OS-tree rule is
+/// relaxed. Links, traversal, paths outside the analysed root, drive-root OS entries and the user's
+/// known folders are still refused.
+pub fn check_reviewed_cache(target: &Path, allowed_roots: &[PathBuf]) -> Result<PathBuf, String> {
+    let canon = validated(target, allowed_roots)?;
+    if Protection::new().is_user_protected(&canon) {
+        return Err("pasta protegida do sistema".into());
+    }
+    Ok(canon)
+}
+
+/// Shared front half of both checks: the request's own sanity, canonical form and containment.
+fn validated(target: &Path, allowed_roots: &[PathBuf]) -> Result<PathBuf, String> {
     if !target.is_absolute()
         || target
             .components()
@@ -23,10 +45,6 @@ pub fn check(target: &Path, allowed_roots: &[PathBuf]) -> Result<PathBuf, String
     if !inside {
         return Err("fora da área analisada".into());
     }
-    if is_protected(&canon) {
-        return Err("pasta protegida do sistema".into());
-    }
-    // Remove exactly what was validated, not the raw input.
     Ok(canon)
 }
 
@@ -128,6 +146,13 @@ impl Protection {
     }
 
     pub fn is_protected(&self, p: &Path) -> bool {
+        self.is_user_protected(p) || self.is_system(p)
+    }
+
+    /// What belongs to the person rather than to the OS: the volume root, the OS-owned entries at a
+    /// drive root and the known folders (with their ancestors). A reviewed cache may live inside
+    /// `%SystemRoot%`, but never inside these.
+    pub fn is_user_protected(&self, p: &Path) -> bool {
         // A volume root itself is never deletable.
         if p.parent().is_none() {
             return true;
@@ -136,10 +161,7 @@ impl Protection {
             return true;
         }
         // The known folders themselves, and anything that contains them (home, C:\).
-        if self.exact.iter().any(|d| d == p || d.starts_with(p)) {
-            return true;
-        }
-        self.is_system(p)
+        self.exact.iter().any(|d| d == p || d.starts_with(p))
     }
 
     /// OS and credential trees must not be explored for project cleanup.
@@ -329,6 +351,50 @@ mod tests {
         assert!(is_protected(
             &root.join("System Volume Information").join("tracking.log")
         ));
+    }
+
+    /// Windows keeps update, installer and servicing caches inside `%SystemRoot%` and
+    /// `%ProgramData%`, which are OS trees: `check` refuses them, so a reviewed cache needs the
+    /// narrower rule. Everything else stays refused.
+    #[cfg(windows)]
+    #[test]
+    fn reviewed_caches_inside_os_trees_are_allowed_but_nothing_else_is() {
+        let root = PathBuf::from(std::env::var_os("SystemRoot").unwrap());
+        let download = root.join("SoftwareDistribution/Download");
+        assert!(
+            is_protected(&download),
+            "an OS tree is not deletable on a raw request"
+        );
+        if download.is_dir() {
+            assert_eq!(
+                check(&download, std::slice::from_ref(&root)).unwrap_err(),
+                "pasta protegida do sistema"
+            );
+            assert!(check_reviewed_cache(&download, std::slice::from_ref(&root)).is_ok());
+        }
+
+        // A reviewed cache does not unlock the drive-root OS entries.
+        let bin = PathBuf::from(format!(
+            "{}\\$Recycle.Bin",
+            std::env::var("SystemDrive").unwrap()
+        ));
+        assert_eq!(
+            check_reviewed_cache(&bin, &[bin.parent().unwrap().to_path_buf()]).unwrap_err(),
+            "pasta protegida do sistema"
+        );
+        // Nor the user's known folders.
+        if let Some(downloads) = dirs::download_dir().and_then(|d| dunce(&d).ok()) {
+            assert_eq!(
+                check_reviewed_cache(&downloads, &[downloads.parent().unwrap().to_path_buf()])
+                    .unwrap_err(),
+                "pasta protegida do sistema"
+            );
+        }
+        // Nor a path outside the analysed root.
+        assert_eq!(
+            check_reviewed_cache(&root, &[root.join("Temp")]).unwrap_err(),
+            "fora da área analisada"
+        );
     }
 
     #[cfg(unix)]

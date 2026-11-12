@@ -95,6 +95,8 @@ pub fn definitions() -> Vec<JunkDef> {
 
 #[cfg(windows)]
 fn platform() -> Vec<JunkDef> {
+    use crate::junk_defs::INSTALLERS;
+
     let windows_temp = opt_in(
         caches("windows-temp", "Temporários do Windows", crate::junk_defs::SYS, Base::WindowsTemp, &[""]),
         "Arquivos temporários do sistema. Itens com menos de um dia são preservados; alguns arquivos em uso ou sem permissão podem permanecer.",
@@ -107,8 +109,8 @@ fn platform() -> Vec<JunkDef> {
     let amd_installer = opt_in(
         caches(
             "amd-installer-files",
-            "Instalador AMD extraído",
-            APPS,
+            "Pacotes de driver extraídos (AMD)",
+            INSTALLERS,
             Base::SystemDrive,
             &["AMD"],
         ),
