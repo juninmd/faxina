@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.24.0](https://github.com/juninmd/faxina/compare/v1.23.0...v1.24.0) (2026-11-12)
+
+
+### Features
+
+* **cleanup:** add opt-in Windows system temp cleaner ([#93](https://github.com/juninmd/faxina/issues/93)) ([7c9d7c2](https://github.com/juninmd/faxina/commit/7c9d7c29a9e9eb1fbbd9797c33dbeffca8901f11))
+
 # [1.23.0](https://github.com/juninmd/faxina/compare/v1.22.0...v1.23.0) (2026-11-11)
 
 
