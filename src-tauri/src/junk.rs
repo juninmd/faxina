@@ -89,6 +89,9 @@ pub fn base_dir(base: Base) -> Option<PathBuf> {
             .or_else(|| std::env::var_os("WINDIR"))
             .map(PathBuf::from)
             .map(|root| root.join("Temp")),
+        Base::SystemDrive => std::env::var_os("SystemRoot")
+            .or_else(|| std::env::var_os("WINDIR"))
+            .and_then(|root| PathBuf::from(root).parent().map(Path::to_path_buf)),
         Base::Config => dirs::config_dir(),
         Base::NodeProjects | Base::RustProjects | Base::PythonProjects | Base::Marked(_) => None,
     }

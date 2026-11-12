@@ -19,6 +19,8 @@ pub enum Base {
     Temp,
     /// `%SystemRoot%\Temp`, separate from the current user's process temp directory.
     WindowsTemp,
+    /// The root of the system drive, derived from `%SystemRoot%`.
+    SystemDrive,
     /// `~/.config` on Linux, `Application Support` on macOS, Roaming on Windows (Electron's home).
     Config,
     NodeProjects,

@@ -104,8 +104,24 @@ fn platform() -> Vec<JunkDef> {
         ..windows_temp
     };
 
+    let amd_installer = opt_in(
+        caches(
+            "amd-installer-files",
+            "Instalador AMD extraído",
+            APPS,
+            Base::SystemDrive,
+            &["AMD"],
+        ),
+        "Arquivos extraídos para instalar ou recuperar drivers AMD. Limpe só depois de concluir a instalação e reiniciar; será preciso baixar o pacote novamente para reparar ou reinstalar.",
+    );
+    let amd_installer = JunkDef {
+        min_age: Duration::from_secs(7 * 24 * 60 * 60),
+        ..amd_installer
+    };
+
     vec![
         windows_temp,
+        amd_installer,
         opt_in(
             caches("android-images", "Imagens de sistema do Android SDK", DEV, Base::Local, &["Android/Sdk/system-images"]),
             "Cada imagem tem GBs e precisa ser baixada de novo pelo SDK Manager para criar emuladores.",

@@ -1,5 +1,6 @@
 import { count, gb, type Rule, totalSize } from "../domain";
 import Icon from "./Icon";
+import RecycleBinCard from "./RecycleBinCard";
 
 export default function Review({
   rules,
@@ -72,6 +73,8 @@ export default function Review({
           </button>
         )}
       </div>
+
+      <RecycleBinCard />
 
       {!scanned || (!displayRules.length && !loading) ? (
         <section className="flex flex-col items-center justify-center gap-4 rounded-3xl border border-slate-800/80 bg-slate-900/60 p-12 text-center shadow-lg backdrop-blur-md">
