@@ -50,7 +50,7 @@ const BY_NAME: Record<string, FolderInfo> = {
   },
   "$recycle.bin": {
     whatItIs: "A Lixeira do disco: arquivos que você já apagou mas ainda ocupam espaço.",
-    ifRemoved: "Esvazie pela Lixeira. Os arquivos não poderão ser restaurados depois.",
+    ifRemoved: "Use a ação Lixeira do Windows na página Limpar. Os arquivos não poderão ser restaurados depois.",
   },
   library: {
     whatItIs: "Configurações e dados dos aplicativos no macOS.",

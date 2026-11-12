@@ -14,6 +14,12 @@ use crate::model::{BigFile, Node, Suggestion, ViewNode};
 use crate::scan::{self, Progress};
 use crate::{guard, remove, view, worktrees};
 
+#[cfg(windows)]
+use windows_sys::Win32::UI::Shell::{
+    SHEmptyRecycleBinW, SHQueryRecycleBinW, SHERB_NOCONFIRMATION, SHERB_NOPROGRESSUI,
+    SHERB_NOSOUND, SHQUERYRBINFO,
+};
+
 const MAX_DUP_GROUPS: usize = 500;
 
 struct ScanData {
@@ -897,4 +903,75 @@ pub fn home_dir() -> String {
     dirs::home_dir()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default()
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecycleBinInfo {
+    pub bytes: u64,
+    pub items: u64,
+}
+
+#[cfg(windows)]
+fn query_recycle_bin() -> Result<RecycleBinInfo, String> {
+    let mut info = SHQUERYRBINFO {
+        cbSize: std::mem::size_of::<SHQUERYRBINFO>() as u32,
+        ..Default::default()
+    };
+    let result = unsafe { SHQueryRecycleBinW(std::ptr::null(), &mut info) };
+    if result < 0 {
+        return Err(format!(
+            "Não foi possível consultar a Lixeira (HRESULT 0x{:08X}).",
+            result as u32
+        ));
+    }
+    Ok(RecycleBinInfo {
+        bytes: info.i64Size.max(0) as u64,
+        items: info.i64NumItems.max(0) as u64,
+    })
+}
+
+#[tauri::command]
+pub fn recycle_bin_info() -> Result<RecycleBinInfo, String> {
+    #[cfg(windows)]
+    {
+        query_recycle_bin()
+    }
+    #[cfg(not(windows))]
+    {
+        Err("A Lixeira do Windows só está disponível no Windows.".into())
+    }
+}
+
+#[tauri::command]
+pub fn empty_recycle_bin(
+    expected_items: u64,
+    expected_bytes: u64,
+) -> Result<RecycleBinInfo, String> {
+    #[cfg(windows)]
+    {
+        let current = query_recycle_bin()?;
+        if current.items != expected_items || current.bytes != expected_bytes {
+            return Err(
+                "A Lixeira mudou desde a análise. Atualize os dados e revise novamente.".into(),
+            );
+        }
+        if current.items == 0 {
+            return Ok(current);
+        }
+        let flags = SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND;
+        let result = unsafe { SHEmptyRecycleBinW(std::ptr::null_mut(), std::ptr::null(), flags) };
+        if result < 0 {
+            return Err(format!(
+                "Não foi possível esvaziar a Lixeira (HRESULT 0x{:08X}).",
+                result as u32
+            ));
+        }
+        query_recycle_bin()
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (expected_items, expected_bytes);
+        Err("A Lixeira do Windows só está disponível no Windows.".into())
+    }
 }

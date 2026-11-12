@@ -48,6 +48,8 @@ pub fn run() {
             disks::disk_info,
             disks::list_disks,
             commands::home_dir,
+            commands::recycle_bin_info,
+            commands::empty_recycle_bin,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

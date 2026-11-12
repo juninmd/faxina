@@ -58,6 +58,11 @@ export interface CleanReport {
   reason?: string | null;
 }
 
+export interface RecycleBinInfo {
+  bytes: number;
+  items: number;
+}
+
 export interface DupGroup {
   hash: string;
   size: number;
@@ -147,6 +152,9 @@ export const api = {
   diskInfo: (path: string) => invoke<DiskInfo | null>("disk_info", { path }),
   listDisks: () => invoke<DiskInfo[]>("list_disks"),
   homeDir: () => invoke<string>("home_dir"),
+  recycleBinInfo: () => invoke<RecycleBinInfo>("recycle_bin_info"),
+  emptyRecycleBin: (expectedItems: number, expectedBytes: number) =>
+    invoke<RecycleBinInfo>("empty_recycle_bin", { expectedItems, expectedBytes }),
 };
 
 export interface WorktreeTick {
