@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.25.0](https://github.com/juninmd/faxina/compare/v1.24.0...v1.25.0) (2026-11-12)
+
+
+### Features
+
+* **cleanup:** review Windows recycle bin and AMD installer ([#94](https://github.com/juninmd/faxina/issues/94)) ([67ac591](https://github.com/juninmd/faxina/commit/67ac5910fa5ba6cadf4886b6452ce46cef14b8de))
+
 # [1.24.0](https://github.com/juninmd/faxina/compare/v1.23.0...v1.24.0) (2026-11-12)
 
 
