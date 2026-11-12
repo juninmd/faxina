@@ -21,6 +21,9 @@ pub enum Base {
     WindowsTemp,
     /// The root of the system drive, derived from `%SystemRoot%`.
     SystemDrive,
+    /// Steam install and library roots discovered from the current user's Steam config.
+    #[cfg(windows)]
+    SteamLibraries,
     /// `~/.config` on Linux, `Application Support` on macOS, Roaming on Windows (Electron's home).
     Config,
     NodeProjects,

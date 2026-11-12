@@ -1,7 +1,7 @@
 //! Caches left behind by AI tooling: model runtimes, JIT kernels, agent CLIs and `npx`/MCP downloads.
 //! Model stores the user pulled on purpose (Ollama, LM Studio) and chat transcripts are NOT listed.
 
-use crate::junk_defs::{caches, Base, JunkDef, DEV};
+use crate::junk_defs::{caches, def, matching, opt_in, whole, Base, JunkDef, DEV};
 
 pub fn definitions() -> Vec<JunkDef> {
     let mut v = vec![
@@ -78,16 +78,31 @@ pub fn definitions() -> Vec<JunkDef> {
 #[cfg(any(windows, target_os = "macos"))]
 fn home_cache() -> Vec<JunkDef> {
     vec![
-        caches(
-            "ai-datasets",
-            "Datasets e áudio de IA (Hugging Face, Whisper)",
+        opt_in(
+            caches(
+                "ai-datasets",
+                "Datasets e modelos baixados (Hugging Face, Whisper)",
+                DEV,
+                Base::Home,
+                &[
+                    ".cache/huggingface/datasets",
+                    ".cache/huggingface/assets",
+                    ".cache/whisper",
+                ],
+            ),
+            "Remove datasets, assets e modelos baixados. Eles precisam ser baixados novamente; isso pode consumir tempo e internet.",
+        ),
+        def(
+            "huggingface-xet-cache",
+            "Hugging Face Xet (cache de transferência)",
             DEV,
             Base::Home,
-            &[
-                ".cache/huggingface/datasets",
-                ".cache/huggingface/xet",
-                ".cache/huggingface/assets",
-                ".cache/whisper",
+            vec![
+                whole(".cache/huggingface/xet/logs"),
+                whole(".cache/huggingface/xet/*/logs"),
+                whole(".cache/huggingface/xet/*/chunk_cache"),
+                whole(".cache/huggingface/xet/*/shard_cache"),
+                whole(".cache/huggingface/xet/*/shard-cache"),
             ],
         ),
         caches(
@@ -111,6 +126,13 @@ fn home_cache() -> Vec<JunkDef> {
 fn platform() -> Vec<JunkDef> {
     let mut v = home_cache();
     v.extend([
+        def(
+            "claude-changelog-cache",
+            "Claude Code (notas de versão em cache)",
+            DEV,
+            Base::Home,
+            vec![matching(".claude/cache", &["changelog.md"], false)],
+        ),
         caches(
             "npx-cache-local",
             "npx e servidores MCP (pacotes baixados)",

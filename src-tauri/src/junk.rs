@@ -93,7 +93,120 @@ pub fn base_dir(base: Base) -> Option<PathBuf> {
             .or_else(|| std::env::var_os("WINDIR"))
             .and_then(|root| PathBuf::from(root).parent().map(Path::to_path_buf)),
         Base::Config => dirs::config_dir(),
+        #[cfg(windows)]
+        Base::SteamLibraries => None,
         Base::NodeProjects | Base::RustProjects | Base::PythonProjects | Base::Marked(_) => None,
+    }
+}
+
+/// Resolve one or more fixed locations for a cleanup base. Steam libraries are user-configured
+/// and may live on any volume, so their roots come from Steam's registry and libraryfolders.vdf.
+pub(crate) fn base_dirs(base: Base) -> Vec<PathBuf> {
+    #[cfg(windows)]
+    if matches!(base, Base::SteamLibraries) {
+        return steam_library_roots();
+    }
+    base_dir(base).into_iter().collect()
+}
+
+#[cfg(windows)]
+fn steam_library_roots() -> Vec<PathBuf> {
+    let Some(install) = steam_install_path() else {
+        return Vec::new();
+    };
+
+    let mut roots = Vec::new();
+    let mut seen = HashSet::new();
+    push_steam_library_root(&mut roots, &mut seen, &install);
+
+    let library_file = install.join("steamapps").join("libraryfolders.vdf");
+    if fs::symlink_metadata(&library_file)
+        .is_ok_and(|metadata| metadata.is_file() && !is_link(&metadata))
+    {
+        if let Ok(contents) = fs::read_to_string(library_file) {
+            for line in contents.lines() {
+                if let Some(root) = steam_vdf_path(line) {
+                    push_steam_library_root(&mut roots, &mut seen, &root);
+                }
+            }
+        }
+    }
+
+    roots
+}
+
+#[cfg(windows)]
+fn steam_install_path() -> Option<PathBuf> {
+    use windows_sys::Win32::System::Registry::{
+        RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ, REG_SZ,
+    };
+
+    let subkey: Vec<u16> = "Software\\Valve\\Steam\0".encode_utf16().collect();
+    let value_name: Vec<u16> = "SteamPath\0".encode_utf16().collect();
+    let mut key: HKEY = std::ptr::null_mut();
+    let status =
+        unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, subkey.as_ptr(), 0, KEY_READ, &mut key) };
+    if status != 0 {
+        return None;
+    }
+
+    let mut value = [0u16; 16 * 1024];
+    let mut value_type = 0;
+    let mut byte_count = (value.len() * std::mem::size_of::<u16>()) as u32;
+    let status = unsafe {
+        RegQueryValueExW(
+            key,
+            value_name.as_ptr(),
+            std::ptr::null(),
+            &mut value_type,
+            value.as_mut_ptr().cast(),
+            &mut byte_count,
+        )
+    };
+    unsafe {
+        RegCloseKey(key);
+    }
+    if status != 0 || value_type != REG_SZ || byte_count > (value.len() * 2) as u32 {
+        return None;
+    }
+
+    let units = (byte_count as usize) / std::mem::size_of::<u16>();
+    let end = value[..units]
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(units);
+    let path = String::from_utf16(&value[..end]).ok()?;
+    let path = PathBuf::from(path.trim());
+    path.is_absolute().then_some(path)
+}
+
+#[cfg(windows)]
+fn steam_vdf_path(line: &str) -> Option<PathBuf> {
+    let fields = line
+        .trim()
+        .trim_start_matches('\u{feff}')
+        .split('"')
+        .collect::<Vec<_>>();
+    if fields.get(1).copied() != Some("path") {
+        return None;
+    }
+    let value = fields.get(3)?.replace("\\\\", "\\");
+    let path = PathBuf::from(value);
+    path.is_absolute().then_some(path)
+}
+
+#[cfg(windows)]
+fn push_steam_library_root(roots: &mut Vec<PathBuf>, seen: &mut HashSet<String>, root: &Path) {
+    let steamapps = root.join("steamapps");
+    if !root.is_absolute() || !real_dir(root) || !real_dir(&steamapps) {
+        return;
+    }
+    let Ok(canonical) = fs::canonicalize(root) else {
+        return;
+    };
+    let key = canonical.to_string_lossy().to_lowercase();
+    if seen.insert(key) {
+        roots.push(canonical);
     }
 }
 
@@ -184,16 +297,24 @@ pub fn expand(base: &Path, rel: &str) -> Vec<PathBuf> {
 
 /// Directories one rule applies to, deduplicated.
 fn resolve(def: &JunkDef, rule: &Rule, projects: &Projects) -> Vec<PathBuf> {
-    let mut out = if let Some(base) = base_dir(def.base) {
-        expand(&base, rule.path)
-    } else {
-        let protection = crate::guard::Protection::new();
-        projects
-            .roots(def.base)
+    let mut out = match def.base {
+        Base::NodeProjects | Base::RustProjects | Base::PythonProjects | Base::Marked(_) => {
+            let protection = crate::guard::Protection::new();
+            projects
+                .roots(def.base)
+                .iter()
+                .flat_map(|base| expand(base, rule.path))
+                .filter(|p| !protection.is_protected(p))
+                .collect()
+        }
+        #[cfg(windows)]
+        Base::SteamLibraries => base_dirs(def.base)
             .iter()
             .flat_map(|base| expand(base, rule.path))
-            .filter(|p| !protection.is_protected(p))
-            .collect()
+            .collect(),
+        _ => base_dir(def.base)
+            .map(|base| expand(&base, rule.path))
+            .unwrap_or_default(),
     };
     out.sort();
     out.dedup();
