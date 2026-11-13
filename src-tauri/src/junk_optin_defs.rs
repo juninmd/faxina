@@ -1,7 +1,3 @@
-//! Opt-in locations: regenerable, but big, slow or inconvenient to get back, or holding something
-//! the user chose to keep. They are never ticked by default and each carries a warning.
-//! Still out of bounds: chat transcripts, cloud credential caches and browser/profile data.
-
 use crate::junk_defs::{caches, def, matching, opt_in, Base, JunkDef, APPS, DEV};
 use crate::junk_projects::Marker;
 #[cfg(windows)]
@@ -95,7 +91,7 @@ pub fn definitions() -> Vec<JunkDef> {
 
 #[cfg(windows)]
 fn platform() -> Vec<JunkDef> {
-    use crate::junk_defs::needs_closed;
+    use crate::junk_defs::INSTALLERS;
 
     let windows_temp = opt_in(
         caches("windows-temp", "Temporários do Windows", crate::junk_defs::SYS, Base::WindowsTemp, &[""]),
@@ -109,8 +105,8 @@ fn platform() -> Vec<JunkDef> {
     let amd_installer = opt_in(
         caches(
             "amd-installer-files",
-            "Instalador AMD extraído",
-            APPS,
+            "Pacotes de driver extraídos (AMD)",
+            INSTALLERS,
             Base::SystemDrive,
             &["AMD"],
         ),
@@ -150,18 +146,15 @@ fn platform() -> Vec<JunkDef> {
             caches("iphone-backups", "Backups do iPhone/iPad", APPS, Base::Roaming, &["Apple Computer/MobileSync/Backup"]),
             "São cópias do seu aparelho e podem ser a única. Só apague se tiver outro backup (iCloud, por exemplo).",
         ),
-        needs_closed(
-            opt_in(
-                caches(
-                    "steam-partial",
-                    "Steam (downloads em andamento)",
-                    APPS,
-                    Base::SteamLibraries,
-                    &["steamapps/downloading", "steamapps/temp"],
-                ),
-                "Cancela atualizações e instalações pendentes; o Steam recomeça o download do zero.",
+        opt_in(
+            caches(
+                "steam-partial",
+                "Steam (downloads em andamento)",
+                APPS,
+                Base::SteamLibraries,
+                &["steamapps/downloading", "steamapps/temp"],
             ),
-            &["steam", "steamwebhelper"],
+            "Cancela atualizações e instalações pendentes; o Steam recomeça o download do zero.",
         ),
     ]
 }

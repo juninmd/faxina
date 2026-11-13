@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.26.0](https://github.com/juninmd/faxina/compare/v1.25.0...v1.26.0) (2026-11-12)
+
+
+### Features
+
+* **cleanup:** clean hidden installer and update leftovers ([#97](https://github.com/juninmd/faxina/issues/97)) ([ed41754](https://github.com/juninmd/faxina/commit/ed41754a374598b034f44500345dcd5ed05624f6))
+
 # [1.25.0](https://github.com/juninmd/faxina/compare/v1.24.0...v1.25.0) (2026-11-12)
 
 
