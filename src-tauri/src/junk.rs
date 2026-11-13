@@ -617,7 +617,7 @@ fn remove_entries(items: &[(PathBuf, u64, u64)], disposal: Disposal) -> CleanRep
             },
             Err(reason) => failed(&reason),
         })
-        .fold(CleanReport::default, merge)
+        .fold(CleanReport::default(), merge)
 }
 
 fn merge(a: CleanReport, b: CleanReport) -> CleanReport {
