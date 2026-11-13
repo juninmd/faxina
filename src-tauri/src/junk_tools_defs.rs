@@ -1,6 +1,8 @@
 //! Package-manager, toolchain and creative-app caches beyond the core list in `junk_defs`.
 //! Everything here is re-downloaded or re-generated on demand; none of it is user data.
 
+#[cfg(windows)]
+use crate::junk_defs::needs_closed;
 use crate::junk_defs::{def, whole, Base, JunkDef, DEV};
 
 pub fn definitions() -> Vec<JunkDef> {
@@ -178,16 +180,28 @@ fn windows() -> Vec<JunkDef> {
                 false,
             )],
         ),
-        def(
-            "steam-web",
-            "Steam (cache da loja e da comunidade)",
-            APPS,
-            Base::Local,
-            vec![
-                whole("Steam/htmlcache/Cache"),
-                whole("Steam/htmlcache/Code Cache"),
-                whole("Steam/htmlcache/GPUCache"),
-            ],
+        needs_closed(
+            def(
+                "steam-web",
+                "Steam (cache da loja e da comunidade)",
+                APPS,
+                Base::Local,
+                vec![
+                    whole("Steam/htmlcache/Default/Cache"),
+                    whole("Steam/htmlcache/Default/Code Cache"),
+                    whole("Steam/htmlcache/Default/GPUCache"),
+                    whole("Steam/htmlcache/Default/DawnCache"),
+                    whole("Steam/htmlcache/Default/DawnGraphiteCache"),
+                    whole("Steam/htmlcache/Default/DawnWebGPUCache"),
+                    whole("Steam/htmlcache/Default/GrShaderCache"),
+                    whole("Steam/htmlcache/Default/GraphiteDawnCache"),
+                    whole("Steam/htmlcache/Default/Shared Dictionary/cache"),
+                    whole("Steam/htmlcache/ShaderCache"),
+                    whole("Steam/htmlcache/GrShaderCache"),
+                    whole("Steam/htmlcache/GraphiteDawnCache"),
+                ],
+            ),
+            &["steam", "steamwebhelper"],
         ),
         def(
             "cursor",

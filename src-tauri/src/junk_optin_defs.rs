@@ -1,7 +1,3 @@
-//! Opt-in locations: regenerable, but big, slow or inconvenient to get back, or holding something
-//! the user chose to keep. They are never ticked by default and each carries a warning.
-//! Still out of bounds: chat transcripts, cloud credential caches and browser/profile data.
-
 use crate::junk_defs::{caches, def, matching, opt_in, Base, JunkDef, APPS, DEV};
 use crate::junk_projects::Marker;
 #[cfg(windows)]
@@ -150,6 +146,16 @@ fn platform() -> Vec<JunkDef> {
             caches("iphone-backups", "Backups do iPhone/iPad", APPS, Base::Roaming, &["Apple Computer/MobileSync/Backup"]),
             "São cópias do seu aparelho e podem ser a única. Só apague se tiver outro backup (iCloud, por exemplo).",
         ),
+        opt_in(
+            caches(
+                "steam-partial",
+                "Steam (downloads em andamento)",
+                APPS,
+                Base::SteamLibraries,
+                &["steamapps/downloading", "steamapps/temp"],
+            ),
+            "Cancela atualizações e instalações pendentes; o Steam recomeça o download do zero.",
+        ),
     ]
 }
 
@@ -185,10 +191,6 @@ fn platform() -> Vec<JunkDef> {
         opt_in(
             caches("iphone-backups", "Backups do iPhone/iPad", APPS, Base::Home, &["Library/Application Support/MobileSync/Backup"]),
             "São cópias do seu aparelho e podem ser a única. Só apague se tiver outro backup (iCloud, por exemplo).",
-        ),
-        opt_in(
-            caches("steam-partial", "Steam (downloads em andamento)", APPS, Base::Local, &["Steam/steamapps/downloading", "Steam/steamapps/temp"]),
-            "Cancela atualizações e instalações pendentes; o Steam recomeça o download do zero.",
         ),
         opt_in(
             caches("lmstudio-legacy", "Modelos do LM Studio (pasta antiga)", DEV, Base::Home, &[".cache/lm-studio/models"]),
