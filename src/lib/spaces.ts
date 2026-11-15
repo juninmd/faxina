@@ -11,7 +11,7 @@ export interface SpaceDef {
   tabs: { page: Page; label: string }[];
 }
 
-/** Twelve pages folded into four spaces. Every page keeps a home here: none is dropped. */
+/** Thirteen pages folded into four spaces. Every page keeps a home here: none is dropped. */
 export const SPACES: SpaceDef[] = [
   { id: "agora", label: "Agora", icon: "orbit", tabs: [{ page: "overview", label: "Visão geral" }] },
   {
@@ -21,6 +21,7 @@ export const SPACES: SpaceDef[] = [
     tabs: [
       { page: "map", label: "Mapa" },
       { page: "bigfiles", label: "Grandes" },
+      { page: "search", label: "Buscar" },
       { page: "growth", label: "Cresceu" },
     ],
   },

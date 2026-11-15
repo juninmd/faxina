@@ -29,6 +29,8 @@ Para quem: quem tem o disco cheio e não sabe por quê. O Faxina mostra onde o e
 | | |
 |---|---|
 | 🗺️ **Mapa do disco** | Analise a pasta pessoal, qualquer pasta ou um disco inteiro (C:, D:…) e troque a qualquer momento. Treemap em blocos (estilo *disktree*) ou anéis concêntricos (estilo *DaisyDisk*). Cada cor é um tipo: cache, build, git, código, mídia, documentos, compactados, apps. Hachurado = **recuperável**. |
+| 🔎 **Busca e relatórios** | Busca instantânea no mapa por nome (com `*` e `?`), tamanho, tipo e tempo parado ("não mexo há 1 ano"), com exportação em CSV, JSON ou HTML. Só arquivos rastreados individualmente (acima de 512 KB) aparecem. |
+| ⌨️ **Linha de comando** | `faxina-cli search <pasta> --older-than 12m --min-size 500MB --format csv`, `faxina-cli scan` e `faxina-cli junk`. Somente leitura: nunca apaga nada. |
 | 💡 **Vale uma olhada** | Lista automática do que dá para apagar sem dor: `node_modules`, `target/` de projetos Rust, Maven e sbt, `.next`, `__pycache__`, `.venv`, `__pypackages__`, `.build` do SwiftPM, `elm-stuff`, `zig-out`, caches e arquivos gigantes parados há meses. |
 | 🔎 **Arquivos grandes** | Os maiores arquivos da área analisada, de qualquer idade — para quando o que pesa não é cache nem duplicata. |
 | 🧹 **Limpeza rápida** | Caches de Windows, navegadores (Chrome, Edge, Brave, Vivaldi, Firefox, Thunderbird), apps (VS Code, Discord, Slack, Spotify), apps da Microsoft Store e ferramentas de dev (npm, Yarn, pnpm, pip, uv, Poetry, Bun, Cargo, Gradle, Rustup, Maven, Ivy, Coursier, go, NuGet, Composer, Dart/Flutter, JetBrains, Cypress/Playwright/Electron, modelos baixados do Hugging Face/PyTorch), além de caches do Cursor, Teams e do cache de mídia da Adobe. **Nunca** toca em cookies, senhas ou histórico. |

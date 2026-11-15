@@ -8,9 +8,11 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::dupes::{self, DupGroup, DupProgress};
 use crate::empty::{self, EmptyItem};
+use crate::export::{self, Format};
 use crate::history::{self, Growth};
 use crate::junk::{self, CleanReport, JunkItem};
 use crate::model::{BigFile, Node, Suggestion, ViewNode};
+use crate::query::{self, Hit, Query};
 use crate::scan::{self, Progress};
 use crate::{guard, remove, view, worktrees};
 
@@ -199,6 +201,44 @@ pub fn largest_files(state: State<'_, AppState>, limit: usize) -> Vec<BigFile> {
             !protection.is_protected(p)
         })
     })
+}
+
+/// Search over the current scan (name, size, kind, age). Empty until a scan has run.
+#[tauri::command]
+pub fn search_files(state: State<'_, AppState>, query: Query) -> Vec<Hit> {
+    lock(&state.scan).as_ref().map_or_else(Vec::new, |d| {
+        let protection = guard::Protection::new();
+        query::search(&d.tree, &d.root, &query, now(), |p| {
+            !protection.is_protected(p)
+        })
+    })
+}
+
+/// Writes the results of `query` to `path` (chosen in the save dialog). The webview never sends
+/// the rows: they are recomputed from the scan, so a report can only list what the scan holds.
+#[tauri::command]
+pub async fn export_report(
+    state: State<'_, AppState>,
+    query: Query,
+    format: Format,
+    path: String,
+) -> Result<usize, String> {
+    let target = PathBuf::from(&path);
+    if target.is_dir() {
+        return Err("escolha um arquivo, não uma pasta".into());
+    }
+    let (hits, root) = {
+        let guard = lock(&state.scan);
+        let d = guard.as_ref().ok_or("nenhuma análise")?;
+        let protection = guard::Protection::new();
+        let hits = query::search(&d.tree, &d.root, &query, now(), |p| {
+            !protection.is_protected(p)
+        });
+        (hits, d.root.to_string_lossy().into_owned())
+    };
+    let body = export::render(&hits, format, &root, now());
+    std::fs::write(&target, body).map_err(|e| format!("não foi possível salvar: {e}"))?;
+    Ok(hits.len())
 }
 
 fn disk_size(path: &Path) -> u64 {

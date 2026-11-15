@@ -1,8 +1,10 @@
 mod category;
+pub mod cli;
 mod commands;
 mod disks;
 mod dupes;
 mod empty;
+mod export;
 mod guard;
 mod history;
 mod junk;
@@ -16,6 +18,7 @@ mod junk_projects;
 mod junk_tools_defs;
 mod listing;
 mod model;
+mod query;
 mod remove;
 mod scan;
 mod view;
@@ -36,6 +39,8 @@ pub fn run() {
             commands::get_stale_deps,
             commands::get_growth,
             commands::largest_files,
+            commands::search_files,
+            commands::export_report,
             commands::delete_paths,
             commands::junk_scan,
             commands::junk_clean,

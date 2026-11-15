@@ -5,6 +5,7 @@ description = "Visual disk cleaner: caches, duplicates and space map"
 authors = ["juninmd"]
 edition = "2021"
 license = "MIT"
+default-run = "faxina"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
