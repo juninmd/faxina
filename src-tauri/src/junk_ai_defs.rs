@@ -1,7 +1,8 @@
 //! Caches left behind by AI tooling: model runtimes, JIT kernels, agent CLIs and `npx`/MCP downloads.
 //! Model stores the user pulled on purpose (Ollama, LM Studio) and chat transcripts are NOT listed.
 
-#[allow(unused_imports)] use crate::junk_defs::{caches, def, matching, opt_in, whole, Base, JunkDef, DEV};
+#[allow(unused_imports)]
+use crate::junk_defs::{caches, def, matching, opt_in, whole, Base, JunkDef, DEV};
 
 pub fn definitions() -> Vec<JunkDef> {
     let mut v = vec![
