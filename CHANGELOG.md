@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.28.0](https://github.com/juninmd/faxina/compare/v1.27.0...v1.28.0) (2026-11-15)
+
+
+### Features
+
+* instant search, stale-file filter, report export and read-only CLI ([#98](https://github.com/juninmd/faxina/issues/98)) ([80ff438](https://github.com/juninmd/faxina/commit/80ff438cab68a0987e1bf049abbc744a297fce8c))
+
 # [1.27.0](https://github.com/juninmd/faxina/compare/v1.26.0...v1.27.0) (2026-11-15)
 
 
