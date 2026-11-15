@@ -6,6 +6,7 @@ const ALL: Page[] = [
   "overview",
   "map",
   "bigfiles",
+  "search",
   "review",
   "report",
   "growth",

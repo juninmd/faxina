@@ -17,6 +17,7 @@ import Rail from "./components/Rail";
 import ReportPanel from "./components/ReportPanel";
 import Review from "./components/Review";
 import Routine from "./components/Routine";
+import { Search } from "./components/Search";
 import SpaceTabs from "./components/SpaceTabs";
 import Updates from "./components/Updates";
 import { WorktreesPanel } from "./components/WorktreesPanel";
@@ -464,6 +465,17 @@ export default function App() {
 
             {page === "bigfiles" && (
               <BigFiles
+                key={epoch}
+                swallow={swallow}
+                root={scan.root}
+                onAnalyze={() => setPage("map")}
+                onDeleted={recordDeleted}
+                onOrbit={addToOrbit}
+              />
+            )}
+
+            {page === "search" && (
+              <Search
                 key={epoch}
                 swallow={swallow}
                 root={scan.root}

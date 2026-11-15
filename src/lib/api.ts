@@ -31,6 +31,22 @@ export interface BigFile {
   kind: Kind;
 }
 
+export interface SearchQuery {
+  text: string;
+  minSize: number;
+  /** Seconds since the last change; 0 turns the age filter off. */
+  olderThanSecs: number;
+  kind: Kind | null;
+  includeDirs: boolean;
+  limit: number;
+}
+
+export interface SearchHit extends BigFile {
+  isDir: boolean;
+}
+
+export type ExportFormat = "csv" | "json" | "html";
+
 export interface DeleteReport {
   freed: number;
   deleted: string[];
@@ -137,6 +153,9 @@ export const api = {
   staleDeps: (months: number) => invoke<Suggestion[]>("get_stale_deps", { months }),
   growth: () => invoke<Growth | null>("get_growth"),
   largestFiles: (limit: number) => invoke<BigFile[]>("largest_files", { limit }),
+  searchFiles: (query: SearchQuery) => invoke<SearchHit[]>("search_files", { query }),
+  exportReport: (query: SearchQuery, format: ExportFormat, path: string) =>
+    invoke<number>("export_report", { query, format, path }),
   deletePaths: (paths: string[], permanent: boolean) => invoke<DeleteReport>("delete_paths", { paths, permanent }),
   junkScan: () => invoke<{ scanId: number; items: JunkItem[] }>("junk_scan"),
   junkClean: (ids: string[], permanent: boolean, scanId: number) =>

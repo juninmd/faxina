@@ -5,6 +5,7 @@ export type Page =
   | "overview"
   | "map"
   | "bigfiles"
+  | "search"
   | "review"
   | "report"
   | "growth"
