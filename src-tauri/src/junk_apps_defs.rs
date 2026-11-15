@@ -2,6 +2,8 @@
 //! never local storage, IndexedDB or anything that could hold a login.
 
 use crate::junk_defs::{caches, Base, JunkDef, APPS};
+#[cfg(windows)]
+use crate::junk_defs::{def, needs_closed, whole, Rule};
 
 /// The cache folders every Electron app keeps next to its profile.
 macro_rules! electron {
@@ -79,7 +81,29 @@ pub fn definitions() -> Vec<JunkDef> {
 
 #[cfg(windows)]
 fn platform() -> Vec<JunkDef> {
+    let webview2 = needs_closed(
+        def(
+            "webview2-caches",
+            "Apps WebView2 (cache de renderização)",
+            APPS,
+            Base::Local,
+            webview2_cache_rules(),
+        ),
+        &["msedgewebview2"],
+    );
+    let steam_shaders = needs_closed(
+        caches(
+            "steam-cache",
+            "Steam (cache de shaders dos jogos)",
+            APPS,
+            Base::SteamLibraries,
+            &["steamapps/shadercache"],
+        ),
+        &["steam", "steamwebhelper"],
+    );
     vec![
+        webview2,
+        steam_shaders,
         caches(
             "epic-web",
             "Epic Games Launcher (cache web e logs)",
@@ -119,6 +143,38 @@ fn platform() -> Vec<JunkDef> {
             &["Microsoft/OneDrive/logs"],
         ),
     ]
+}
+
+#[cfg(windows)]
+fn webview2_cache_rules() -> Vec<Rule> {
+    macro_rules! profile_cache_rules {
+        ($profile:literal) => {
+            [
+                whole(concat!("*/EBWebView/", $profile, "/Cache")),
+                whole(concat!("*/EBWebView/", $profile, "/Code Cache")),
+                whole(concat!("*/EBWebView/", $profile, "/GPUCache")),
+                whole(concat!("*/EBWebView/", $profile, "/DawnCache")),
+                whole(concat!("*/EBWebView/", $profile, "/DawnGraphiteCache")),
+                whole(concat!("*/EBWebView/", $profile, "/DawnWebGPUCache")),
+                whole(concat!("*/EBWebView/", $profile, "/GrShaderCache")),
+                whole(concat!("*/EBWebView/", $profile, "/GraphiteDawnCache")),
+                whole(concat!(
+                    "*/EBWebView/",
+                    $profile,
+                    "/Shared Dictionary/cache"
+                )),
+            ]
+        };
+    }
+
+    let mut rules = vec![
+        whole("*/EBWebView/ShaderCache"),
+        whole("*/EBWebView/GrShaderCache"),
+        whole("*/EBWebView/GraphiteDawnCache"),
+    ];
+    rules.extend(profile_cache_rules!("Default"));
+    rules.extend(profile_cache_rules!("Profile *"));
+    rules
 }
 
 #[cfg(target_os = "macos")]

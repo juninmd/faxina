@@ -71,7 +71,7 @@ impl Projects {
         let excluded = crate::junk_defs::definitions()
             .iter()
             .flat_map(|d| {
-                crate::junk::base_dir(d.base)
+                crate::junk::base_dirs(d.base)
                     .into_iter()
                     .flat_map(move |base| {
                         d.rules
