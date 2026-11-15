@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.27.0](https://github.com/juninmd/faxina/compare/v1.26.0...v1.27.0) (2026-11-15)
+
+
+### Features
+
+* **cache:** ampliar limpeza segura de caches ([#96](https://github.com/juninmd/faxina/issues/96)) ([531b41d](https://github.com/juninmd/faxina/commit/531b41df068f51a297583882ad81b3d098c2b148))
+
 # [1.26.0](https://github.com/juninmd/faxina/compare/v1.25.0...v1.26.0) (2026-11-12)
 
 
