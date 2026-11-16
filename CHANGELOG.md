@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.1](https://github.com/juninmd/faxina/compare/v1.28.0...v1.28.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **updater:** wait for the app to exit before the Windows installer checks it ([#99](https://github.com/juninmd/faxina/issues/99)) ([d315d8a](https://github.com/juninmd/faxina/commit/d315d8acd16cc6e0c793f922a5e5a665d5f67038))
+
 # [1.28.0](https://github.com/juninmd/faxina/compare/v1.27.0...v1.28.0) (2026-11-15)
 
 
