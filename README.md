@@ -243,6 +243,7 @@ Levantamento feito no GitHub em 27/09/2026:
 | Projeto | O que aprendemos |
 |---|---|
 | [BleachBit](https://github.com/bleachbit/bleachbit) · [Winapp2.ini](https://github.com/MoscaDotTo/Winapp2) | Listas declarativas de caches seguros por aplicativo |
+| [FluentCleaner](https://github.com/builtbybel/FluentCleaner) (MIT; usa o Winapp2.ini, CC BY-SA 4.0) | Pastas de cache, logs e relatórios de falha de apps e launchers do Windows (`junk_desktop_defs.rs`), escolhidas à mão |
 | [czkawka](https://github.com/qarmin/czkawka) · [fclones](https://github.com/pkolaczk/fclones) | Pipeline de duplicatas: tamanho → hash parcial → hash completo |
 | [WinDirStat](https://github.com/windirstat/windirstat) · [SquirrelDisk](https://github.com/adileo/squirreldisk) | Treemap como forma principal de enxergar o disco |
 | [kondo](https://github.com/tbillington/kondo) · [npkill](https://github.com/voidcosmos/npkill) | Reconhecer artefatos de build pelo tipo de projeto |
