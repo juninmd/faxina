@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.1](https://github.com/juninmd/faxina/compare/v1.29.0...v1.29.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **remove:** explain why the Recycle Bin refused an item ([51301d6](https://github.com/juninmd/faxina/commit/51301d6036a555f457a4133f45b2505d37aac944))
+
 # [1.29.0](https://github.com/juninmd/faxina/compare/v1.28.1...v1.29.0) (2026-11-17)
 
 
