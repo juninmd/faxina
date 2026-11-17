@@ -29,13 +29,7 @@ pub fn remove_all(targets: &[PathBuf], permanent: bool) -> Vec<Removal> {
         trash_batch(
             &tops,
             |b| trash::delete_all(b).map_err(|e| e.to_string()),
-            |p| {
-                trash::delete(p).map_err(|e| {
-                    format!(
-                        "{e} (se este disco não tem Lixeira, marque \"Excluir permanentemente\")"
-                    )
-                })
-            },
+            |p| trash::delete(p).map_err(|e| trash_reason(p, &e)),
         )
     };
     let mut own: Vec<Option<Result<(), String>>> = vec![None; targets.len()];
@@ -100,8 +94,49 @@ pub(crate) fn trash_paths(paths: &[PathBuf]) -> Vec<Result<(), String>> {
     trash_batch(
         &refs,
         |b| trash::delete_all(b).map_err(|e| e.to_string()),
-        |p| trash::delete(p).map_err(|e| e.to_string()),
+        |p| trash::delete(p).map_err(|e| trash_reason(p, &e)),
     )
+}
+
+/// Windows paths the Recycle Bin can still hold (MAX_PATH minus the terminator).
+const RECYCLE_MAX_PATH: usize = 259;
+
+/// A Portuguese reason for a path the trash refused. On Windows the shell answers a refusal with a
+/// bare "Some operations were aborted" (the confirmation it would show is suppressed), so the cause
+/// is guessed from what can be checked: path length, a file held open, or the bin itself.
+fn trash_reason(path: &Path, err: &trash::Error) -> String {
+    let aborted =
+        matches!(err, trash::Error::Unknown { description } if description.contains("aborted"));
+    if !aborted {
+        return format!(
+            "{err} (se este disco não tem Lixeira, marque \"Excluir permanentemente\")"
+        );
+    }
+    let cause = if path.as_os_str().len() > RECYCLE_MAX_PATH {
+        "o caminho é longo demais para a Lixeira"
+    } else if in_use(path) {
+        "o arquivo está aberto em outro programa"
+    } else {
+        "a Lixeira recusou o item (em uso, grande demais para a Lixeira ou disco sem Lixeira)"
+    };
+    format!("{cause}; feche os programas e tente de novo, ou marque \"Excluir permanentemente\"")
+}
+
+/// A file another process holds without share-delete (Windows sharing violation).
+#[cfg(windows)]
+fn in_use(path: &Path) -> bool {
+    use std::os::windows::fs::OpenOptionsExt;
+    const ERROR_SHARING_VIOLATION: i32 = 32;
+    path.is_file()
+        && matches!(
+            fs::OpenOptions::new().read(true).share_mode(0).open(path),
+            Err(e) if e.raw_os_error() == Some(ERROR_SHARING_VIOLATION)
+        )
+}
+
+#[cfg(not(windows))]
+fn in_use(_: &Path) -> bool {
+    false
 }
 
 /// Removes one path for good: a directory tree, a directory link, or a file.
@@ -222,6 +257,19 @@ mod tests {
         fs::write(&kept, b"x").unwrap();
         let out = trash_batch(&[kept.as_path()], |_| Ok(()), |_| Err("skipped".into()));
         assert_eq!(out, [Err("skipped".into())]);
+    }
+
+    #[test]
+    fn an_aborted_trash_gets_a_portuguese_reason() {
+        let aborted = trash::Error::Unknown {
+            description: "Some operations were aborted".into(),
+        };
+        let long = PathBuf::from("x".repeat(RECYCLE_MAX_PATH + 1));
+        assert!(trash_reason(&long, &aborted).starts_with("o caminho é longo demais"));
+        let short = trash_reason(Path::new("missing"), &aborted);
+        assert!(short.starts_with("a Lixeira recusou o item"), "{short}");
+        assert!(!short.contains("aborted"));
+        assert!(short.contains("Excluir permanentemente"));
     }
 
     #[test]
