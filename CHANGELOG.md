@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.29.0](https://github.com/juninmd/faxina/compare/v1.28.1...v1.29.0) (2026-11-17)
+
+
+### Features
+
+* **junk:** add Windows desktop app caches hand-picked from Winapp2 ([#100](https://github.com/juninmd/faxina/issues/100)) ([f3fa21d](https://github.com/juninmd/faxina/commit/f3fa21dc2ee24a1af241dd106f8557f5f72e5284))
+
 ## [1.28.1](https://github.com/juninmd/faxina/compare/v1.28.0...v1.28.1) (2026-11-16)
 
 
