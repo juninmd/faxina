@@ -11,6 +11,7 @@ mod junk;
 mod junk_ai_defs;
 mod junk_apps_defs;
 mod junk_defs;
+mod junk_desktop_defs;
 mod junk_leftovers_defs;
 mod junk_native_defs;
 mod junk_optin_defs;

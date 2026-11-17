@@ -268,6 +268,7 @@ fn common() -> Vec<JunkDef> {
     v.extend(crate::junk_ai_defs::definitions());
     v.extend(crate::junk_native_defs::definitions());
     v.extend(crate::junk_apps_defs::definitions());
+    v.extend(crate::junk_desktop_defs::definitions());
     v.extend(crate::junk_leftovers_defs::definitions());
     v.extend(crate::junk_optin_defs::definitions());
     v.push(caches(
