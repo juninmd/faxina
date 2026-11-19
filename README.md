@@ -173,12 +173,12 @@ Saída real dos gates do frontend:
 
 ```text
 $ bun run test
- 20 pass
+ 81 pass
  0 fail
-Ran 20 tests across 4 files.
+Ran 81 tests across 18 files.
 
 $ bun run lint
-Checked 50 files in 287ms. No fixes applied.
+Checked 87 files in 517ms. No fixes applied.
 
 $ bun run typecheck
 (sem saída: tipos ok)
