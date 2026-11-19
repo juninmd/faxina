@@ -173,9 +173,9 @@ Saída real dos gates do frontend:
 
 ```text
 $ bun run test
- 81 pass
+ 85 pass
  0 fail
-Ran 81 tests across 18 files.
+Ran 85 tests across 18 files.
 
 $ bun run lint
 Checked 87 files in 517ms. No fixes applied.

@@ -1,11 +1,17 @@
 const UNITS = ["B", "KB", "MB", "GB", "TB"];
 
+const digitsFor = (v: number, i: number) => (v >= 100 || i === 0 ? 0 : v >= 10 ? 1 : 2);
+
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), UNITS.length - 1);
-  const v = bytes / 1024 ** i;
-  const digits = v >= 100 || i === 0 ? 0 : v >= 10 ? 1 : 2;
-  return `${v.toLocaleString("pt-BR", { maximumFractionDigits: digits })} ${UNITS[i]}`;
+  let i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), UNITS.length - 1);
+  let v = bytes / 1024 ** i;
+  // 1023,99 KB rounds up to "1.024 KB": promote to the next unit instead.
+  if (i < UNITS.length - 1 && Math.round(v) >= 1024) {
+    i += 1;
+    v = bytes / 1024 ** i;
+  }
+  return `${v.toLocaleString("pt-BR", { maximumFractionDigits: digitsFor(v, i) })} ${UNITS[i]}`;
 }
 
 /** Splits "12,4 GB" into number and unit so the UI can style them apart. */
@@ -15,8 +21,10 @@ export function splitBytes(bytes: number): [string, string] {
 }
 
 export function formatCount(n: number): string {
-  if (n >= 1e6) return `${(n / 1e6).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi`;
-  if (n >= 1e3) return `${(n / 1e3).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil`;
+  const oneDecimal = (x: number) => x.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+  // 999.950 rounds up to "1.000 mil": promote to "1 mi".
+  if (n >= 1e6 || Math.round((n / 1e3) * 10) / 10 >= 1000) return `${oneDecimal(n / 1e6)} mi`;
+  if (n >= 1e3) return `${oneDecimal(n / 1e3)} mil`;
   return n.toLocaleString("pt-BR");
 }
 
