@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.2](https://github.com/juninmd/faxina/compare/v1.29.1...v1.29.2) (2026-11-19)
+
+
+### Bug Fixes
+
+* **format:** tamanhos e contagens sem arredondar para "1.024" (+ README dos gates) ([#103](https://github.com/juninmd/faxina/issues/103)) ([8bd7cf9](https://github.com/juninmd/faxina/commit/8bd7cf9f687b292850a3240dc80ca9124e36ca1b))
+
 ## [1.29.1](https://github.com/juninmd/faxina/compare/v1.29.0...v1.29.1) (2026-11-17)
 
 
