@@ -1,5 +1,5 @@
 import { confirm, open } from "@tauri-apps/plugin-dialog";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type EmptyItem } from "../lib/api";
 import { formatCount } from "../lib/format";
 import type { OrbitItem } from "../lib/orbit";
@@ -24,21 +24,35 @@ export function EmptyPanel({
   const [shown, setShown] = useState(PAGE);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const epoch = useRef(0);
 
   useEffect(() => setRoot((r) => r || defaultRoot), [defaultRoot]);
 
+  const reset = () => {
+    epoch.current += 1;
+    setItems(null);
+    setPicked(new Set());
+    setBusy(false);
+    setError("");
+  };
+
   const search = async () => {
+    epoch.current += 1;
+    const mine = epoch.current;
     setError("");
     setItems(null);
+    setPicked(new Set());
     setBusy(true);
     try {
-      setItems(await api.findEmpty(root));
+      const found = await api.findEmpty(root);
+      if (mine !== epoch.current) return;
+      setItems(found);
       setPicked(new Set());
       setShown(PAGE);
     } catch (e) {
-      setError(String(e));
+      if (mine === epoch.current) setError(String(e));
     } finally {
-      setBusy(false);
+      if (mine === epoch.current) setBusy(false);
     }
   };
 
@@ -70,7 +84,7 @@ export function EmptyPanel({
     const folders = chosen.filter((i) => i.kind === "folder").map((i) => i.path);
     const links = chosen.filter((i) => i.kind === "link").map((i) => i.path);
     const ok = await confirm(
-      `${formatCount(folders.length)} pastas vazias vão para a Lixeira e ${formatCount(links.length)} links quebrados serão removidos (só o link, nunca o destino).`,
+      `${formatCount(folders.length)} ${folders.length === 1 ? "pasta vazia vai" : "pastas vazias vão"} para a Lixeira e ${formatCount(links.length)} ${links.length === 1 ? "link quebrado será removido" : "links quebrados serão removidos"} (só o link, nunca o destino).`,
       { title: "Limpar itens vazios?", kind: "warning", okLabel: "Limpar", cancelLabel: "Cancelar" },
     );
     if (!ok) return;
@@ -115,7 +129,10 @@ export function EmptyPanel({
           onClick={async () => {
             try {
               const dir = await open({ directory: true, defaultPath: root });
-              if (typeof dir === "string") setRoot(dir);
+              if (typeof dir === "string") {
+                setRoot(dir);
+                reset();
+              }
             } catch (e) {
               setError(String(e));
             }
@@ -155,7 +172,7 @@ export function EmptyPanel({
           <button
             type="button"
             onClick={remove}
-            className=" inline-flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-r from-rose-500 to-rose-600 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-rose-500/25 transition-all hover:brightness-110 active:scale-[0.98]"
+            className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-r from-rose-500 to-rose-600 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-rose-500/25 transition-all hover:brightness-110 active:scale-[0.98]"
           >
             <span aria-hidden="true">🕳️</span>
             <span>Limpar {formatCount(picked.size)}</span>
