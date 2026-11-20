@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.31.4](https://github.com/juninmd/faxina/compare/v1.31.3...v1.31.4) (2026-11-20)
+
+
+### Bug Fixes
+
+* **overview:** discard stale growth response when scan root changes ([#116](https://github.com/juninmd/faxina/issues/116)) ([1454d56](https://github.com/juninmd/faxina/commit/1454d5606127e1b5aaddb9a3c3bfb68d420a0716))
+
 ## [1.31.3](https://github.com/juninmd/faxina/compare/v1.31.2...v1.31.3) (2026-11-20)
 
 
