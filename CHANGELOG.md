@@ -1,5 +1,33 @@
 # Changelog
 
+# [1.32.0](https://github.com/juninmd/faxina/compare/v1.31.5...v1.32.0) (2026-11-20)
+
+
+### Bug Fixes
+
+* **bigfiles:** fall back to all kinds when selected kind disappears ([#113](https://github.com/juninmd/faxina/issues/113)) ([e698456](https://github.com/juninmd/faxina/commit/e698456ae790d682e2a2b349ec575cad1ab4c49e))
+* **category:** match .NET and Unreal manifests case-insensitively and avoid extension allocations ([#124](https://github.com/juninmd/faxina/issues/124)) ([c7cd343](https://github.com/juninmd/faxina/commit/c7cd3432a64df53cd7d8b8c59fba5db2aa879675))
+* **coverage:** derive group filter options from rules and include group in search ([#122](https://github.com/juninmd/faxina/issues/122)) ([dac9a18](https://github.com/juninmd/faxina/commit/dac9a183f5bfe52f4fe5186828670ccc63bbbb38))
+* **empty:** report empty subfolders when root contains only empty folders ([#111](https://github.com/juninmd/faxina/issues/111)) ([a87560c](https://github.com/juninmd/faxina/commit/a87560cd7c90d978875df992d5beef831db6065c))
+* **map:** ignore modified shortcuts in MapView and announce marked arcs in Sunburst ([#125](https://github.com/juninmd/faxina/issues/125)) ([7383cc1](https://github.com/juninmd/faxina/commit/7383cc1f555f7dc6c977f4045f2a05251725d40f))
+* **marks:** avoid double-counting when marking a child of an already marked folder ([#119](https://github.com/juninmd/faxina/issues/119)) ([f5b5993](https://github.com/juninmd/faxina/commit/f5b59931b1ef38415d0eb85f0a54aba2a1298530))
+* **search:** attach data-path and data-color so rows animate into the black hole ([#120](https://github.com/juninmd/faxina/issues/120)) ([acd56dd](https://github.com/juninmd/faxina/commit/acd56dd07f759856513e6dd7c190ac250efacc14))
+* **sidebar:** clean up copy feedback timers and attach data-color to stale rows ([#126](https://github.com/juninmd/faxina/issues/126)) ([40279b8](https://github.com/juninmd/faxina/commit/40279b8ea398766030832b6a3178484d37a161b3))
+* **updates:** clamp download progress to 100% and add progressbar semantics ([#123](https://github.com/juninmd/faxina/issues/123)) ([dbc96b9](https://github.com/juninmd/faxina/commit/dbc96b9488ba92c671a17263037c2dc99cd4082b))
+* **view:** pluralize month label and break biggest-file ties deterministically ([#112](https://github.com/juninmd/faxina/issues/112)) ([584f9e7](https://github.com/juninmd/faxina/commit/584f9e7499636dbd668769b2b10a59c19960ed4f))
+
+
+### Features
+
+* **a11y:** add arrow-key and Home/End navigation to SpaceTabs ([#127](https://github.com/juninmd/faxina/issues/127)) ([a41143a](https://github.com/juninmd/faxina/commit/a41143a8b9e7ba99a4d648b688d3a57800f95682))
+* **orbit:** close Órbita drawer on Escape key ([#115](https://github.com/juninmd/faxina/issues/115)) ([505237f](https://github.com/juninmd/faxina/commit/505237f899bc07684e5bd4a6ab50c9f5fa73757f))
+
+
+### Performance Improvements
+
+* **projects:** single-pass metadata and zero-alloc marker checks ([#121](https://github.com/juninmd/faxina/issues/121)) ([458da10](https://github.com/juninmd/faxina/commit/458da10ec1eda0df8a3d35cf2358ab2c38e8d022))
+* **query:** avoid per-node allocations during tree search ([#114](https://github.com/juninmd/faxina/issues/114)) ([4fdad68](https://github.com/juninmd/faxina/commit/4fdad684f68ce7f413d28c21aa55318b4a147819))
+
 ## [1.31.5](https://github.com/juninmd/faxina/compare/v1.31.4...v1.31.5) (2026-11-20)
 
 
