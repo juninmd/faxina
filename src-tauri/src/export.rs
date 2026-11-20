@@ -88,6 +88,11 @@ pub fn human_bytes(n: u64) -> String {
         v /= 1024.0;
         i += 1;
     }
+    // 1023.95 KB would round up to "1024.0 KB": promote to the next unit instead.
+    if i > 0 && i < UNITS.len() - 1 && (v * 10.0).round() >= 10240.0 {
+        v /= 1024.0;
+        i += 1;
+    }
     if i == 0 {
         format!("{n} B")
     } else {
@@ -180,6 +185,10 @@ mod tests {
     #[test]
     fn human_bytes_scales() {
         assert_eq!(human_bytes(512), "512 B");
+        assert_eq!(human_bytes(1023), "1023 B");
+        assert_eq!(human_bytes(1024), "1.0 KB");
         assert_eq!(human_bytes(1536), "1.5 KB");
+        assert_eq!(human_bytes((1 << 20) - 41), "1.0 MB");
+        assert_eq!(human_bytes((1 << 30) - 1024), "1.0 GB");
     }
 }
