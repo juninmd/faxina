@@ -34,7 +34,7 @@ pub fn is_dangling(path: &Path) -> bool {
 /// Only the topmost empty folder of a chain is reported: removing it removes the rest.
 pub fn find(root: &Path) -> Vec<EmptyItem> {
     let mut found = Vec::new();
-    walk(root, &mut found);
+    walk(root, true, &mut found);
     found.sort_unstable_by(|a, b| a.path.cmp(&b.path));
     found.truncate(MAX_ITEMS);
     found
@@ -42,13 +42,17 @@ pub fn find(root: &Path) -> Vec<EmptyItem> {
 
 /// True when `dir` is empty in the above sense; its empty subfolders are then left for the caller
 /// to report as part of it. Anything unreadable counts as not empty.
-fn walk(dir: &Path, out: &mut Vec<EmptyItem>) -> bool {
+fn walk(dir: &Path, is_root: bool, out: &mut Vec<EmptyItem>) -> bool {
     let Ok(rd) = fs::read_dir(dir) else {
         return false;
     };
     let mut keeps = false;
     let mut subdirs = Vec::new();
-    for e in rd.flatten() {
+    for entry in rd {
+        let Ok(e) = entry else {
+            keeps = true;
+            continue;
+        };
         let Ok(m) = e.metadata() else {
             keeps = true;
             continue;
@@ -72,14 +76,16 @@ fn walk(dir: &Path, out: &mut Vec<EmptyItem>) -> bool {
         .into_par_iter()
         .map(|d| {
             let mut sub = Vec::new();
-            let empty = walk(&d, &mut sub);
+            let empty = walk(&d, false, &mut sub);
             (d, empty, sub)
         })
         .collect();
     let all_empty = !keeps && results.iter().all(|(_, empty, _)| *empty);
+    // The scan root itself is never reported, so its direct empty children cannot collapse into it.
+    let collapse = !is_root && all_empty;
     for (d, empty, sub) in results {
         out.extend(sub);
-        if empty && !all_empty {
+        if empty && !collapse {
             out.push(EmptyItem {
                 path: d.to_string_lossy().into_owned(),
                 kind: EmptyKind::Folder,
@@ -113,6 +119,15 @@ mod tests {
         fs::create_dir_all(t.path().join("a/b/c")).unwrap();
         fs::create_dir_all(t.path().join("keep/empty")).unwrap();
         fs::write(t.path().join("keep/file.txt"), "x").unwrap();
+        let found = find(t.path());
+        assert_eq!(paths(&found, EmptyKind::Folder), ["a", "empty"]);
+    }
+
+    #[test]
+    fn reports_empty_children_when_root_has_only_empty_folders() {
+        let t = tempfile::tempdir().unwrap();
+        fs::create_dir_all(t.path().join("a/b/c")).unwrap();
+        fs::create_dir_all(t.path().join("empty")).unwrap();
         let found = find(t.path());
         assert_eq!(paths(&found, EmptyKind::Folder), ["a", "empty"]);
     }
