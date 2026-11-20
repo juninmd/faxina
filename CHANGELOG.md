@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.31.2](https://github.com/juninmd/faxina/compare/v1.31.1...v1.31.2) (2026-11-20)
+
+
+### Bug Fixes
+
+* **search:** drop stale hits and errors when the query changes ([#108](https://github.com/juninmd/faxina/issues/108)) ([24c9bb3](https://github.com/juninmd/faxina/commit/24c9bb33a36bbd38859fcdfdf085ed4e91a3a18a))
+
 ## [1.31.1](https://github.com/juninmd/faxina/compare/v1.31.0...v1.31.1) (2026-11-20)
 
 
