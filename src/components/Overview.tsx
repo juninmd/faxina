@@ -45,11 +45,23 @@ export default function Overview({
 }) {
   const [grown, setGrown] = useState<FolderGrowth[]>([]);
   useEffect(() => {
-    if (!root) return;
+    if (!root) {
+      setGrown([]);
+      return;
+    }
+    let current = true;
     api.growth().then(
-      (g) => setGrown(g ? [...g.grown].sort((a, b) => Math.abs(b.growth) - Math.abs(a.growth)).slice(0, 3) : []),
-      () => setGrown([]),
+      (g) => {
+        if (current)
+          setGrown(g ? [...g.grown].sort((a, b) => Math.abs(b.growth) - Math.abs(a.growth)).slice(0, 3) : []);
+      },
+      () => {
+        if (current) setGrown([]);
+      },
     );
+    return () => {
+      current = false;
+    };
   }, [root]);
 
   // Without a reading, show placeholders rather than invented capacity.
