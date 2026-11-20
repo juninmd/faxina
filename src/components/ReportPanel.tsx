@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { count, gb, type Page, type Report, shareSummary } from "../domain";
+import { count, gb, type Page, type Report, shareSummary, type Totals } from "../domain";
 import { formatBytes } from "../lib/format";
 import CountUp from "./CountUp";
 import Icon from "./Icon";
@@ -7,10 +7,12 @@ import Icon from "./Icon";
 export default function ReportPanel({
   report,
   history,
+  totals,
   navigate,
 }: {
   report: Report | null;
   history: Report[];
+  totals: Totals;
   navigate: (p: Page) => void;
 }) {
   const [copied, setCopied] = useState<"ok" | "error" | null>(null);
@@ -155,6 +157,38 @@ export default function ReportPanel({
             <span>Ir para diagnóstico</span>
             <Icon name="arrow" size={16} />
           </button>
+        </section>
+      )}
+
+      {totals.cleanups > 0 && (
+        <section
+          aria-label="Acumulado da Faxina"
+          className="flex flex-col gap-4 rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-slate-900/80 to-slate-950 p-6 shadow-lg backdrop-blur-md"
+        >
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-base font-bold text-white">Acumulado da Faxina</h2>
+            {totals.since && (
+              <span className="text-xs font-medium text-slate-400">
+                Desde {new Date(totals.since).toLocaleDateString("pt-BR")}
+              </span>
+            )}
+          </div>
+          <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {[
+              ["Limpezas", count(totals.cleanups)],
+              ["Arquivos processados", count(totals.files)],
+              ["Total removido", gb(totals.removed)],
+              ["Espaço liberado no disco", `+${gb(totals.observed)}`],
+            ].map(([label, value]) => (
+              <div key={label} className="flex flex-col">
+                <dt className="text-xs font-medium text-slate-400">{label}</dt>
+                <dd className="mt-1 font-mono text-2xl font-extrabold text-emerald-300">{value}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="text-[11px] text-slate-400">
+            Total removido inclui o que foi para a Lixeira; só a exclusão permanente libera espaço na hora.
+          </p>
         </section>
       )}
 
