@@ -1,6 +1,12 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Rule } from "../domain";
 import Icon from "./Icon";
+
+const fold = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLocaleLowerCase("pt-BR");
 
 export default function Coverage({
   rules,
@@ -13,10 +19,13 @@ export default function Coverage({
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("Todos");
+  const groups = useMemo(() => ["Todos", ...new Set(rules.map((r) => r.group))], [rules]);
+  const activeFilter = groups.includes(filter) ? filter : "Todos";
+  const needle = fold(query.trim());
   const filtered = rules.filter(
     (r) =>
-      (filter === "Todos" || r.group === filter) &&
-      `${r.app} ${r.name}`.toLocaleLowerCase("pt-BR").includes(query.toLocaleLowerCase("pt-BR")),
+      (activeFilter === "Todos" || r.group === activeFilter) &&
+      (!needle || fold(`${r.app} ${r.name} ${r.group}`).includes(needle)),
   );
 
   return (
@@ -63,11 +72,11 @@ export default function Coverage({
         </label>
         <select
           id="group-filter"
-          value={filter}
+          value={activeFilter}
           onChange={(e) => setFilter(e.target.value)}
           className="cursor-pointer rounded-xl border border-slate-700/80 bg-slate-900/80 px-4 py-2.5 text-xs font-medium text-slate-200 outline-none transition-colors focus:border-amber-500"
         >
-          {["Todos", "Navegadores", "Sistema", "Desenvolvimento", "Aplicativos"].map((v) => (
+          {groups.map((v) => (
             <option key={v}>{v}</option>
           ))}
         </select>
