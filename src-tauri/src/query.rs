@@ -36,9 +36,14 @@ pub struct Hit {
 }
 
 /// `*` matches any run (including none), `?` exactly one character. Case-insensitive.
+#[cfg(test)]
 pub fn glob_match(pattern: &str, name: &str) -> bool {
     let p: Vec<char> = pattern.to_lowercase().chars().collect();
     let n: Vec<char> = name.to_lowercase().chars().collect();
+    glob_match_chars(&p, &n)
+}
+
+fn glob_match_chars(p: &[char], n: &[char]) -> bool {
     let (mut pi, mut ni) = (0, 0);
     let mut star: Option<(usize, usize)> = None;
     while ni < n.len() {
@@ -59,15 +64,30 @@ pub fn glob_match(pattern: &str, name: &str) -> bool {
     p[pi..].iter().all(|c| *c == '*')
 }
 
+fn contains_ignore_case(haystack: &str, needle_lower: &str) -> bool {
+    if needle_lower.is_empty() {
+        return true;
+    }
+    if haystack.is_ascii() && needle_lower.is_ascii() {
+        let needle = needle_lower.as_bytes();
+        haystack
+            .as_bytes()
+            .windows(needle.len())
+            .any(|w| w.eq_ignore_ascii_case(needle))
+    } else {
+        haystack.to_lowercase().contains(needle_lower)
+    }
+}
+
 struct Matcher<'a> {
     q: &'a Query,
     text: String,
-    glob: bool,
+    glob: Option<Vec<char>>,
     cutoff: Option<u64>,
 }
 
 impl Matcher<'_> {
-    fn accepts(&self, node: &Node) -> bool {
+    fn accepts(&self, node: &Node, scratch: &mut Vec<char>) -> bool {
         if node.size < self.q.min_size || self.q.kind.is_some_and(|k| node.kind != k) {
             return false;
         }
@@ -79,10 +99,12 @@ impl Matcher<'_> {
         if self.text.is_empty() {
             return true;
         }
-        if self.glob {
-            glob_match(&self.text, &node.name)
+        if let Some(pattern) = &self.glob {
+            scratch.clear();
+            scratch.extend(node.name.chars().flat_map(char::to_lowercase));
+            glob_match_chars(pattern, scratch)
         } else {
-            node.name.to_lowercase().contains(&self.text)
+            contains_ignore_case(&node.name, &self.text)
         }
     }
 }
@@ -98,16 +120,23 @@ pub fn search(
 ) -> Vec<Hit> {
     let limit = if q.limit == 0 { 200 } else { q.limit }.min(MAX_LIMIT);
     let text = q.text.trim().to_lowercase();
+    let glob = text.contains(['*', '?']).then(|| text.chars().collect());
     let m = Matcher {
         q,
-        glob: text.contains(['*', '?']),
+        glob,
         text,
         cutoff: (q.older_than_secs > 0).then(|| now.saturating_sub(q.older_than_secs)),
     };
-    let mut hits = Vec::new();
-    walk(tree, root.to_path_buf(), true, &m, &keep, limit, &mut hits);
-    sort_and_cut(&mut hits, limit);
-    hits
+    let mut state = WalkState::default();
+    walk(tree, root.to_path_buf(), true, &m, &keep, limit, &mut state);
+    sort_and_cut(&mut state.hits, limit);
+    state.hits
+}
+
+#[derive(Default)]
+struct WalkState {
+    scratch: Vec<char>,
+    hits: Vec<Hit>,
 }
 
 fn sort_and_cut(hits: &mut Vec<Hit>, limit: usize) {
@@ -122,14 +151,14 @@ fn walk(
     m: &Matcher,
     keep: &dyn Fn(&Path) -> bool,
     limit: usize,
-    hits: &mut Vec<Hit>,
+    state: &mut WalkState,
 ) {
     if node.grouped {
         return;
     }
     let listed = !is_root && (!node.is_dir || m.q.include_dirs);
-    if listed && m.accepts(node) && keep(&path) {
-        hits.push(Hit {
+    if listed && m.accepts(node, &mut state.scratch) && keep(&path) {
+        state.hits.push(Hit {
             path: path.to_string_lossy().into_owned(),
             name: node.name.clone(),
             size: node.size,
@@ -138,12 +167,12 @@ fn walk(
             is_dir: node.is_dir,
         });
         // Amortized bound: memory stays O(limit) on a multi-million-file scan.
-        if hits.len() >= limit * 4 {
-            sort_and_cut(hits, limit);
+        if state.hits.len() >= limit * 4 {
+            sort_and_cut(&mut state.hits, limit);
         }
     }
     for c in &node.children {
-        walk(c, path.join(&c.name), false, m, keep, limit, hits);
+        walk(c, path.join(&c.name), false, m, keep, limit, state);
     }
 }
 
@@ -284,5 +313,36 @@ mod tests {
         t.children.push(g);
         let hits = search(&t, Path::new("/r"), &Query::default(), 1000, |_| true);
         assert!(hits.iter().all(|h| h.name != "12 small files"));
+    }
+
+    #[test]
+    fn unicode_substring_and_glob_are_case_insensitive() {
+        let mut t = tree();
+        t.children
+            .push(file("Relatório_FINAL.PDF", 300, 100, Kind::Documents));
+        let sub = search(
+            &t,
+            Path::new("/r"),
+            &Query {
+                text: "RELATÓRIO".into(),
+                ..Default::default()
+            },
+            1000,
+            |_| true,
+        );
+        assert_eq!(sub.len(), 1);
+        assert_eq!(sub[0].name, "Relatório_FINAL.PDF");
+        let glob = search(
+            &t,
+            Path::new("/r"),
+            &Query {
+                text: "relatório_*.pdf".into(),
+                ..Default::default()
+            },
+            1000,
+            |_| true,
+        );
+        assert_eq!(glob.len(), 1);
+        assert_eq!(glob[0].name, "Relatório_FINAL.PDF");
     }
 }
