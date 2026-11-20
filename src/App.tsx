@@ -47,7 +47,7 @@ import { api, type DeleteReport, type DiskInfo } from "./lib/api";
 import { flyToOrbit, trackPointer } from "./lib/fly";
 import { formatBytes } from "./lib/format";
 import { kindColor } from "./lib/kinds";
-import type { Mark } from "./lib/marks";
+import { type Mark, toggleMarkMap } from "./lib/marks";
 import { getMotionPref, MOTION_LABELS, type MotionPref, setMotionPref, shouldAnimate } from "./lib/motion";
 import { type OrbitItem, planOrbit } from "./lib/orbit";
 import { platformName } from "./lib/platform";
@@ -182,16 +182,9 @@ export default function App() {
   const markedRef = useRef(marked);
   markedRef.current = marked;
   const toggleMark = useCallback((m: Mark) => {
-    if (!markedRef.current.has(m.path)) flyToOrbit(kindColor(m.kind));
-    setMarked((prev) => {
-      const next = new Map(prev);
-      if (next.has(m.path)) next.delete(m.path);
-      else {
-        for (const p of next.keys()) if (p.startsWith(`${m.path}\\`) || p.startsWith(`${m.path}/`)) next.delete(p);
-        next.set(m.path, { path: m.path, name: m.name, size: m.size, kind: m.kind });
-      }
-      return next;
-    });
+    const next = toggleMarkMap(markedRef.current, m);
+    if (!markedRef.current.has(m.path) && next.has(m.path)) flyToOrbit(kindColor(m.kind));
+    setMarked((prev) => toggleMarkMap(prev, m));
   }, []);
 
   const unmark = useCallback((path: string) => {
