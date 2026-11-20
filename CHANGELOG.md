@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.31.5](https://github.com/juninmd/faxina/compare/v1.31.4...v1.31.5) (2026-11-20)
+
+
+### Bug Fixes
+
+* **export,cli:** avoid rounding to 1024.0 KB and reject overflowing CLI sizes ([#109](https://github.com/juninmd/faxina/issues/109)) ([519d86d](https://github.com/juninmd/faxina/commit/519d86dd173f2981703f6ba461bb4f3c2fbf153d))
+
 ## [1.31.4](https://github.com/juninmd/faxina/compare/v1.31.3...v1.31.4) (2026-11-20)
 
 
