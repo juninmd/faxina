@@ -278,7 +278,11 @@ export function Search({
           <ul className="flex flex-col gap-2">
             {list.slice(0, shown).map((h) => (
               <li key={h.path}>
-                <label className="group flex cursor-pointer items-center gap-3.5 rounded-2xl border border-slate-800/70 bg-slate-900/50 p-3.5 transition-all hover:border-slate-700">
+                <label
+                  data-path={h.path}
+                  data-color={kindColor(h.kind)}
+                  className="group flex cursor-pointer items-center gap-3.5 rounded-2xl border border-slate-800/70 bg-slate-900/50 p-3.5 transition-all hover:border-slate-700"
+                >
                   <input
                     type="checkbox"
                     checked={picked.has(h.path)}
