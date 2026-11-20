@@ -38,8 +38,8 @@ export function useScan() {
       const mine = ++latest.current;
       try {
         const v = await api.startScan(path, depth);
-        setElapsed((performance.now() - t0) / 1000);
         if (mine !== latest.current) return;
+        setElapsed((performance.now() - t0) / 1000);
         setRoot(path);
         setTotal(v.size);
         setView(v);
@@ -49,9 +49,9 @@ export function useScan() {
         setSuggestions(sug);
         setDisk(info);
       } catch (e) {
-        setError(String(e));
+        if (mine === latest.current) setError(String(e));
       } finally {
-        setProgress(null);
+        if (mine === latest.current) setProgress(null);
       }
     },
     [depth],
@@ -64,7 +64,7 @@ export function useScan() {
         const v = await api.getView(path, depth);
         if (mine === latest.current) setView(v);
       } catch (e) {
-        setError(String(e));
+        if (mine === latest.current) setError(String(e));
       }
     },
     [depth],
