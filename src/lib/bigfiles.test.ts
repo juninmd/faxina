@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { BigFile } from "./api";
-import { kindCounts, sortFiles } from "./bigfiles";
+import { activeKind, kindCounts, sortFiles } from "./bigfiles";
 
 const f = (path: string, size: number, modified: number, kind: BigFile["kind"] = "other"): BigFile => ({
   path,
@@ -39,4 +39,11 @@ test("kindCounts tallies every kind present", () => {
   expect(kindCounts(files).get("media")).toBe(2);
   expect(kindCounts(files).get("archives")).toBe(1);
   expect(kindCounts(files).get("code")).toBeUndefined();
+});
+
+test("activeKind falls back to null when the selected kind disappears", () => {
+  const counts = kindCounts(files);
+  expect(activeKind("media", counts)).toBe("media");
+  expect(activeKind("code", counts)).toBeNull();
+  expect(activeKind(null, counts)).toBeNull();
 });

@@ -16,6 +16,11 @@ export function kindCounts(files: BigFile[]): Map<Kind, number> {
   return counts;
 }
 
+/** Falls back to "all" when the picked kind has no files left after a threshold or delete change. */
+export function activeKind(kind: Kind | null, counts: Map<Kind, number>): Kind | null {
+  return kind && counts.has(kind) ? kind : null;
+}
+
 /** A sorted copy; `size` and `age` break ties by path so the order is stable between renders. */
 export function sortFiles(files: BigFile[], key: SortKey): BigFile[] {
   const byPath = (a: BigFile, b: BigFile) => a.path.localeCompare(b.path);

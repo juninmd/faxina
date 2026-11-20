@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type BigFile, type DeleteReport, type Kind } from "../lib/api";
-import { kindCounts, SORT_OPTIONS, type SortKey, sortFiles } from "../lib/bigfiles";
+import { activeKind, kindCounts, SORT_OPTIONS, type SortKey, sortFiles } from "../lib/bigfiles";
 import { baseName, formatAge, formatBytes, formatCount } from "../lib/format";
 import { KIND_ORDER, KINDS, kindColor } from "../lib/kinds";
 import type { OrbitItem } from "../lib/orbit";
@@ -55,9 +55,10 @@ export function BigFiles({
 
   const bySize = useMemo(() => (files ?? []).filter((f) => f.size >= minSize), [files, minSize]);
   const counts = useMemo(() => kindCounts(bySize), [bySize]);
+  const currentKind = activeKind(kind, counts);
   const listed = useMemo(
-    () => sortFiles(kind ? bySize.filter((f) => f.kind === kind) : bySize, sort),
-    [bySize, kind, sort],
+    () => sortFiles(currentKind ? bySize.filter((f) => f.kind === currentKind) : bySize, sort),
+    [bySize, currentKind, sort],
   );
   const total = listed.filter((f) => picked.has(f.path)).reduce((sum, f) => sum + f.size, 0);
 
@@ -156,14 +157,14 @@ export function BigFiles({
             <button
               key={k ?? "all"}
               type="button"
-              aria-pressed={kind === k}
+              aria-pressed={currentKind === k}
               onClick={() => {
                 setKind(k);
                 setShown(PAGE);
                 setPicked(new Set());
               }}
               className={`cursor-pointer rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${
-                kind === k
+                currentKind === k
                   ? "border-amber-500/60 bg-amber-500/15 text-amber-300"
                   : "border-slate-700 bg-slate-800/70 text-slate-300 hover:bg-slate-750"
               }`}
