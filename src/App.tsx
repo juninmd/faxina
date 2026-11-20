@@ -22,18 +22,22 @@ import SpaceTabs from "./components/SpaceTabs";
 import Updates from "./components/Updates";
 import { WorktreesPanel } from "./components/WorktreesPanel";
 import {
+  addToTotals,
   BASE_RULES,
   createReport,
   isCleanupDue,
   mergeRulesWithScan,
   type Page,
+  type Report,
   type Rule,
   readHistory,
   readSettings,
+  readTotals,
   recommended,
   saveHistory,
   saveSettings,
   skipPairs,
+  saveTotals,
   totalSize,
   withoutSkipped,
 } from "./domain";
@@ -68,6 +72,7 @@ export default function App() {
   };
   const [settings, setSettings] = useState(readSettings);
   const [history, setHistory] = useState(readHistory);
+  const [totals, setTotals] = useState(() => readTotals(history));
   const [rules, setRules] = useState<Rule[]>(BASE_RULES);
   const [scanned, setScanned] = useState(false);
   const [junkLoading, setJunkLoading] = useState(false);
@@ -166,8 +171,9 @@ export default function App() {
   useEffect(() => {
     const okSettings = saveSettings(settings);
     const okHistory = saveHistory(history);
-    setStorageError(!okSettings || !okHistory);
-  }, [settings, history]);
+    const okTotals = saveTotals(totals);
+    setStorageError(!okSettings || !okHistory || !okTotals);
+  }, [settings, history, totals]);
 
   useEffect(() => {
     if (page) main.current?.focus({ preventScroll: true });
@@ -196,12 +202,19 @@ export default function App() {
     });
   }, []);
 
+  const record = (rep: Report) => {
+    setHistory((h) => [rep, ...h].slice(0, 12));
+    setTotals((t) => addToTotals(t, rep));
+  };
+  // Free space changes after any removal, so the disk cards must not keep the old numbers.
+  const refreshDisks = () => api.listDisks().then(setDisks, () => undefined);
+
   // Deletions made outside the map still land in the history and refresh the map's totals.
   const recordDeleted = (r: DeleteReport) => {
-    const rep = createReport([], "trash", r.freed, r.failed.length, r.deleted.length);
-    setHistory((h) => [rep, ...h].slice(0, 12));
+    record(createReport([], "trash", r.freed, r.failed.length, r.deleted.length));
     setNotice(`${formatBytes(r.freed)} enviados à Lixeira.`);
     scan.refresh();
+    refreshDisks();
   };
 
   const exclude = (id: string) => {
@@ -303,8 +316,7 @@ export default function App() {
           removed += r.removed;
           reason ??= r.reason ?? undefined;
         }
-        const report = createReport(batch, destination, freed, skipped, removed);
-        setHistory((h) => [report, ...h].slice(0, 12));
+        record(createReport(batch, destination, freed, skipped, removed));
         if (ids.length) setPage("report");
         setNotice(
           failed
@@ -316,7 +328,8 @@ export default function App() {
       async () => {
         // Panels showing removed rows start over, so nothing deleted stays listed.
         setEpoch((n) => n + 1);
-        if (plan.paths.length && scan.root) await scan.refresh();
+        // Caches can sit inside the mapped folder too, so the sidebar's disk card is re-read either way.
+        await Promise.all([scan.refresh(), refreshDisks()]);
         if (ids.length) await loadJunk();
       },
     );
@@ -495,6 +508,7 @@ export default function App() {
               active={page === "map"}
               scan={scan}
               home={home}
+              disks={disks}
               marked={marked}
               onToggleMark={toggleMark}
               onClearMarked={() => setMarked(new Map())}
@@ -542,7 +556,9 @@ export default function App() {
               />
             )}
 
-            {page === "report" && <ReportPanel report={history[0] ?? null} history={history} navigate={setPage} />}
+            {page === "report" && (
+              <ReportPanel report={history[0] ?? null} history={history} totals={totals} navigate={setPage} />
+            )}
 
             {page === "dupes" && (
               <DupesPanel key={epoch} swallow={swallow} defaultRoot={scan.root || home} onOrbit={addToOrbit} />

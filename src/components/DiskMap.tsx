@@ -12,6 +12,7 @@ export default function DiskMap({
   active,
   scan,
   home,
+  disks,
   marked,
   onToggleMark,
   onClearMarked,
@@ -19,18 +20,14 @@ export default function DiskMap({
   active: boolean;
   scan: ReturnType<typeof useScan>;
   home: string;
+  disks: DiskInfo[];
   marked: Map<string, Mark>;
   onToggleMark: (m: Mark) => void;
   onClearMarked: () => void;
 }) {
-  const [disks, setDisks] = useState<DiskInfo[]>([]);
   const [expanded, setExpanded] = useState(false);
   const screen = useRef<HTMLElement>(null);
   const [notice, setNotice] = useState("");
-
-  useEffect(() => {
-    api.listDisks().then(setDisks, () => setDisks([]));
-  }, []);
 
   // Opening the full-screen map moves focus into it, so keyboard users are not left behind.
   useEffect(() => {
