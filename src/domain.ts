@@ -410,6 +410,7 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export const SETTINGS_KEY = "faxina-settings-v1";
 export const HISTORY_KEY = "faxina-history-v1";
+export const TOTALS_KEY = "faxina-totals-v1";
 
 export type Report = {
   id: string;
@@ -509,6 +510,48 @@ export function saveHistory(history: Report[]): boolean {
     const storage = getStorage();
     if (!storage) return false;
     storage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 12)));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Lifetime sums of every cleanup; the history keeps only the last 12, so these live apart. */
+export type Totals = { cleanups: number; removed: number; observed: number; files: number; since: string | null };
+
+export const EMPTY_TOTALS: Totals = { cleanups: 0, removed: 0, observed: 0, files: 0, since: null };
+
+export function addToTotals(totals: Totals, report: Report): Totals {
+  return {
+    cleanups: totals.cleanups + 1,
+    removed: totals.removed + report.removed,
+    observed: totals.observed + report.observed,
+    files: totals.files + report.files,
+    since: totals.since && totals.since < report.date ? totals.since : report.date,
+  };
+}
+
+/** Saved totals, or the sums of the stored history for installs that predate them. */
+export function readTotals(history: Report[]): Totals {
+  const seeded = () => [...history].reverse().reduce(addToTotals, EMPTY_TOTALS);
+  try {
+    const raw = getStorage()?.getItem(TOTALS_KEY);
+    if (!raw) return seeded();
+    const v = JSON.parse(raw);
+    const nums = [v?.cleanups, v?.removed, v?.observed, v?.files];
+    if (!nums.every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0)) return seeded();
+    const since = typeof v.since === "string" && !Number.isNaN(Date.parse(v.since)) ? v.since : null;
+    return { cleanups: v.cleanups, removed: v.removed, observed: v.observed, files: v.files, since };
+  } catch {
+    return seeded();
+  }
+}
+
+export function saveTotals(totals: Totals): boolean {
+  try {
+    const storage = getStorage();
+    if (!storage) return false;
+    storage.setItem(TOTALS_KEY, JSON.stringify(totals));
     return true;
   } catch {
     return false;

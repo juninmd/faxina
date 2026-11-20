@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  addToTotals,
   BASE_RULES,
   createReport,
   DEFAULT_SETTINGS,
+  EMPTY_TOTALS,
   isCleanupDue,
   mergeRulesWithScan,
   nextCleanup,
@@ -10,10 +12,13 @@ import {
   type Rule,
   readHistory,
   readSettings,
+  readTotals,
   recommended,
   saveHistory,
   saveSettings,
+  saveTotals,
   shareSummary,
+  TOTALS_KEY,
   totalSize,
 } from "./domain";
 import type { JunkItem } from "./lib/api";
@@ -327,5 +332,47 @@ describe("shareSummary", () => {
 
   test("says nothing when nothing changed", () => {
     expect(shareSummary({ ...base, observed: 0, trashed: 0 }, fmt)).toBeUndefined();
+  });
+});
+
+describe("lifetime totals", () => {
+  const rep = (date: string, removed: number, destination: Report["destination"]): Report => ({
+    id: date,
+    date,
+    selected: removed,
+    removed,
+    trashed: destination === "trash" ? removed : 0,
+    permanent: destination === "permanent" ? removed : 0,
+    observed: destination === "permanent" ? removed : 0,
+    skipped: 0,
+    files: 2,
+    destination,
+  });
+
+  test("totals keep counting past the 12 reports the history holds", () => {
+    let t = EMPTY_TOTALS;
+    for (let i = 0; i < 20; i++) t = addToTotals(t, rep(new Date(2026, 0, i + 1).toISOString(), 10, "permanent"));
+    expect(t.cleanups).toBe(20);
+    expect(t.removed).toBe(200);
+    expect(t.observed).toBe(200);
+    expect(t.files).toBe(40);
+    expect(t.since).toBe(new Date(2026, 0, 1).toISOString());
+  });
+
+  test("trash counts as removed but never as freed disk space", () => {
+    const t = addToTotals(EMPTY_TOTALS, rep("2026-01-01T00:00:00.000Z", 50, "trash"));
+    expect(t.removed).toBe(50);
+    expect(t.observed).toBe(0);
+  });
+
+  test("readTotals seeds from history when nothing is saved and survives a round trip", () => {
+    localStorage.removeItem(TOTALS_KEY);
+    const history = [rep("2026-02-01T00:00:00.000Z", 5, "trash"), rep("2026-01-01T00:00:00.000Z", 7, "permanent")];
+    const seeded = readTotals(history);
+    expect(seeded).toMatchObject({ cleanups: 2, removed: 12, observed: 7, since: "2026-01-01T00:00:00.000Z" });
+    expect(saveTotals({ ...seeded, cleanups: 99 })).toBe(true);
+    expect(readTotals([]).cleanups).toBe(99);
+    localStorage.setItem(TOTALS_KEY, JSON.stringify({ cleanups: -1 }));
+    expect(readTotals(history).cleanups).toBe(2);
   });
 });
