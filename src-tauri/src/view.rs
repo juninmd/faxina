@@ -112,12 +112,14 @@ fn collect_stale(node: &Node, path: PathBuf, now: u64, min_secs: u64, out: &mut 
             if c.size >= SUGGEST_MIN && project_modified > 0 {
                 let idle = now.saturating_sub(project_modified);
                 if idle >= min_secs {
+                    let months = idle / (30 * 24 * 3600);
+                    let unit = if months == 1 { "mês" } else { "meses" };
                     out.push(Suggestion {
                         path: child_path.to_string_lossy().into_owned(),
                         name: format!("{}/{}", node.name, c.name),
                         size: c.size,
                         kind: c.kind,
-                        reason: format!("projeto parado há {} meses", idle / (30 * 24 * 3600)),
+                        reason: format!("projeto parado há {months} {unit}"),
                     });
                 }
             }
@@ -182,7 +184,7 @@ struct Found {
 
 impl PartialEq for Found {
     fn eq(&self, other: &Self) -> bool {
-        self.size == other.size
+        self.size == other.size && self.file.path == other.file.path
     }
 }
 impl Eq for Found {}
@@ -193,7 +195,10 @@ impl PartialOrd for Found {
 }
 impl Ord for Found {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.size.cmp(&other.size)
+        // Larger size wins; equal sizes break ties by path ascending (smallest path first).
+        self.size
+            .cmp(&other.size)
+            .then_with(|| other.file.path.cmp(&self.file.path))
     }
 }
 
@@ -208,7 +213,7 @@ fn collect_files(
         return;
     }
     if !node.is_dir {
-        let worth_it = top.len() < limit || node.size > top.peek().map_or(0, |r| r.0.size);
+        let worth_it = top.len() < limit || node.size >= top.peek().map_or(0, |r| r.0.size);
         if worth_it && keep(&path) {
             top.push(Reverse(Found {
                 size: node.size,
@@ -330,6 +335,10 @@ mod tests {
         assert_eq!(s[0].name, "old/node_modules");
         assert_eq!(s[0].reason, "projeto parado há 13 meses");
         assert!(Path::new(&s[0].path).ends_with("old/node_modules"));
+
+        let one = dir("/root", Kind::Other, vec![project("recent", 35, 1)]);
+        let s1 = stale_deps(&one, Path::new("/root"), now, 30 * DAY, 10);
+        assert_eq!(s1[0].reason, "projeto parado há 1 mês");
     }
 
     #[test]
@@ -425,6 +434,24 @@ mod tests {
         assert_eq!(
             found.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
             ["movie.mkv", "big.bin"]
+        );
+    }
+
+    #[test]
+    fn biggest_files_breaks_size_ties_by_path_order() {
+        let root = dir(
+            "/root",
+            Kind::Other,
+            vec![
+                Node::file("z.bin".into(), 100, 0, Kind::Other),
+                Node::file("a.bin".into(), 100, 0, Kind::Other),
+                Node::file("m.bin".into(), 100, 0, Kind::Other),
+            ],
+        );
+        let top2 = biggest_files(&root, Path::new("/root"), 2, |_| true);
+        assert_eq!(
+            top2.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
+            ["a.bin", "m.bin"]
         );
     }
 
