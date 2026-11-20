@@ -12,7 +12,14 @@ export default function Updates() {
   const [version, setVersion] = useState("");
 
   useEffect(() => {
-    getVersion().then(setVersion, () => setVersion(""));
+    let live = true;
+    getVersion().then(
+      (v) => live && setVersion(v),
+      () => live && setVersion(""),
+    );
+    return () => {
+      live = false;
+    };
   }, []);
 
   const checkForUpdates = async () => {
@@ -43,7 +50,7 @@ export default function Updates() {
         if (ev.event === "Started") total = ev.data.contentLength ?? 0;
         if (ev.event === "Progress") {
           got += ev.data.chunkLength;
-          setPct(total ? Math.round((got / total) * 100) : 0);
+          setPct(total > 0 ? Math.min(100, Math.round((got / total) * 100)) : 0);
         }
       });
       await relaunch();
@@ -105,7 +112,14 @@ export default function Updates() {
 
           {state === "downloading" && (
             <div className="mt-4 flex w-full flex-col gap-1.5">
-              <div className="h-3 w-full overflow-hidden rounded-full border border-slate-700 bg-slate-800">
+              <div
+                role="progressbar"
+                aria-label="Progresso do download da atualização"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={pct}
+                className="h-3 w-full overflow-hidden rounded-full border border-slate-700 bg-slate-800"
+              >
                 <div
                   className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-300"
                   style={{ width: `${pct}%` }}
