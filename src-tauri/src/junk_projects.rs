@@ -23,6 +23,11 @@ pub enum Marker {
     Zig,
 }
 
+fn ends_with_ignore_ascii_case(s: &str, suffix: &str) -> bool {
+    s.len() >= suffix.len()
+        && s.as_bytes()[s.len() - suffix.len()..].eq_ignore_ascii_case(suffix.as_bytes())
+}
+
 /// Manifest names are matched exactly (case-sensitive); .NET project files by extension.
 fn markers_for(name: &str) -> &'static [Marker] {
     match name {
@@ -34,17 +39,13 @@ fn markers_for(name: &str) -> &'static [Marker] {
         "stack.yaml" | "cabal.project" => &[Marker::Haskell],
         "mix.exs" => &[Marker::Elixir],
         "build.zig" => &[Marker::Zig],
-        _ => {
-            let lower = name.to_lowercase();
-            if [".csproj", ".fsproj", ".vbproj"]
-                .iter()
-                .any(|ext| lower.ends_with(ext))
-            {
-                &[Marker::Dotnet]
-            } else {
-                &[]
-            }
+        _ if ends_with_ignore_ascii_case(name, ".csproj")
+            || ends_with_ignore_ascii_case(name, ".fsproj")
+            || ends_with_ignore_ascii_case(name, ".vbproj") =>
+        {
+            &[Marker::Dotnet]
         }
+        _ => &[],
     }
 }
 
@@ -143,35 +144,49 @@ impl Projects {
         let Ok(entries) = fs::read_dir(dir) else {
             return;
         };
-        let entries: Vec<_> = entries.flatten().collect();
-        // One metadata pass over the folder: regular files only, never links.
-        let files: Vec<String> = entries
-            .iter()
-            .filter(|e| e.metadata().is_ok_and(|m| m.is_file() && !is_link(&m)))
-            .map(|e| e.file_name().to_string_lossy().into_owned())
-            .collect();
-        let has_file = |name: &str| files.iter().any(|f| f == name);
-        for marker in files.iter().flat_map(|f| markers_for(f)) {
-            let found = self.marked.entry(*marker).or_default();
-            if found.last().map(PathBuf::as_path) != Some(dir) {
-                found.push(dir.to_path_buf());
+        // Single metadata pass: classify regular files in place and queue only non-link subdirs.
+        // On Windows DirEntry caches the listing's attributes, including all reparse tags.
+        let mut has_node = false;
+        let mut has_rust = false;
+        let mut has_python = python;
+        let mut subdirs = Vec::new();
+        for entry in entries.flatten() {
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            if is_link(&meta) {
+                continue;
+            }
+            if meta.is_file() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                for marker in markers_for(&name) {
+                    let found = self.marked.entry(*marker).or_default();
+                    if found.last().map(PathBuf::as_path) != Some(dir) {
+                        found.push(dir.to_path_buf());
+                    }
+                }
+                match name.as_ref() {
+                    "package.json" => has_node = true,
+                    "Cargo.toml" => has_rust = true,
+                    "pyproject.toml" | "setup.py" | "requirements.txt" => has_python = true,
+                    _ => {}
+                }
+            } else if meta.is_dir() {
+                subdirs.push(entry);
             }
         }
-        if has_file("package.json") {
+        if has_node {
             self.node.push(dir.to_path_buf());
         }
-        if has_file("Cargo.toml") {
+        if has_rust {
             self.rust.push(dir.to_path_buf());
         }
-        let python = python
-            || has_file("pyproject.toml")
-            || has_file("setup.py")
-            || has_file("requirements.txt");
-        if python {
+        if has_python {
             self.python.push(dir.to_path_buf());
         }
 
-        let nested = entries
+        let nested = subdirs
             .into_par_iter()
             .filter_map(|entry| {
                 let path = entry.path();
@@ -220,15 +235,9 @@ impl Projects {
                 }
                 // Known personal folders are protected as delete targets, but may contain projects.
                 // Check protection on targets in the resolver, rather than pruning those ancestors.
-                // On Windows DirEntry caches the listing's attributes, including all reparse tags.
-                // Avoid reopening each child for a separate metadata query during the volume walk.
-                if entry.metadata().is_ok_and(|m| m.is_dir() && !is_link(&m)) {
-                    let mut found = Self::default();
-                    found.walk(&path, python, depth + 1, ctx);
-                    Some(found)
-                } else {
-                    None
-                }
+                let mut found = Self::default();
+                found.walk(&path, has_python, depth + 1, ctx);
+                Some(found)
             })
             .reduce(Self::default, |mut a, b| {
                 a.merge(b);
