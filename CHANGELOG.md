@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.31.0](https://github.com/juninmd/faxina/compare/v1.30.0...v1.31.0) (2026-11-20)
+
+
+### Features
+
+* **review:** pick single locations of a cache before cleaning ([8f778a2](https://github.com/juninmd/faxina/commit/8f778a21fc6ba0688a400a0c7bd27e234d9efee3))
+
 # [1.30.0](https://github.com/juninmd/faxina/compare/v1.29.2...v1.30.0) (2026-11-20)
 
 
