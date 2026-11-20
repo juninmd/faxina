@@ -1,61 +1,118 @@
 <div align="center">
 
-<img src="src-tauri/icons/128x128@2x.png" width="112" alt="Ícone do Faxina" />
+<img src="docs/img/banner.webp" alt="Faxina: veja onde foi parar seu espaço e mande o lixo para um buraco negro" width="100%" />
 
-# faxina
+<br />
 
-**Descubra onde foi parar o seu espaço em disco — e mande o lixo para um buraco negro.**
+[![Release](https://img.shields.io/github/v/release/juninmd/faxina?style=for-the-badge&color=ff8c3a&labelColor=141522)](https://github.com/juninmd/faxina/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/juninmd/faxina/total?style=for-the-badge&color=ffae4a&labelColor=141522&label=downloads)](https://github.com/juninmd/faxina/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/juninmd/faxina/ci.yml?branch=main&style=for-the-badge&label=CI&labelColor=141522)](https://github.com/juninmd/faxina/actions/workflows/ci.yml)
+[![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-4f7dd6?style=for-the-badge&labelColor=141522)](LICENSE)
 
-Mapa visual do disco no estilo DaisyDisk, limpeza de caches no estilo CCleaner e caçador de duplicatas por conteúdo, num app nativo leve feito com Tauri + Rust.
-
-[![Release](https://img.shields.io/github/v/release/juninmd/faxina?style=flat-square&color=e3b341)](https://github.com/juninmd/faxina/releases/latest)
-[![CI](https://img.shields.io/github/actions/workflow/status/juninmd/faxina/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/juninmd/faxina/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-4f7dd6?style=flat-square)](LICENSE)
-![Plataformas](https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-161b24?style=flat-square)
+![Windows](https://img.shields.io/badge/Windows-0078D6?style=flat-square&logo=windows11&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS-000000?style=flat-square&logo=apple&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat-square&logo=linux&logoColor=black)
+![Tauri 2](https://img.shields.io/badge/Tauri_2-24C8DB?style=flat-square&logo=tauri&logoColor=white)
+![Rust](https://img.shields.io/badge/Rust-000000?style=flat-square&logo=rust&logoColor=white)
+![React 19](https://img.shields.io/badge/React_19-20232A?style=flat-square&logo=react&logoColor=61DAFB)
 [![Conventional Commits](https://img.shields.io/badge/commits-conventional-8b5cd6?style=flat-square)](https://www.conventionalcommits.org/pt-br/)
 
-<img src="docs/blackhole.gif" width="720" alt="Animação: os blocos marcados se desintegram em poeira, são sugados em espiral por um buraco negro e o contador mostra 1,89 GB liberados" />
+**[⬇ Baixar](https://github.com/juninmd/faxina/releases/latest)** · [Funcionalidades](#-o-que-ele-faz) · [Telas](#-tour-pelas-telas) · [Uso](#-uso) · [Segurança](#-segurança-primeiro) · [Atalhos](#-atalhos) · [Arquitetura](#-como-funciona) · [Desenvolvimento](#-desenvolvimento)
 
 </div>
 
 ---
 
-**Índice:** [Funcionalidades](#-o-que-ele-faz) · [Telas](#-telas) · [Instalação](#-instalação) · [Uso](#-uso) · [Segurança](#-segurança-primeiro) · [Atalhos](#-atalhos) · [Arquitetura](#-como-funciona) · [Desenvolvimento](#-desenvolvimento) · [Testes e gates de CI](#-testes-e-gates-de-ci) · [Limitações](#-limitações-conhecidas) · [Próximos passos](#-próximos-passos)
+O disco encheu e você não sabe por quê? O **Faxina** mostra onde o espaço foi parar, sugere o que é seguro apagar (caches, `node_modules`, `target/`, duplicatas, worktrees esquecidas) e remove tudo **com a Lixeira como padrão**. É um app nativo leve, com o motor em Rust e a interface em React.
 
-Para quem: quem tem o disco cheio e não sabe por quê. O Faxina mostra onde o espaço foi parar, sugere o que é seguro apagar (caches, `node_modules`, `target/`, duplicatas) e remove com a Lixeira como padrão.
+<table>
+  <tr>
+    <td width="33%" align="center">
+      <h3>🗺️ Enxergue</h3>
+      Mapa do disco em blocos ou anéis, com cada tipo de arquivo numa cor e o que dá para recuperar hachurado.
+    </td>
+    <td width="33%" align="center">
+      <h3>🧹 Decida</h3>
+      Caches, builds, duplicatas e repositórios já enviados ao remoto, cada um com o motivo e o tamanho.
+    </td>
+    <td width="33%" align="center">
+      <h3>🕳️ Engula</h3>
+      Junte tudo na Órbita e mande para o buraco negro. O Rust confere cada caminho antes de remover.
+    </td>
+  </tr>
+</table>
+
+<div align="center">
+  <img src="docs/img/overview.webp" alt="Tela Agora: anel com o espaço livre do disco, 22,7 GB para revisar e a Órbita com os caches selecionados" width="100%" />
+  <sub><b>Agora</b>: o resumo do disco, o que dá para liberar e a Órbita à direita, com tudo que está esperando o buraco negro.</sub>
+</div>
 
 ## ✨ O que ele faz
 
 | | |
 |---|---|
-| 🗺️ **Mapa do disco** | Analise a pasta pessoal, qualquer pasta ou um disco inteiro (C:, D:…) e troque a qualquer momento. Treemap em blocos (estilo *disktree*) ou anéis concêntricos (estilo *DaisyDisk*). Cada cor é um tipo: cache, build, git, código, mídia, documentos, compactados, apps. Hachurado = **recuperável**. |
-| 🔎 **Busca e relatórios** | Busca instantânea no mapa por nome (com `*` e `?`), tamanho, tipo e tempo parado ("não mexo há 1 ano"), com exportação em CSV, JSON ou HTML. Só arquivos rastreados individualmente (acima de 512 KB) aparecem. |
-| ⌨️ **Linha de comando** | `faxina-cli search <pasta> --older-than 12m --min-size 500MB --format csv`, `faxina-cli scan` e `faxina-cli junk`. Somente leitura: nunca apaga nada. |
+| 🗺️ **Mapa do disco** | Analise a pasta pessoal, qualquer pasta ou um disco inteiro (C:, D:…) e troque a qualquer momento. Treemap em blocos ou anéis concêntricos. Cada cor é um tipo: cache, build, git, código, mídia, documentos, compactados, apps. Hachurado = **recuperável**. |
 | 💡 **Vale uma olhada** | Lista automática do que dá para apagar sem dor: `node_modules`, `target/` de projetos Rust, Maven e sbt, `.next`, `__pycache__`, `.venv`, `__pypackages__`, `.build` do SwiftPM, `elm-stuff`, `zig-out`, caches e arquivos gigantes parados há meses. |
-| 🔎 **Arquivos grandes** | Os maiores arquivos da área analisada, de qualquer idade — para quando o que pesa não é cache nem duplicata. |
-| 🧹 **Limpeza rápida** | Caches de Windows, navegadores (Chrome, Edge, Brave, Vivaldi, Firefox, Thunderbird), apps (VS Code, Discord, Slack, Spotify), apps da Microsoft Store e ferramentas de dev (npm, Yarn, pnpm, pip, uv, Poetry, Bun, Cargo, Gradle, Rustup, Maven, Ivy, Coursier, go, NuGet, Composer, Dart/Flutter, JetBrains, Cypress/Playwright/Electron, modelos baixados do Hugging Face/PyTorch), além de caches do Cursor, Teams e do cache de mídia da Adobe. **Nunca** toca em cookies, senhas ou histórico. |
-| 👯 **Duplicatas** | Comparação por conteúdo em 4 etapas (tamanho → prefixo → sufixo → BLAKE3 completo, com memória mapeada em arquivos grandes). Mantém a cópia mais antiga e nunca deixa você marcar todas as cópias de um arquivo. |
-| 🌿 **Worktrees do Git** | Encontra checkouts criados com `git worktree add` e libera só os que já têm todos os commits no remoto, sem alterações locais nem trava. O resto fica listado com o motivo (commits fora do remoto, arquivos não commitados, worktree travada). A conferência usa o `git` do PATH, só leitura, e a remoção vai para a Lixeira. |
-| 🕳️ **Buraco negro** | Ao excluir, os blocos se desintegram, espiralam para dentro de um buraco negro, que colapsa numa onda de choque com o total liberado. |
-| 🔄 **Auto-update** | O app verifica novas versões no GitHub Releases ao abrir; pacotes são assinados e você decide quando instalar. |
+| 📈 **O que cresceu** | Cada análise guarda os tamanhos das pastas grandes neste computador; na próxima, o Faxina mostra o que cresceu desde a última vez. |
+| 🔎 **Busca e relatórios** | Busca instantânea no mapa por nome (com `*` e `?`), tamanho, tipo e tempo parado ("não mexo há 1 ano"), com exportação em CSV, JSON ou HTML. |
+| 📦 **Arquivos grandes** | Os maiores arquivos da área analisada, de qualquer idade, para quando o que pesa não é cache nem duplicata. |
+| 🧹 **Limpeza de caches** | Windows, navegadores (Chrome, Edge, Brave, Vivaldi, Firefox, Thunderbird), apps (VS Code, Discord, Slack, Spotify, Teams, Cursor, Adobe), apps da Microsoft Store, launchers e ferramentas de dev (npm, Yarn, pnpm, pip, uv, Poetry, Bun, Cargo, Gradle, Rustup, Maven, go, NuGet, Composer, Dart/Flutter, JetBrains, Playwright, Hugging Face…). Tem **Simular** antes de limpar. **Nunca** toca em cookies, senhas ou histórico. |
+| 👯 **Duplicatas** | Comparação por conteúdo em 4 etapas (tamanho → prefixo → sufixo → BLAKE3 completo). Mantém uma cópia de cada grupo e nunca deixa você marcar todas. |
+| 🗂️ **Vazios e links** | Pastas vazias e links quebrados. Os links quebrados vão sempre para a Lixeira. |
+| 🌿 **Repositórios e worktrees** | Encontra checkouts criados com `git worktree add` e libera só os que já têm todos os commits no remoto, sem alterações locais nem trava. O resto fica listado com o motivo. |
+| 🕳️ **Buraco negro** | Ao excluir, os blocos se desintegram e espiralam para dentro de um buraco negro, que colapsa numa onda de choque com o total liberado. |
+| ⌨️ **Linha de comando** | `faxina-cli search`, `faxina-cli scan` e `faxina-cli junk`, só leitura: nunca apaga nada. |
+| 🔄 **Auto-update** | O app procura novas versões no GitHub Releases; os pacotes são assinados e você decide quando instalar. |
 
-## 📸 Telas
+## 📸 Tour pelas telas
 
 <table>
   <tr>
-    <td><img src="docs/screenshot-map.png" alt="Treemap com blocos coloridos por tipo e painel lateral de sugestões" /></td>
-    <td><img src="docs/screenshot-rings.png" alt="Visualização em anéis concêntricos com o tamanho da pasta no centro" /></td>
+    <td colspan="2">
+      <img src="docs/img/map.webp" alt="Mapa em blocos da pasta pessoal: AppData, Projetos, Fotos, Vídeos, Documentos e Downloads coloridos por tipo, com a lista Vale uma olhada ao lado" />
+      <p align="center"><sub><b>Mapa em blocos</b>: cada pasta no seu lugar, colorida por tipo, com as sugestões “Vale uma olhada” ao lado.</sub></p>
+    </td>
   </tr>
   <tr>
-    <td align="center"><sub>Blocos + “Vale uma olhada”</sub></td>
-    <td align="center"><sub>Anéis estilo DaisyDisk</sub></td>
+    <td colspan="2">
+      <img src="docs/img/rings.webp" alt="A mesma pasta em anéis concêntricos com o total de 179 GB no centro" />
+      <p align="center"><sub><b>Anéis</b>: a mesma análise em anéis concêntricos. Aperte <code>t</code> para alternar.</sub></p>
+    </td>
   </tr>
   <tr>
-    <td colspan="2"><img src="docs/screenshot-dupes.png" alt="Lista de grupos de arquivos duplicados com a cópia original marcada" /></td>
+    <td width="50%">
+      <img src="docs/img/caches.webp" alt="Revisão de caches com categorias marcadas e o detalhe de cada item" />
+      <p align="center"><sub><b>Caches</b>: revise item a item, com o que acontece ao limpar e onde fica no disco.</sub></p>
+    </td>
+    <td width="50%">
+      <img src="docs/img/dupes.webp" alt="Grupos de arquivos duplicados com a cópia mantida destacada" />
+      <p align="center"><sub><b>Duplicatas</b>: por conteúdo, e uma cópia de cada grupo sempre fica.</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="docs/img/search.webp" alt="Busca instantânea listando os maiores arquivos com exportação em CSV, JSON e HTML" />
+      <p align="center"><sub><b>Buscar</b>: nome, curingas, tamanho, tipo e idade, com exportação.</sub></p>
+    </td>
+    <td width="50%">
+      <img src="docs/img/growth.webp" alt="Pastas que mais cresceram desde a última análise, com barras de crescimento" />
+      <p align="center"><sub><b>Cresceu</b>: o que engordou desde a última análise.</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <img src="docs/img/worktrees.webp" alt="Lista de worktrees do Git: duas já sincronizadas com o remoto e uma bloqueada por commits locais" />
+      <p align="center"><sub><b>Repositórios</b>: só sai o que já está inteiro no remoto; o resto mostra o motivo.</sub></p>
+    </td>
   </tr>
 </table>
 
-<sub>Capturas feitas sobre uma pasta de demonstração gerada por <code>scripts/demo-fixture.ts</code>.</sub>
+<div align="center">
+  <img src="docs/blackhole.gif" width="720" alt="Animação: os blocos marcados se desintegram em poeira, são sugados em espiral por um buraco negro e o contador mostra 1,89 GB liberados" />
+  <br /><sub>O buraco negro em ação.</sub>
+</div>
+
+<sub>Capturas feitas com dados de demonstração.</sub>
 
 ## ⬇ Instalação
 
@@ -63,23 +120,41 @@ Baixe o instalador da [última versão](https://github.com/juninmd/faxina/releas
 
 | Sistema | Arquivo |
 |---|---|
-| Windows 10/11 | `Faxina_x.y.z_x64-setup.exe` (ou `.msi`) |
-| macOS Apple Silicon | `Faxina_x.y.z_aarch64.dmg` |
-| macOS Intel | `Faxina_x.y.z_x64.dmg` |
-| Linux | `.AppImage`, `.deb` ou `.rpm` |
+| <img src="https://img.shields.io/badge/-Windows_10%2F11-0078D6?style=flat-square&logo=windows11&logoColor=white" alt="Windows" /> | `Faxina_x.y.z_x64-setup.exe` (ou `.msi`) |
+| <img src="https://img.shields.io/badge/-macOS_Apple_Silicon-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS Apple Silicon" /> | `Faxina_x.y.z_aarch64.dmg` |
+| <img src="https://img.shields.io/badge/-macOS_Intel-555555?style=flat-square&logo=apple&logoColor=white" alt="macOS Intel" /> | `Faxina_x.y.z_x64.dmg` |
+| <img src="https://img.shields.io/badge/-Linux-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux" /> | `.AppImage`, `.deb` ou `.rpm` |
 
 > [!NOTE]
-> Os binários ainda não têm assinatura de código da Microsoft/Apple. No Windows, o SmartScreen pede **Mais informações → Executar assim mesmo**; no macOS (assinatura ad-hoc), abra com **botão direito → Abrir** na primeira vez — se aparecer “danificado”, rode `xattr -cr /Applications/Faxina.app`. As *atualizações* são assinadas com a chave do updater do Tauri, então o app só aceita pacotes publicados por este repositório.
+> Os binários ainda não têm assinatura de código da Microsoft/Apple. No Windows, o SmartScreen pede **Mais informações → Executar assim mesmo**; no macOS (assinatura ad-hoc), abra com **botão direito → Abrir** na primeira vez. Se aparecer “danificado”, rode `xattr -cr /Applications/Faxina.app`. As *atualizações* são assinadas com a chave do updater do Tauri, então o app só aceita pacotes publicados por este repositório.
 
 ## 🚀 Uso
 
-O Faxina é um app de janela (sem linha de comando). O fluxo básico:
+O app é dividido em quatro espaços na barra lateral: **Agora** (resumo), **Explorar** (Mapa, Grandes, Buscar, Cresceu), **Limpar** (Caches, Duplicatas, Vazios e links, Repositórios) e **Ajustes**. `Ctrl K` abre a paleta de comandos de qualquer lugar.
 
-1. **Abra o app e escolha a área.** Pasta pessoal, outra pasta ou um disco inteiro (C:, D:…). A varredura mostra o progresso e, ao terminar, o mapa.
+1. **Escolha a área.** Em *Explorar → Mapa*, mapeie a pasta pessoal, outra pasta ou um disco inteiro. A varredura mostra o progresso e, ao terminar, o mapa.
 2. **Navegue.** Enter ou duplo clique entra na pasta; Backspace volta; `t` alterna entre Blocos e Anéis.
-3. **Marque e exclua.** Espaço ou botão direito marca o bloco; confirme no diálogo (Lixeira por padrão). O contador mostra o espaço liberado.
-4. **Caches e duplicatas.** “Revisar limpeza” e “Duplicatas”, na barra lateral, trabalham por ID de cache e por conteúdo, nunca por caminho vindo da interface.
-5. **Worktrees.** “Worktrees” procura checkouts do Git na pasta escolhida e só deixa remover os que já estão inteiros no remoto; um comentário local ou um commit não enviado mantém a worktree fora da seleção.
+3. **Junte na Órbita.** Espaço ou botão direito marca um bloco; caches, duplicatas, vazios e worktrees também podem ir para a Órbita.
+4. **Engula.** “Engolir” abre a confirmação (Lixeira por padrão) e o buraco negro mostra o espaço liberado.
+
+Cada painel de *Limpar* também tem o próprio botão de remover. Caches são resolvidos por ID e duplicatas por conteúdo, nunca por caminho vindo da interface; worktrees só saem se estiverem inteiras no remoto.
+
+<details>
+<summary><b>⌨️ Linha de comando (somente leitura)</b></summary>
+
+```bash
+faxina-cli search ~/ --older-than 12m --min-size 500MB --format csv
+faxina-cli search ~/Downloads --text "*.iso"
+faxina-cli scan ~/Projetos --top 10
+faxina-cli junk
+```
+
+Nenhum comando apaga nada: a CLI só lista e exporta.
+
+</details>
+
+<details>
+<summary><b>🧪 Testar sem tocar nos seus arquivos</b></summary>
 
 Para experimentar sem tocar nos seus arquivos, gere uma pasta de demonstração (caches, builds e duplicatas falsos) e analise-a no app:
 
@@ -103,6 +178,8 @@ Sem argumento, ele imprime o uso e sai com código 1:
 bun scripts/demo-fixture.ts
 # usage: bun scripts/demo-fixture.ts <target-dir>
 ```
+
+</details>
 
 ## 🔒 Segurança primeiro
 
@@ -232,11 +309,15 @@ PRs têm os commits validados pelo commitlint. Para publicar, o repositório pre
 ## 🗺️ Próximos passos
 
 - [ ] **Regras personalizadas pelo usuário:** suporte a inclusão de pastas customizadas com regras de exclusão declarativas.
-- [ ] **Filtros e exportação avançada:** exportação de relatórios em formato CSV/JSON e filtros por extensões personalizadas no caçador de arquivos grandes.
+- [ ] **Filtros por extensão:** filtros por extensões personalizadas no caçador de arquivos grandes.
 - [ ] **Melhorias de acessibilidade contínuas:** suporte a alto contraste aprimorado e atalhos de teclado dedicados para painéis secundários (duplicatas e vazios).
 - [ ] **Análise em lote de múltiplos volumes:** varredura simultânea de diferentes discos em segundo plano com agendamento local integrado.
 
 ## 🙏 Inspirações
+
+<details>
+<summary>Projetos que inspiraram o Faxina</summary>
+
 
 Levantamento feito no GitHub em 27/09/2026:
 
@@ -250,6 +331,15 @@ Levantamento feito no GitHub em 27/09/2026:
 | [dua-cli](https://github.com/Byron/dua-cli) · [dust](https://github.com/bootandy/dust) · [gdu](https://github.com/dundee/gdu) | Varredura paralela rápida e navegação por teclado |
 | [DaisyDisk](https://daisydiskapp.com/) · Microsoft PC Manager · CCleaner | Anéis, “coletor” antes de apagar e limpeza em um clique |
 
+</details>
+
 ## 📄 Licença
 
 [MIT](LICENSE) © juninmd
+
+<div align="center">
+  <br />
+  <img src="assets/icon.svg" width="64" alt="Ícone do Faxina" />
+  <br />
+  <sub>Feito com Rust, React e um buraco negro.</sub>
+</div>
