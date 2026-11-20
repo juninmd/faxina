@@ -49,10 +49,11 @@ pub fn parse_size(s: &str) -> Result<u64, String> {
     let n: f64 = digits
         .parse()
         .map_err(|_| format!("tamanho inválido: {s}"))?;
-    if !(n.is_finite() && n >= 0.0) {
+    let bytes = n * mult as f64;
+    if !(n.is_finite() && n >= 0.0 && bytes.is_finite() && bytes <= u64::MAX as f64) {
         return Err(format!("tamanho inválido: {s}"));
     }
-    Ok((n * mult as f64) as u64)
+    Ok(bytes as u64)
 }
 
 /// `30d`, `12m` (months of 30 days), `2y`, or plain days.
@@ -103,6 +104,12 @@ impl Args {
 
 fn folder(args: &mut Args) -> Result<PathBuf, String> {
     let rest = std::mem::take(&mut args.rest);
+    if let Some(flag) = rest
+        .iter()
+        .find(|a| a.starts_with('-') && (rest.len() != 1 || !std::path::Path::new(a).is_dir()))
+    {
+        return Err(format!("opção desconhecida: {flag}"));
+    }
     let [path] = <[String; 1]>::try_from(rest).map_err(|_| "informe exatamente uma pasta")?;
     let p = PathBuf::from(path);
     if p.is_dir() {
@@ -205,6 +212,9 @@ mod tests {
         assert_eq!(parse_size("1234"), Ok(1234));
         assert!(parse_size("abc").is_err());
         assert!(parse_size("5xb").is_err());
+        assert!(parse_size("999999999999999TB").is_err());
+        assert!(parse_size("1e300").is_err());
+        assert!(parse_size("-5MB").is_err());
         assert_eq!(parse_age("12m"), Ok(12 * 30 * 86400));
         assert_eq!(parse_age("30"), Ok(30 * 86400));
         assert_eq!(parse_age("2y"), Ok(2 * 365 * 86400));
@@ -230,5 +240,7 @@ mod tests {
         assert!(cli(&["search", "/definitely/missing"]).is_err());
         assert!(cli(&["search", "/tmp", "--format", "pdf"]).is_err());
         assert!(cli(&["search", "/tmp", "--limit"]).is_err());
+        let err = cli(&["search", "/tmp", "--bogus"]).unwrap_err();
+        assert!(err.contains("--bogus"), "got: {err}");
     }
 }
