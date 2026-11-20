@@ -1,20 +1,62 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Faxina">
   <title>Faxina</title>
   <defs>
-    <radialGradient id="bg" cx="50%" cy="40%" r="75%">
-      <stop offset="0" stop-color="#232b3a"/><stop offset="1" stop-color="#0e1117"/>
+    <radialGradient id="bg" cx="38%" cy="28%" r="90%">
+      <stop offset="0" stop-color="#2c2d45"/>
+      <stop offset="0.55" stop-color="#141522"/>
+      <stop offset="1" stop-color="#07070d"/>
     </radialGradient>
-    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
-      <stop offset="0.45" stop-color="#000"/><stop offset="0.62" stop-color="#e3b341"/><stop offset="1" stop-color="#e3b341" stop-opacity="0"/>
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0.30" stop-color="#ff8c3a" stop-opacity="0.55"/>
+      <stop offset="0.62" stop-color="#f06a2a" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#f06a2a" stop-opacity="0"/>
     </radialGradient>
+    <linearGradient id="disk" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f06a2a" stop-opacity="0.15"/>
+      <stop offset="0.35" stop-color="#ffae4a"/>
+      <stop offset="0.55" stop-color="#ffe0b8"/>
+      <stop offset="0.75" stop-color="#ffae4a"/>
+      <stop offset="1" stop-color="#f06a2a" stop-opacity="0.15"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="sq"><rect width="1024" height="1024" rx="232"/></clipPath>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="10"/></filter>
   </defs>
-  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
-  <rect x="150" y="150" width="400" height="460" rx="36" fill="#4f7dd6"/>
-  <rect x="578" y="150" width="296" height="250" rx="36" fill="#c9a13b"/>
-  <rect x="578" y="428" width="296" height="182" rx="36" fill="#3f9f68"/>
-  <rect x="150" y="638" width="250" height="236" rx="36" fill="#8b5cd6"/>
-  <rect x="428" y="638" width="122" height="236" rx="30" fill="#c4506a"/>
-  <circle cx="712" cy="756" r="170" fill="url(#glow)"/>
-  <circle cx="712" cy="756" r="84" fill="#000"/>
-  <ellipse cx="712" cy="756" rx="150" ry="44" fill="none" stroke="#ffd48a" stroke-width="14" transform="rotate(-24 712 756)"/>
+  <g clip-path="url(#sq)">
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+    <!-- stars -->
+    <g fill="#ecebf6">
+      <circle cx="170" cy="190" r="5" opacity=".7"/><circle cx="860" cy="150" r="4" opacity=".55"/>
+      <circle cx="905" cy="560" r="3" opacity=".5"/><circle cx="120" cy="640" r="3.5" opacity=".45"/>
+      <circle cx="300" cy="880" r="4" opacity=".4"/><circle cx="760" cy="905" r="3" opacity=".4"/>
+    </g>
+    <!-- treemap tiles spiralling in -->
+    <g>
+      <rect x="132" y="150" width="210" height="210" rx="44" fill="#4f7dd6" transform="rotate(-12 237 255)"/>
+      <rect x="690" y="168" width="156" height="156" rx="36" fill="#c9a13b" transform="rotate(18 768 246)"/>
+      <rect x="760" y="690" width="118" height="118" rx="28" fill="#3f9f68" transform="rotate(34 819 749)"/>
+      <rect x="186" y="716" width="86" height="86" rx="22" fill="#8b5cd6" transform="rotate(-38 229 759)"/>
+      <rect x="352" y="300" width="58" height="58" rx="15" fill="#c4506a" transform="rotate(26 381 329)" opacity=".95"/>
+      <rect x="628" y="640" width="40" height="40" rx="11" fill="#4f7dd6" transform="rotate(48 648 660)" opacity=".9"/>
+    </g>
+    <!-- halo -->
+    <circle cx="512" cy="512" r="330" fill="url(#halo)"/>
+    <!-- back half of accretion disk -->
+    <g transform="rotate(-20 512 512)">
+      <path d="M232 512 A280 78 0 0 1 792 512" fill="none" stroke="url(#disk)" stroke-width="30" stroke-linecap="round" opacity=".75"/>
+    </g>
+    <!-- photon ring + event horizon -->
+    <circle cx="512" cy="512" r="168" fill="none" stroke="#ffc98a" stroke-width="20" filter="url(#soft)" opacity=".9"/>
+    <circle cx="512" cy="512" r="160" fill="none" stroke="#ffe0b8" stroke-width="7"/>
+    <circle cx="512" cy="512" r="154" fill="#000"/>
+    <!-- front half of accretion disk -->
+    <g transform="rotate(-20 512 512)">
+      <path d="M232 512 A280 78 0 0 0 792 512" fill="none" stroke="#ff8c3a" stroke-width="44" stroke-linecap="round" filter="url(#soft)" opacity=".7"/>
+      <path d="M232 512 A280 78 0 0 0 792 512" fill="none" stroke="url(#disk)" stroke-width="34" stroke-linecap="round"/>
+    </g>
+    <rect width="1024" height="1024" fill="url(#rim)"/>
+  </g>
 </svg>
