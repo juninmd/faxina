@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type DiskInfo, type Suggestion, type ViewNode } from "../lib/api";
 import { assistantPrompt, explainFolder } from "../lib/folders";
 import { formatAge, formatBytes, formatCount, splitBytes } from "../lib/format";
@@ -32,6 +32,15 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
   const [promptCopied, setPromptCopied] = useState("");
   const [promptFailed, setPromptFailed] = useState("");
   const [pathFailed, setPathFailed] = useState("");
+  const pathTimer = useRef<number | undefined>(undefined);
+  const promptTimer = useRef<number | undefined>(undefined);
+  useEffect(
+    () => () => {
+      window.clearTimeout(pathTimer.current);
+      window.clearTimeout(promptTimer.current);
+    },
+    [],
+  );
   const [months, setMonths] = useState(6);
   const [stale, setStale] = useState<Suggestion[]>([]);
   const [staleLoaded, setStaleLoaded] = useState(false);
@@ -106,15 +115,17 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
             <button
               type="button"
               onClick={async () => {
+                window.clearTimeout(pathTimer.current);
                 try {
                   await onReveal(selection.path);
+                  setPathFailed("");
+                  setCopied(selection.path);
+                  pathTimer.current = window.setTimeout(() => setCopied(""), 1500);
                 } catch {
+                  setCopied("");
                   setPathFailed(selection.path);
-                  setTimeout(() => setPathFailed(""), 2000);
-                  return;
+                  pathTimer.current = window.setTimeout(() => setPathFailed(""), 2000);
                 }
-                setCopied(selection.path);
-                setTimeout(() => setCopied(""), 1500);
               }}
               className="cursor-pointer rounded-xl border border-slate-700 bg-slate-800/90 px-3 py-2 text-xs font-semibold text-slate-200 transition-colors hover:bg-slate-750"
               title="Copiar caminho"
@@ -133,13 +144,16 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
           <button
             type="button"
             onClick={async () => {
+              window.clearTimeout(promptTimer.current);
               try {
                 await navigator.clipboard.writeText(assistantPrompt(selection, platformName()));
+                setPromptFailed("");
                 setPromptCopied(selection.path);
-                setTimeout(() => setPromptCopied(""), 2000);
+                promptTimer.current = window.setTimeout(() => setPromptCopied(""), 2000);
               } catch {
+                setPromptCopied("");
                 setPromptFailed(selection.path);
-                setTimeout(() => setPromptFailed(""), 2000);
+                promptTimer.current = window.setTimeout(() => setPromptFailed(""), 2000);
               }
             }}
             className="mt-2.5 w-full cursor-pointer rounded-xl border border-slate-700 bg-slate-850 px-3 py-2 text-xs font-semibold text-slate-300 transition-colors hover:bg-slate-800"
@@ -246,6 +260,7 @@ export function Sidebar({ selection, scanTotal, suggestions, disk, marked, onTog
                   <button
                     type="button"
                     data-path={s.path}
+                    data-color={kindColor(s.kind)}
                     onClick={() => onToggleMark(s)}
                     aria-pressed={marked.has(s.path)}
                     className={`w-full rounded-md border-l-2 px-3 py-2 text-left hover:bg-[var(--color-panel-2)] ${marked.has(s.path) ? "bg-[var(--color-panel-2)]" : ""}`}
