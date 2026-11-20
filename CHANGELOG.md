@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.31.3](https://github.com/juninmd/faxina/compare/v1.31.2...v1.31.3) (2026-11-20)
+
+
+### Bug Fixes
+
+* **scan:** ignore stale errors and progress clears from superseded scans ([#117](https://github.com/juninmd/faxina/issues/117)) ([0ed66b3](https://github.com/juninmd/faxina/commit/0ed66b3ee285267162403091583a93f13793d45d))
+
 ## [1.31.2](https://github.com/juninmd/faxina/compare/v1.31.1...v1.31.2) (2026-11-20)
 
 
