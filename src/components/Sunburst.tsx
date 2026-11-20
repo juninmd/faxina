@@ -93,7 +93,7 @@ export function Sunburst({ root, selected, marked, onSelect, onOpen, onUp, onTog
               onMouseLeave={() => setHover(null)}
               role="button"
               tabIndex={d.depth === 1 ? 0 : -1}
-              aria-label={`${n.name}, ${formatBytes(n.size)}`}
+              aria-label={`${n.name}, ${formatBytes(n.size)}${isMarked ? ", marcado para excluir" : ""}`}
               onFocus={() => onSelect(n)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && n.isDir) {
