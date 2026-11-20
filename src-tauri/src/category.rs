@@ -201,15 +201,20 @@ pub fn classify_dir(name: &str, hints: DirHints) -> Option<Kind> {
     None
 }
 
+fn ends_with_ignore_ascii_case(s: &str, suffix: &str) -> bool {
+    s.len() >= suffix.len()
+        && s.as_bytes()[s.len() - suffix.len()..].eq_ignore_ascii_case(suffix.as_bytes())
+}
+
 pub fn classify_file(name: &str) -> Kind {
     if JUNK_FILES.iter().any(|j| name.eq_ignore_ascii_case(j)) {
         return Kind::Cache;
     }
     let ext = match name.rsplit_once('.') {
-        Some((stem, ext)) if !stem.is_empty() => ext.to_lowercase(),
+        Some((stem, ext)) if !stem.is_empty() => lowercase(ext),
         _ => return Kind::Other,
     };
-    let e = ext.as_str();
+    let e = ext.as_ref();
     if LOG_EXT.contains(&e) {
         Kind::Cache
     } else if MEDIA.contains(&e) {
@@ -239,7 +244,7 @@ pub fn hints_for<'a>(file_names: impl IntoIterator<Item = &'a str>) -> DirHints 
                 h.has_mix = true;
                 h.has_build_manifest = true;
             }
-            n if n.ends_with(".uproject") => h.has_unreal = true,
+            n if ends_with_ignore_ascii_case(n, ".uproject") => h.has_unreal = true,
             "Cargo.toml" | "pom.xml" | "build.sbt" => {
                 h.has_target_manifest = true;
                 h.has_build_manifest = true;
@@ -247,7 +252,13 @@ pub fn hints_for<'a>(file_names: impl IntoIterator<Item = &'a str>) -> DirHints 
             "package.json" | "build.gradle" | "build.gradle.kts" | "CMakeLists.txt"
             | "pyproject.toml" | "go.mod" | "Podfile" | "Cartfile" | "pubspec.yaml"
             | "dune-project" | "Package.swift" | "build.zig" => h.has_build_manifest = true,
-            n if n.ends_with(".csproj") || n.ends_with(".sln") => h.has_build_manifest = true,
+            n if ends_with_ignore_ascii_case(n, ".csproj")
+                || ends_with_ignore_ascii_case(n, ".fsproj")
+                || ends_with_ignore_ascii_case(n, ".vbproj")
+                || ends_with_ignore_ascii_case(n, ".sln") =>
+            {
+                h.has_build_manifest = true;
+            }
             _ => {}
         }
     }
@@ -330,9 +341,16 @@ mod tests {
         // A lone "Library" (or one beside only Assets) is the user's.
         assert_eq!(classify_dir("Library", hints_for(["Assets"])), None);
         assert_eq!(classify_dir("Library", DirHints::default()), None);
-        let unreal = hints_for(["Game.uproject", "Config"]);
+        let unreal = hints_for(["Game.UPROJECT", "Config"]);
         for n in ["Intermediate", "Binaries"] {
             assert_eq!(classify_dir(n, unreal), Some(Kind::Build), "{n}");
+        }
+        for manifest in ["App.CSPROJ", "Lib.fsproj", "Legacy.vbproj", "Suite.SLN"] {
+            assert_eq!(
+                classify_dir("obj", hints_for([manifest])),
+                Some(Kind::Build),
+                "{manifest}"
+            );
         }
         assert_eq!(
             classify_dir("Intermediate", hints_for(["package.json"])),
