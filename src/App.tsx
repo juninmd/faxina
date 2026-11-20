@@ -36,8 +36,8 @@ import {
   recommended,
   saveHistory,
   saveSettings,
-  skipPairs,
   saveTotals,
+  skipPairs,
   totalSize,
   withoutSkipped,
 } from "./domain";
