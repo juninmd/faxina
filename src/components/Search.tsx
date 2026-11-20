@@ -53,6 +53,7 @@ export function Search({
   useEffect(() => {
     if (!root || blank) {
       setHits(null);
+      setError("");
       return;
     }
     let live = true;
@@ -65,7 +66,11 @@ export function Search({
         setShown(PAGE);
         setError("");
       } catch (e) {
-        if (live) setError(String(e));
+        if (!live) return;
+        // The old list answered other filters: keeping it ticked would remove files this query never matched.
+        setHits(null);
+        setPicked(new Set());
+        setError(String(e));
       }
     }, 150);
     return () => {
