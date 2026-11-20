@@ -33,7 +33,9 @@ import {
   recommended,
   saveHistory,
   saveSettings,
+  skipPairs,
   totalSize,
+  withoutSkipped,
 } from "./domain";
 import { useHole } from "./hooks/useHole";
 import { useScan } from "./hooks/useScan";
@@ -73,6 +75,8 @@ export default function App() {
   const [storageError, setStorageError] = useState(false);
   const [notice, setNotice] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  /** Locations the review left out, per cache id. They belong to one scan. */
+  const [leftOut, setLeftOut] = useState<Record<string, string[]>>({});
   const [detail, setDetail] = useState<Rule>(BASE_RULES[0]);
   const [confirm, setConfirm] = useState(false);
 
@@ -140,6 +144,7 @@ export default function App() {
       setScanned(true);
       const rec = recommended(merged, settingsRef.current).map((r) => r.id);
       setSelected(rec);
+      setLeftOut({});
       const firstActive = merged.find((r) => r.size > 0 && !r.blocked) || merged[0];
       setDetail(firstActive);
       setNotice(
@@ -212,9 +217,41 @@ export default function App() {
   };
 
   const picked = useMemo(
-    () => rules.filter((r) => selected.includes(r.id) && !r.blocked && !settings.excluded.includes(r.id)),
-    [rules, selected, settings.excluded],
+    () =>
+      rules
+        .filter((r) => selected.includes(r.id) && !r.blocked && !settings.excluded.includes(r.id))
+        .map((r) => withoutSkipped(r, leftOut[r.id]))
+        .filter((r): r is Rule => r !== null),
+    [rules, selected, settings.excluded, leftOut],
   );
+
+  const toggleRule = (id: string) => {
+    if (picked.some((r) => r.id === id)) {
+      setSelected((s) => s.filter((x) => x !== id));
+      return;
+    }
+    flyToOrbit("#ffae4a");
+    setSelected((s) => (s.includes(id) ? s : [...s, id]));
+    // Ticking the whole item again brings back every location left out before.
+    setLeftOut(({ [id]: _, ...rest }) => rest);
+  };
+
+  /** Ticks or unticks one location of a cache; ticking one of an unpicked cache picks only it. */
+  const toggleLocation = (id: string, path: string) => {
+    const rule = rules.find((r) => r.id === id);
+    const all = rule?.locations?.map((l) => l.path) ?? [];
+    if (!picked.some((r) => r.id === id)) {
+      flyToOrbit("#ffae4a");
+      setSelected((s) => (s.includes(id) ? s : [...s, id]));
+      setLeftOut((prev) => ({ ...prev, [id]: all.filter((p) => p !== path) }));
+      return;
+    }
+    setLeftOut((prev) => {
+      const cur = prev[id] ?? [];
+      const next = cur.includes(path) ? cur.filter((p) => p !== path) : [...cur, path];
+      return { ...prev, [id]: next };
+    });
+  };
 
   /**
    * One swallow for the whole Órbita: map marks go through `delete_paths` (and its guard), caches
@@ -259,7 +296,7 @@ export default function App() {
         setMarked((prev) => new Map([...prev].filter(([p]) => !gone.has(p))));
         setQueued((prev) => new Map([...prev].filter(([p]) => !gone.has(p))));
         if (ids.length && junkScanId.current !== null) {
-          const r = await api.junkClean(ids, permanent, junkScanId.current);
+          const r = await api.junkClean(ids, skipPairs(ids, leftOut), permanent, junkScanId.current);
           freed += r.freed;
           failed += r.failed;
           skipped += r.skipped;
@@ -492,12 +529,11 @@ export default function App() {
                 rules={rules}
                 scanned={scanned}
                 selected={selected}
+                skipped={leftOut}
                 excluded={settings.excluded}
                 detail={detail}
-                onSelect={(id) => {
-                  if (!selected.includes(id)) flyToOrbit("#ffae4a");
-                  setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
-                }}
+                onSelect={toggleRule}
+                onLocation={toggleLocation}
                 onDetail={setDetail}
                 onExclude={exclude}
                 onConfirm={() => setConfirm(true)}
@@ -553,6 +589,7 @@ export default function App() {
           setMarked(new Map());
           setQueued(new Map());
           setSelected([]);
+          setLeftOut({});
         }}
         onSwallow={() => setConfirm(true)}
       />
@@ -591,10 +628,8 @@ export default function App() {
           trashOnly={[...queued.values()].filter((q) => q.route !== "path").length}
           onPreview={() => {
             if (junkScanId.current === null) throw new Error("Analise novamente antes de simular.");
-            return api.junkPreview(
-              picked.map((r) => r.id),
-              junkScanId.current,
-            );
+            const ids = picked.map((r) => r.id);
+            return api.junkPreview(ids, skipPairs(ids, leftOut), junkScanId.current);
           }}
           onClose={() => setConfirm(false)}
           onConfirm={(destination) => {

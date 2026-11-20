@@ -14,7 +14,9 @@ import {
   saveHistory,
   saveSettings,
   shareSummary,
+  skipPairs,
   totalSize,
+  withoutSkipped,
 } from "./domain";
 import type { JunkItem } from "./lib/api";
 
@@ -327,5 +329,34 @@ describe("shareSummary", () => {
 
   test("says nothing when nothing changed", () => {
     expect(shareSummary({ ...base, observed: 0, trashed: 0 }, fmt)).toBeUndefined();
+  });
+});
+
+describe("withoutSkipped", () => {
+  const rule = {
+    ...BASE_RULES[0],
+    size: 30,
+    files: 3,
+    locations: [
+      { path: "a", size: 10, files: 1 },
+      { path: "b", size: 20, files: 2 },
+    ],
+  };
+
+  test("recounts size and files from the locations kept", () => {
+    const kept = withoutSkipped(rule, ["b"]);
+    expect(kept?.size).toBe(10);
+    expect(kept?.files).toBe(1);
+    expect(kept?.paths).toEqual(["a"]);
+  });
+
+  test("is null once every location is left out, and the rule itself when none is", () => {
+    expect(withoutSkipped(rule, ["a", "b"])).toBeNull();
+    expect(withoutSkipped(rule, [])).toBe(rule);
+    expect(withoutSkipped(rule, ["elsewhere"])).toBe(rule);
+  });
+
+  test("skip pairs only cover the picked ids", () => {
+    expect(skipPairs(["x"], { x: ["a"], y: ["b"] })).toEqual([["x", "a"]]);
   });
 });

@@ -1,4 +1,4 @@
-import { count, gb, type Rule, totalSize } from "../domain";
+import { count, gb, type Rule, totalSize, withoutSkipped } from "../domain";
 import Icon from "./Icon";
 import RecycleBinCard from "./RecycleBinCard";
 
@@ -6,9 +6,11 @@ export default function Review({
   rules,
   scanned,
   selected,
+  skipped = {},
   excluded,
   detail,
   onSelect,
+  onLocation,
   onDetail,
   onExclude,
   onConfirm,
@@ -18,9 +20,12 @@ export default function Review({
   rules: Rule[];
   scanned: boolean;
   selected: string[];
+  /** Locations left out per cache id. */
+  skipped?: Record<string, string[]>;
   excluded: string[];
   detail: Rule;
   onSelect: (id: string) => void;
+  onLocation?: (id: string, path: string) => void;
   onDetail: (rule: Rule) => void;
   onExclude: (id: string) => void;
   onConfirm: () => void;
@@ -28,7 +33,17 @@ export default function Review({
   loading?: boolean;
 }) {
   const displayRules = rules.filter((r) => r.size > 0 || r.blocked);
-  const picked = displayRules.filter((r) => selected.includes(r.id) && !excluded.includes(r.id) && !r.blocked);
+  const picked = displayRules
+    .filter((r) => selected.includes(r.id) && !excluded.includes(r.id) && !r.blocked)
+    .map((r) => withoutSkipped(r, skipped[r.id]))
+    .filter((r): r is Rule => r !== null);
+  const pickedOf = (id: string) => picked.find((p) => p.id === id);
+  const detailPicked = pickedOf(detail.id);
+  const detailLocked = !!detail.blocked || excluded.includes(detail.id);
+  const locations = detail.locations?.length
+    ? detail.locations
+    : (detail.paths?.length ? detail.paths : [detail.path]).map((path) => ({ path, size: 0, files: 0 }));
+  const choosable = !!onLocation && !detailLocked && (detail.locations?.length ?? 0) > 1;
 
   return (
     <div className="flex flex-col gap-6">
@@ -116,7 +131,9 @@ export default function Review({
               <div className="flex flex-col gap-2">
                 {displayRules.map((r) => {
                   const ignored = excluded.includes(r.id);
-                  const isSelected = picked.some((p) => p.id === r.id);
+                  const pick = pickedOf(r.id);
+                  const isSelected = !!pick;
+                  const partial = !!pick?.locations && pick.locations.length < (r.locations?.length ?? 0);
                   const isDetail = detail.id === r.id;
 
                   return (
@@ -151,7 +168,8 @@ export default function Review({
                             {r.name}
                           </strong>
                           <span className="text-xs text-slate-400">
-                            {r.app} · {count(r.files)} arquivos
+                            {r.app} · {count(partial ? pick.files : r.files)} arquivos
+                            {partial && ` · ${pick.locations?.length} de ${r.locations?.length} locais`}
                           </span>
                           {(r.blocked || ignored || r.busy || r.caution) && (
                             <span
@@ -171,7 +189,7 @@ export default function Review({
                             </span>
                           )}
                         </span>
-                        <b className="font-mono text-sm font-bold text-slate-200">{gb(r.size)}</b>
+                        <b className="font-mono text-sm font-bold text-slate-200">{gb(partial ? pick.size : r.size)}</b>
                         <span className="text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-white">
                           ›
                         </span>
@@ -208,16 +226,48 @@ export default function Review({
               </div>
 
               <div>
-                <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Local no disco</h3>
+                <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                  {locations.length > 1 ? "Locais no disco" : "Local no disco"}
+                </h3>
+                {choosable && <p className="mt-0.5 text-[11px] text-slate-400">Marque só os locais que quer limpar.</p>}
                 <div className="mt-1 flex flex-col gap-1.5">
-                  {(detail.paths?.length ? detail.paths : [detail.path]).map((path) => (
-                    <code
-                      key={path}
-                      className="block rounded-xl border border-slate-800 bg-slate-950/70 p-2 font-mono text-xs text-slate-300 break-all select-all"
-                    >
-                      {path}
-                    </code>
-                  ))}
+                  {locations.map((loc) => {
+                    const on = !!detailPicked && !skipped[detail.id]?.includes(loc.path);
+                    const code = (
+                      <code key="path" className="min-w-0 flex-1 font-mono text-xs text-slate-300 break-all select-all">
+                        {loc.path}
+                      </code>
+                    );
+                    return choosable ? (
+                      <label
+                        key={loc.path}
+                        className={`flex cursor-pointer items-start gap-2.5 rounded-xl border p-2 transition-colors ${
+                          on
+                            ? "border-amber-500/30 bg-slate-950/70"
+                            : "border-slate-800 bg-slate-950/40 opacity-70 hover:opacity-100"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={`Limpar ${loc.path}`}
+                          checked={on}
+                          onChange={() => onLocation?.(detail.id, loc.path)}
+                          className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-slate-700 accent-amber-500"
+                        />
+                        {code}
+                        <span className="shrink-0 font-mono text-[11px] font-semibold text-slate-400">
+                          {gb(loc.size)}
+                        </span>
+                      </label>
+                    ) : (
+                      <div
+                        key={loc.path}
+                        className="flex items-start gap-2 rounded-xl border border-slate-800 bg-slate-950/70 p-2"
+                      >
+                        {code}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 

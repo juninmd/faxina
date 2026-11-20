@@ -365,10 +365,11 @@ pub async fn junk_clean(
     state: State<'_, AppState>,
     scan_id: u64,
     ids: Vec<String>,
+    skip: Vec<(String, String)>,
     permanent: bool,
 ) -> Result<CleanReport, String> {
     let snapshot = take_junk_snapshot(&state, scan_id)?;
-    tauri::async_runtime::spawn_blocking(move || junk::clean(snapshot, &ids, permanent))
+    tauri::async_runtime::spawn_blocking(move || junk::clean(snapshot, &ids, &skip, permanent))
         .await
         .map_err(|e| e.to_string())
 }
@@ -380,10 +381,11 @@ pub async fn junk_preview(
     state: State<'_, AppState>,
     scan_id: u64,
     ids: Vec<String>,
+    skip: Vec<(String, String)>,
 ) -> Result<CleanReport, String> {
     let snapshot = take_junk_snapshot(&state, scan_id)?;
     let (report, snapshot) = tauri::async_runtime::spawn_blocking(move || {
-        let report = junk::preview(&snapshot, &ids);
+        let report = junk::preview(&snapshot, &ids, &skip);
         (report, snapshot)
     })
     .await
@@ -905,7 +907,7 @@ mod tests {
         let ids = vec!["unknown_id".to_string()];
         let preview_res = {
             let snap = take_junk_snapshot(&state, 1).unwrap();
-            let report = junk::preview(&snap, &ids);
+            let report = junk::preview(&snap, &ids, &[]);
             *lock(&state.junk) = Some((1, snap));
             report
         };
