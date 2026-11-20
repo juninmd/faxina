@@ -1,5 +1,13 @@
 # Changelog
 
+# [1.30.0](https://github.com/juninmd/faxina/compare/v1.29.2...v1.30.0) (2026-11-20)
+
+
+### Features
+
+* **icon:** novo ícone com buraco negro engolindo os blocos do mapa ([c6d2a50](https://github.com/juninmd/faxina/commit/c6d2a506257d37ddc7932dea130818775aff9bb1))
+* **report:** show lifetime cleanup totals and refresh disk cards after deleting ([0523802](https://github.com/juninmd/faxina/commit/052380220f3ebf29138eda58894f98d62b73d763))
+
 ## [1.29.2](https://github.com/juninmd/faxina/compare/v1.29.1...v1.29.2) (2026-11-19)
 
 
