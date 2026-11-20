@@ -1,4 +1,4 @@
-import type { JunkItem } from "./lib/api";
+import type { JunkItem, JunkLocation, JunkSkip } from "./lib/api";
 import { formatBytes, formatCount } from "./lib/format";
 
 export type Page =
@@ -25,6 +25,8 @@ export type Rule = {
   files: number;
   path: string;
   paths?: string[];
+  /** Size per path from the scan; the review can leave single ones out. */
+  locations?: JunkLocation[];
   consequence: string;
   caution?: string;
   blocked?: boolean;
@@ -363,6 +365,7 @@ export function mergeRulesWithScan(items: JunkItem[]): Rule[] {
       files: item.files,
       path: item.paths[0] || rule.path,
       paths: item.paths,
+      locations: item.locations,
       caution: item.caution ?? rule.caution,
       ...(item.running?.length ? { busy: true, running: item.running } : {}),
     };
@@ -380,6 +383,7 @@ export function mergeRulesWithScan(items: JunkItem[]): Rule[] {
         files: item.files,
         path: item.paths[0] || item.label,
         paths: item.paths,
+        locations: item.locations,
         consequence: item.caution
           ? `${item.caution} Fica desmarcado até você escolher.`
           : "Caches e arquivos temporários que os aplicativos recriam sozinhos.",
@@ -560,6 +564,30 @@ export function saveTotals(totals: Totals): boolean {
 
 export const gb = (value: number) => formatBytes(value);
 export const count = (value: number) => formatCount(value);
+/**
+ * The rule as it will be cleaned once the review left `skipped` locations out: size and file
+ * count come from the remaining ones. `null` when nothing of it is left.
+ */
+export function withoutSkipped(rule: Rule, skipped: readonly string[] | undefined): Rule | null {
+  if (!skipped?.length || !rule.locations?.length) return rule;
+  const kept = rule.locations.filter((l) => !skipped.includes(l.path));
+  if (!kept.length) return null;
+  if (kept.length === rule.locations.length) return rule;
+  return {
+    ...rule,
+    size: kept.reduce((n, l) => n + l.size, 0),
+    files: kept.reduce((n, l) => n + l.files, 0),
+    path: kept[0].path,
+    paths: kept.map((l) => l.path),
+    locations: kept,
+  };
+}
+
+/** The `[id, path]` pairs `junk_clean` should leave alone for the picked rules. */
+export function skipPairs(ids: readonly string[], skipped: Record<string, string[]>): JunkSkip[] {
+  return ids.flatMap((id) => (skipped[id] ?? []).map((path): JunkSkip => [id, path]));
+}
+
 export const totalSize = (rules: Rule[]) => rules.reduce((sum, r) => sum + r.size, 0);
 
 const CLEANUP_INTERVAL_DAYS: Record<string, number> = { Semanal: 7, Mensal: 30 };

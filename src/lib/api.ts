@@ -53,6 +53,15 @@ export interface DeleteReport {
   failed: { path: string; error: string }[];
 }
 
+export interface JunkLocation {
+  path: string;
+  size: number;
+  files: number;
+}
+
+/** A location the user left out of one cache in the review: `[id, path]`. */
+export type JunkSkip = [string, string];
+
 export interface JunkItem {
   id: string;
   label: string;
@@ -60,6 +69,8 @@ export interface JunkItem {
   size: number;
   files: number;
   paths: string[];
+  /** Size per path, so single locations can be left out. */
+  locations?: JunkLocation[];
   /** Opt-in item: never ticked by default; this is the warning to show. */
   caution?: string | null;
   /** Programs that keep these files open right now; the cleanup is refused until they close. */
@@ -158,9 +169,10 @@ export const api = {
     invoke<number>("export_report", { query, format, path }),
   deletePaths: (paths: string[], permanent: boolean) => invoke<DeleteReport>("delete_paths", { paths, permanent }),
   junkScan: () => invoke<{ scanId: number; items: JunkItem[] }>("junk_scan"),
-  junkClean: (ids: string[], permanent: boolean, scanId: number) =>
-    invoke<CleanReport>("junk_clean", { ids, permanent, scanId }),
-  junkPreview: (ids: string[], scanId: number) => invoke<CleanReport>("junk_preview", { ids, scanId }),
+  junkClean: (ids: string[], skip: JunkSkip[], permanent: boolean, scanId: number) =>
+    invoke<CleanReport>("junk_clean", { ids, skip, permanent, scanId }),
+  junkPreview: (ids: string[], skip: JunkSkip[], scanId: number) =>
+    invoke<CleanReport>("junk_preview", { ids, skip, scanId }),
   findDuplicates: (path: string, minSize: number, excludeNames: string[] = []) =>
     invoke<DupResult>("find_duplicates", { path, minSize, excludeNames }),
   findEmpty: (path: string) => invoke<EmptyItem[]>("find_empty", { path }),

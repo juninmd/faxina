@@ -24,9 +24,19 @@ pub struct JunkItem {
     pub size: u64,
     pub files: u64,
     pub paths: Vec<String>,
+    /// Size and file count per path, so the review can leave single locations out.
+    pub locations: Vec<Location>,
     pub caution: Option<&'static str>,
     /// Programs from the definition that are running right now and keep these files open.
     pub running: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Location {
+    pub path: String,
+    pub size: u64,
+    pub files: u64,
 }
 
 #[derive(Default)]
@@ -429,16 +439,30 @@ fn scan_snapshot(defs: &[JunkDef], projects: &Projects) -> (Vec<JunkItem>, Snaps
                     }
                 }
             }
-            let (size, files) = paths
+            let measured: Vec<_> = paths
                 .par_iter()
                 .map(|target| measure(&target.path, &target.rule))
-                .reduce(|| (0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
-            let mut displayed: Vec<_> = paths
-                .iter()
-                .map(|t| t.path.to_string_lossy().into_owned())
                 .collect();
-            displayed.sort();
-            displayed.dedup();
+            // Several rules may share one folder: the review shows it once, with their sum.
+            let mut locations: Vec<Location> = Vec::new();
+            for (target, (size, files)) in paths.iter().zip(&measured) {
+                let path = target.path.to_string_lossy().into_owned();
+                match locations.iter_mut().find(|l| l.path == path) {
+                    Some(l) => {
+                        l.size += size;
+                        l.files += files;
+                    }
+                    None => locations.push(Location {
+                        path,
+                        size: *size,
+                        files: *files,
+                    }),
+                }
+            }
+            locations.sort_by(|a, b| a.path.cmp(&b.path));
+            let size = locations.iter().map(|l| l.size).sum::<u64>();
+            let files = locations.iter().map(|l| l.files).sum::<u64>();
+            let displayed: Vec<_> = locations.iter().map(|l| l.path.clone()).collect();
             (size > 0).then_some({
                 (
                     JunkItem {
@@ -448,6 +472,7 @@ fn scan_snapshot(defs: &[JunkDef], projects: &Projects) -> (Vec<JunkItem>, Snaps
                         size,
                         files,
                         paths: displayed,
+                        locations,
                         caution: def.caution,
                         running: open_programs(def.procs, &running),
                     },
@@ -630,19 +655,28 @@ fn merge(a: CleanReport, b: CleanReport) -> CleanReport {
     }
 }
 
-pub fn clean(snapshot: Snapshot, ids: &[String], permanent: bool) -> CleanReport {
+/// `skip` lists `(id, location)` pairs (as shown in `JunkItem::locations`) the user left out in
+/// the review. It
+/// only narrows the reviewed snapshot: a path that is not one of its targets changes nothing, so
+/// what gets cleaned still comes only from the definitions.
+pub fn clean(
+    snapshot: Snapshot,
+    ids: &[String],
+    skip: &[(String, String)],
+    permanent: bool,
+) -> CleanReport {
     let disposal = if permanent {
         Disposal::Permanent
     } else {
         Disposal::Trash
     };
-    run(&snapshot, ids, disposal, &open_now(&snapshot))
+    run(&snapshot, ids, skip, disposal, &open_now(&snapshot))
 }
 
 /// What `clean` would do for `ids`, without touching anything. It uses the same plan, so the
 /// numbers (and the refusals: app running, location changed) match the real cleanup.
-pub fn preview(snapshot: &Snapshot, ids: &[String]) -> CleanReport {
-    run(snapshot, ids, Disposal::Preview, &open_now(snapshot))
+pub fn preview(snapshot: &Snapshot, ids: &[String], skip: &[(String, String)]) -> CleanReport {
+    run(snapshot, ids, skip, Disposal::Preview, &open_now(snapshot))
 }
 
 fn open_now(snapshot: &Snapshot) -> HashSet<String> {
@@ -657,6 +691,7 @@ fn open_now(snapshot: &Snapshot) -> HashSet<String> {
 fn run(
     snapshot: &Snapshot,
     ids: &[String],
+    skip: &[(String, String)],
     disposal: Disposal,
     running: &HashSet<String>,
 ) -> CleanReport {
@@ -664,6 +699,10 @@ fn run(
         .targets
         .iter()
         .filter(|t| ids.iter().any(|id| id == t.id))
+        .filter(|t| {
+            let shown = t.path.to_string_lossy();
+            !skip.iter().any(|(id, path)| id == t.id && *path == shown)
+        })
         .map(|target| {
             if let Some(app) = open_programs(target.procs, running).first() {
                 return failed(&format!("Feche o {app} antes de limpar."));
@@ -698,13 +737,49 @@ fn clean_with_projects(
     permanent: bool,
     projects: &Projects,
 ) -> CleanReport {
-    clean(scan_snapshot(defs, projects).1, ids, permanent)
+    clean(scan_snapshot(defs, projects).1, ids, &[], permanent)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::junk_defs::{matching, whole};
+
+    #[test]
+    fn a_skipped_location_is_left_alone_and_unknown_paths_add_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = |dir: &Path| Target {
+            id: "cache",
+            path: dir.to_path_buf(),
+            canonical: fs::canonicalize(dir).unwrap(),
+            rule: whole(""),
+            min_age: Duration::ZERO,
+            procs: &[],
+        };
+        let (a, b, other) = (
+            tmp.path().join("a"),
+            tmp.path().join("b"),
+            tmp.path().join("other"),
+        );
+        for d in [&a, &b, &other] {
+            fs::create_dir_all(d).unwrap();
+            fs::write(d.join("f.bin"), "1234").unwrap();
+        }
+        let snapshot = Snapshot {
+            targets: vec![target(&a), target(&b)],
+        };
+        let ids = ["cache".to_string()];
+        let skip = [
+            ("cache".to_string(), b.to_string_lossy().into_owned()),
+            ("cache".to_string(), other.to_string_lossy().into_owned()),
+            ("elsewhere".to_string(), a.to_string_lossy().into_owned()),
+        ];
+        assert_eq!(preview(&snapshot, &ids, &skip).freed, 4);
+        let report = clean(snapshot, &ids, &skip, true);
+        assert_eq!((report.freed, report.removed), (4, 1));
+        assert!(!a.join("f.bin").exists());
+        assert!(b.join("f.bin").exists() && other.join("f.bin").exists());
+    }
 
     #[test]
     fn a_preview_reports_what_a_clean_would_free_and_removes_nothing() {
@@ -724,10 +799,10 @@ mod tests {
             }],
         };
         let ids = ["cache".to_string()];
-        let preview = preview(&snapshot, &ids);
+        let preview = preview(&snapshot, &ids, &[]);
         assert_eq!((preview.freed, preview.removed, preview.failed), (10, 2, 0));
         assert!(dir.join("a.bin").exists() && dir.join("sub/b.bin").exists());
-        let real = clean(snapshot, &ids, true);
+        let real = clean(snapshot, &ids, &[], true);
         assert_eq!(
             (real.freed, real.removed),
             (10, 2),
@@ -759,6 +834,7 @@ mod tests {
         let report = run(
             &snapshot,
             &["guarded".into(), "free".into()],
+            &[],
             Disposal::Permanent,
             &running,
         );
@@ -787,7 +863,7 @@ mod tests {
         let (items, snapshot) = scan_snapshot(&defs, &projects);
         assert_eq!(items[0].paths.len(), 1);
         let unreviewed = add_project("new-project");
-        let result = clean(snapshot, &["project-node-caches".into()], true);
+        let result = clean(snapshot, &["project-node-caches".into()], &[], true);
         assert_eq!((result.removed, result.failed), (1, 0));
         assert!(!reviewed.join(".next/cache/data").exists());
         assert!(unreviewed.join(".next/cache/data").exists());
@@ -815,7 +891,7 @@ mod tests {
                 procs: &[],
             }],
         };
-        let report = preview(&snapshot, &["windows-update-cache".to_string()]);
+        let report = preview(&snapshot, &["windows-update-cache".to_string()], &[]);
         println!("{report:?}");
         assert_eq!(
             report.failed, 0,
@@ -1088,7 +1164,7 @@ mod tests {
 
     #[test]
     fn unknown_ids_clean_nothing() {
-        let r = clean(Snapshot::default(), &["../../etc".into()], true);
+        let r = clean(Snapshot::default(), &["../../etc".into()], &[], true);
         assert_eq!(r.removed, 0);
     }
 
