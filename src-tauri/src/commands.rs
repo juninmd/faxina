@@ -154,14 +154,16 @@ pub fn cancel_scan(state: State<'_, AppState>) {
     state.progress.cancel.store(true, Ordering::Relaxed);
 }
 
-#[tauri::command]
+// Commands that walk the scan tree are `async`: a plain sync command runs on the main thread
+// and froze the window for a whole-drive walk.
+#[tauri::command(async)]
 pub fn get_view(state: State<'_, AppState>, path: String, depth: u8) -> Result<ViewNode, String> {
     let guard = lock(&state.scan);
     let data = guard.as_ref().ok_or("nenhuma análise")?;
     view_of(data, Path::new(&path), depth)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_suggestions(state: State<'_, AppState>) -> Vec<Suggestion> {
     lock(&state.scan).as_ref().map_or_else(Vec::new, |d| {
         let mut s = view::suggestions(&d.tree, &d.root, now(), 24);
@@ -173,7 +175,7 @@ pub fn get_suggestions(state: State<'_, AppState>) -> Vec<Suggestion> {
 }
 
 /// `node_modules` of projects untouched for `months`, biggest first. Empty until a scan has run.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_stale_deps(state: State<'_, AppState>, months: u32) -> Vec<Suggestion> {
     let min_secs = u64::from(months.clamp(1, 120)) * 30 * 24 * 3600;
     lock(&state.scan).as_ref().map_or_else(Vec::new, |d| {
@@ -190,7 +192,7 @@ pub fn get_growth(state: State<'_, AppState>) -> Option<Growth> {
 }
 
 /// Biggest files of the current scan, largest first. Empty until a scan has run.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn largest_files(state: State<'_, AppState>, limit: usize) -> Vec<BigFile> {
     lock(&state.scan).as_ref().map_or_else(Vec::new, |d| {
         // Same rule as the suggestions: OS-owned entries are never ours to offer. The filter runs
@@ -204,7 +206,7 @@ pub fn largest_files(state: State<'_, AppState>, limit: usize) -> Vec<BigFile> {
 }
 
 /// Search over the current scan (name, size, kind, age). Empty until a scan has run.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn search_files(state: State<'_, AppState>, query: Query) -> Vec<Hit> {
     lock(&state.scan).as_ref().map_or_else(Vec::new, |d| {
         let protection = guard::Protection::new();

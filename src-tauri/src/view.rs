@@ -232,6 +232,10 @@ fn collect_files(
         return;
     }
     for c in &node.children {
+        // A folder's size bounds every file below it: one that cannot beat the cut is skipped.
+        if top.len() >= limit && c.size < top.peek().map_or(0, |r| r.0.size) {
+            continue;
+        }
         collect_files(c, path.join(&c.name), limit, keep, top);
     }
 }
@@ -435,6 +439,28 @@ mod tests {
             found.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
             ["movie.mkv", "big.bin"]
         );
+    }
+
+    #[test]
+    fn biggest_files_still_visits_a_folder_as_big_as_the_cut() {
+        let root = dir(
+            "/root",
+            Kind::Other,
+            vec![
+                dir(
+                    "z",
+                    Kind::Other,
+                    vec![Node::file("z.bin".into(), 100, 0, Kind::Other)],
+                ),
+                dir(
+                    "a",
+                    Kind::Other,
+                    vec![Node::file("a.bin".into(), 100, 0, Kind::Other)],
+                ),
+            ],
+        );
+        let top = biggest_files(&root, Path::new("/root"), 1, |_| true);
+        assert_eq!(top[0].name, "a.bin");
     }
 
     #[test]
