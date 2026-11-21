@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.1](https://github.com/juninmd/faxina/compare/v1.32.0...v1.32.1) (2026-11-21)
+
+
+### Performance Improvements
+
+* **search:** prune tree walks and move them off the main thread ([#128](https://github.com/juninmd/faxina/issues/128)) ([5e826ad](https://github.com/juninmd/faxina/commit/5e826adafa4a9de4cc9dd58d44fea376af8b55a4))
+
 # [1.32.0](https://github.com/juninmd/faxina/compare/v1.31.5...v1.32.0) (2026-11-20)
 
 
