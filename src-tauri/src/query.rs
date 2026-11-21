@@ -137,6 +137,8 @@ pub fn search(
 struct WalkState {
     scratch: Vec<char>,
     hits: Vec<Hit>,
+    /// Size of the last hit kept by a full cut: a smaller subtree cannot enter the result.
+    floor: u64,
 }
 
 fn sort_and_cut(hits: &mut Vec<Hit>, limit: usize) {
@@ -169,9 +171,14 @@ fn walk(
         // Amortized bound: memory stays O(limit) on a multi-million-file scan.
         if state.hits.len() >= limit * 4 {
             sort_and_cut(&mut state.hits, limit);
+            state.floor = state.hits.last().map_or(0, |h| h.size);
         }
     }
     for c in &node.children {
+        // A folder's size bounds everything below it, so whole subtrees are skipped unvisited.
+        if c.size < m.q.min_size || c.size < state.floor {
+            continue;
+        }
         walk(c, path.join(&c.name), false, m, keep, limit, state);
     }
 }
@@ -344,5 +351,51 @@ mod tests {
         );
         assert_eq!(glob.len(), 1);
         assert_eq!(glob[0].name, "Relatório_FINAL.PDF");
+    }
+
+    #[test]
+    fn subtrees_that_cannot_beat_the_cut_are_never_visited() {
+        // Four big files fill the first cut; a whole-drive search must not then walk every small file.
+        let big: Vec<Node> = (0..4)
+            .map(|i| file(&format!("big{i}"), 1000, 1, Kind::Other))
+            .collect();
+        let small: Vec<Node> = (0..100)
+            .map(|i| file(&format!("s{i}"), 1, 1, Kind::Other))
+            .collect();
+        let t = dir("/r", vec![dir("a", big), dir("z", small)]);
+        let visited = std::cell::Cell::new(0);
+        let q = Query {
+            limit: 1,
+            ..Default::default()
+        };
+        let hits = search(&t, Path::new("/r"), &q, 1000, |_| {
+            visited.set(visited.get() + 1);
+            true
+        });
+        assert_eq!(hits.len(), 1);
+        assert_eq!(visited.get(), 4);
+    }
+
+    #[test]
+    fn a_subtree_as_big_as_the_cut_is_still_visited_for_the_path_tie_break() {
+        let tied: Vec<Node> = (0..4)
+            .map(|i| file(&format!("f{i}"), 10, 1, Kind::Other))
+            .collect();
+        let t = dir(
+            "/r",
+            vec![
+                dir("b", tied),
+                dir("a", vec![file("x", 10, 1, Kind::Other)]),
+            ],
+        );
+        let q = Query {
+            limit: 1,
+            ..Default::default()
+        };
+        let hits = search(&t, Path::new("/r"), &q, 1000, |_| true);
+        assert_eq!(
+            hits[0].path,
+            Path::new("/r").join("a").join("x").to_string_lossy()
+        );
     }
 }
