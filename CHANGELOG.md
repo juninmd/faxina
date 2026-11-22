@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.2](https://github.com/juninmd/faxina/compare/v1.32.1...v1.32.2) (2026-11-22)
+
+
+### Bug Fixes
+
+* **search:** date export file names by the local day ([#129](https://github.com/juninmd/faxina/issues/129)) ([6bb31ec](https://github.com/juninmd/faxina/commit/6bb31ecc863eeb25e146b37f9d163bb38d20fa20))
+
 ## [1.32.1](https://github.com/juninmd/faxina/compare/v1.32.0...v1.32.1) (2026-11-21)
 
 
