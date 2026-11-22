@@ -51,6 +51,9 @@ export function isBlank(f: SearchForm): boolean {
   return !f.text.trim() && f.minSize === 0 && f.ageMonths === 0 && f.kind === null;
 }
 
+/** File name for an export, dated by the user's local day (toISOString would give the UTC one). */
 export function exportName(format: ExportFormat, now = new Date()): string {
-  return `faxina-busca-${now.toISOString().slice(0, 10)}.${format}`;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const day = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  return `faxina-busca-${day}.${format}`;
 }
