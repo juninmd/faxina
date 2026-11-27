@@ -43,7 +43,7 @@ import {
 } from "./domain";
 import { useHole } from "./hooks/useHole";
 import { useScan } from "./hooks/useScan";
-import { api, type DeleteReport, type DiskInfo } from "./lib/api";
+import { api, type DeleteReport, type DiskInfo, type WorktreeOptIn } from "./lib/api";
 import { flyToOrbit, trackPointer } from "./lib/fly";
 import { formatBytes } from "./lib/format";
 import { kindColor } from "./lib/kinds";
@@ -269,7 +269,7 @@ export default function App() {
     const ids = batch.map((r) => r.id);
     const permanent = destination === "permanent";
     swallow(
-      [...plan.paths, ...plan.links, ...plan.worktrees, ...ids.map((id) => `junk:${id}`)],
+      [...plan.paths, ...plan.links, ...plan.worktrees.map((w) => w.path), ...ids.map((id) => `junk:${id}`)],
       async () => {
         if (ids.length && junkScanId.current === null) throw new Error("Analise novamente antes de limpar.");
         let freed = 0;
@@ -296,8 +296,14 @@ export default function App() {
           tally(r, r.deleted);
         }
         if (plan.worktrees.length) {
-          const r = await api.deleteWorktrees(plan.worktrees);
-          tally(r, r.removed);
+          // The level picked in the panel travels with the item: a forced removal is never widened
+          // to the whole batch, and a synced one is never widened at all.
+          const levels = new Map<WorktreeOptIn, string[]>();
+          for (const w of plan.worktrees) levels.set(w.optIn, [...(levels.get(w.optIn) ?? []), w.path]);
+          for (const [optIn, paths] of levels) {
+            const r = await api.deleteWorktrees(paths, optIn);
+            tally(r, r.removed);
+          }
         }
         setMarked((prev) => new Map([...prev].filter(([p]) => !gone.has(p))));
         setQueued((prev) => new Map([...prev].filter(([p]) => !gone.has(p))));

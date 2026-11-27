@@ -59,7 +59,7 @@ O disco encheu e você não sabe por quê? O **Faxina** mostra onde o espaço fo
 | 🧹 **Limpeza de caches** | Windows, navegadores (Chrome, Edge, Brave, Vivaldi, Firefox, Thunderbird), apps (VS Code, Discord, Slack, Spotify, Teams, Cursor, Adobe), apps da Microsoft Store, launchers e ferramentas de dev (npm, Yarn, pnpm, pip, uv, Poetry, Bun, Cargo, Gradle, Rustup, Maven, go, NuGet, Composer, Dart/Flutter, JetBrains, Playwright, Hugging Face…). Tem **Simular** antes de limpar. **Nunca** toca em cookies, senhas ou histórico. |
 | 👯 **Duplicatas** | Comparação por conteúdo em 4 etapas (tamanho → prefixo → sufixo → BLAKE3 completo). Mantém uma cópia de cada grupo e nunca deixa você marcar todas. |
 | 🗂️ **Vazios e links** | Pastas vazias e links quebrados. Os links quebrados vão sempre para a Lixeira. |
-| 🌿 **Repositórios e worktrees** | Encontra checkouts criados com `git worktree add` e libera só os que já têm todos os commits no remoto, sem alterações locais nem trava. O resto fica listado com o motivo. |
+| 🌿 **Repositórios e worktrees** | Encontra checkouts criados com `git worktree add` e mostra o que o `git` garante sobre cada um. Os que já têm tudo no remoto saem direto; trabalho local (arquivos não commitados, commits fora do remoto, stash) pede uma confirmação — os arquivos vão para a Lixeira e os commits continuam no repositório. Só um segundo opt-in, “perda definitiva”, alcança o que não existe em outro lugar (HEAD destacado, submódulos). Trava, filtros do repositório e metadados suspeitos nunca são removidos. |
 | 🕳️ **Buraco negro** | Ao excluir, os blocos se desintegram e espiralam para dentro de um buraco negro, que colapsa numa onda de choque com o total liberado. |
 | ⌨️ **Linha de comando** | `faxina-cli search`, `faxina-cli scan` e `faxina-cli junk`, só leitura: nunca apaga nada. |
 | 🔄 **Auto-update** | O app procura novas versões no GitHub Releases; os pacotes são assinados e você decide quando instalar. |
@@ -102,7 +102,7 @@ O disco encheu e você não sabe por quê? O **Faxina** mostra onde o espaço fo
   <tr>
     <td colspan="2">
       <img src="docs/img/worktrees.webp" alt="Lista de worktrees do Git: duas já sincronizadas com o remoto e uma bloqueada por commits locais" />
-      <p align="center"><sub><b>Repositórios</b>: só sai o que já está inteiro no remoto; o resto mostra o motivo.</sub></p>
+      <p align="center"><sub><b>Repositórios</b>: o que está inteiro no remoto sai direto; o resto mostra o motivo e pede confirmação.</sub></p>
     </td>
   </tr>
 </table>
@@ -137,7 +137,7 @@ O app é dividido em quatro espaços na barra lateral: **Agora** (resumo), **Exp
 3. **Junte na Órbita.** Espaço ou botão direito marca um bloco; caches, duplicatas, vazios e worktrees também podem ir para a Órbita.
 4. **Engula.** “Engolir” abre a confirmação (Lixeira por padrão) e o buraco negro mostra o espaço liberado.
 
-Cada painel de *Limpar* também tem o próprio botão de remover. Caches são resolvidos por ID e duplicatas por conteúdo, nunca por caminho vindo da interface; worktrees só saem se estiverem inteiras no remoto.
+Cada painel de *Limpar* também tem o próprio botão de remover. Caches são resolvidos por ID e duplicatas por conteúdo, nunca por caminho vindo da interface; worktrees saem conforme o que o `git` garante, e o nível de opt-in escolhido na tela viaja junto com o item até o comando.
 
 <details>
 <summary><b>⌨️ Linha de comando (somente leitura)</b></summary>

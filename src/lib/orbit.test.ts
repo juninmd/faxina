@@ -18,7 +18,7 @@ describe("planOrbit", () => {
     );
     expect(plan.paths).toEqual(["/map/a", "/big/b"]);
     expect(plan.links).toEqual(["/x/link"]);
-    expect(plan.worktrees).toEqual(["/repo/wt"]);
+    expect(plan.worktrees).toEqual([{ path: "/repo/wt", optIn: "synced" }]);
   });
 
   test("a path marked in the map and queued by a panel is removed once", () => {
@@ -28,6 +28,11 @@ describe("planOrbit", () => {
   test("links and worktrees never reach delete_paths", () => {
     const plan = planOrbit([], [item("/l", "link"), item("/w", "worktree")]);
     expect(plan.paths).toEqual([]);
+  });
+
+  test("a worktree keeps the level it was picked with", () => {
+    const plan = planOrbit([], [{ ...item("/w", "worktree"), optIn: "definitive" }]);
+    expect(plan.worktrees).toEqual([{ path: "/w", optIn: "definitive" }]);
   });
 });
 

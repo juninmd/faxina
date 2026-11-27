@@ -4,15 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import { api, type Worktree, type WorktreeTick } from "../lib/api";
 import { formatAge, formatBytes, formatCount } from "../lib/format";
 import type { OrbitItem } from "../lib/orbit";
+import { canPick, optInFor } from "../lib/worktrees";
 import OrbitButton from "./OrbitButton";
 import type { Swallow } from "./types";
 
 const PAGE = 50;
 
 /**
- * Linked git worktrees under a folder. The backend only marks a checkout as solta when git says
- * every commit is on a remote-tracking ref and nothing local was changed; the rest stays visible,
- * disabled and explained, so the user knows what to push before cleaning.
+ * Linked git worktrees under a folder. The backend marks each checkout with how far an explicit
+ * opt-in can go: `synced` is removable right away, `recoverable` needs a confirmation because the
+ * files go to the trash and the commits stay in the repository, `definitive` only unlocks with the
+ * "perda definitiva" switch, and `never` stays listed with the reason to fix.
  */
 export function WorktreesPanel({
   swallow,
@@ -26,6 +28,7 @@ export function WorktreesPanel({
   const [root, setRoot] = useState(defaultRoot);
   const [items, setItems] = useState<Worktree[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [damage, setDamage] = useState(false);
   const [shown, setShown] = useState(PAGE);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -45,16 +48,20 @@ export function WorktreesPanel({
     };
   }, []);
 
-  const pickable = (items ?? []).filter((w) => w.synced);
+  const pickable = (items ?? []).filter((w) => canPick(w, damage));
+  const definitive = (items ?? []).filter((w) => w.allowance === "definitive");
   const chosen = (items ?? []).filter((w) => picked.has(w.path));
   const chosenSize = chosen.reduce((s, w) => s + w.size, 0);
   const chosenIgnored = chosen.reduce((s, w) => s + w.ignored, 0);
   const found = (items ?? []).reduce((s, w) => s + w.size, 0);
+  const synced = (items ?? []).filter((w) => w.allowance === "synced").length;
+  const local = (items ?? []).filter((w) => w.allowance === "recoverable").length;
 
   const reset = () => {
     epoch.current += 1;
     setItems(null);
     setPicked(new Set());
+    setDamage(false);
     setBusy(false);
     setError("");
     setNotice("");
@@ -67,13 +74,14 @@ export function WorktreesPanel({
     setNotice("");
     setItems(null);
     setPicked(new Set());
+    setDamage(false);
     setTick(null);
     setBusy(true);
     try {
       const list = await api.findWorktrees(root);
       if (mine !== epoch.current) return;
       setItems(list);
-      setPicked(new Set(list.filter((w) => w.synced).map((w) => w.path)));
+      setPicked(new Set(list.filter((w) => w.allowance === "synced").map((w) => w.path)));
       setShown(PAGE);
     } catch (e) {
       if (mine === epoch.current) setError(String(e));
@@ -94,6 +102,15 @@ export function WorktreesPanel({
 
   const toggleAll = () => setPicked(picked.size === pickable.length ? new Set() : new Set(pickable.map((w) => w.path)));
 
+  // Turning the switch off drops the rows it had unlocked, so nothing keeps a grant that is gone.
+  const toggleDamage = () => {
+    if (damage) {
+      const locked = new Set(definitive.map((w) => w.path));
+      setPicked((p) => new Set([...p].filter((path) => !locked.has(path))));
+    }
+    setDamage(!damage);
+  };
+
   // `delete_worktrees` re-runs the git check per path when the Órbita is swallowed.
   const toOrbit = () => {
     onOrbit?.(
@@ -104,6 +121,7 @@ export function WorktreesPanel({
         color: "#5fd3b5",
         route: "worktree",
         source: "Repositórios",
+        optIn: optInFor([w]),
       })),
     );
     setPicked(new Set());
@@ -116,10 +134,18 @@ export function WorktreesPanel({
         : "";
     const repos = chosen.filter((w) => w.kind === "repository").length;
     const keep = repos
-      ? ` ${formatCount(repos)} ${repos === 1 ? "repositório inteiro (com o .git)" : "repositórios inteiros (com o .git)"}: o histórico continua só no remoto.`
+      ? ` ${formatCount(repos)} ${repos === 1 ? "repositório inteiro (com o .git)" : "repositórios inteiros (com o .git)"}: o histórico volta restaurando a Lixeira.`
       : " Os commits e as branches das worktrees continuam no repositório principal.";
+    const withLocal = chosen.filter((w) => w.allowance === "recoverable").length;
+    const localText = withLocal
+      ? ` ${formatCount(withLocal)} ${withLocal === 1 ? "item tem" : "itens têm"} trabalho local (não commitado ou fora do remoto): os arquivos vão para a Lixeira e nada é enviado ao remoto.`
+      : "";
+    const lost = chosen.filter((w) => w.allowance === "definitive").length;
+    const lostText = lost
+      ? ` Atenção: ${formatCount(lost)} ${lost === 1 ? "item tem" : "itens têm"} commits que não existem em outro lugar (HEAD destacado ou submódulos) — esses podem se perder de vez.`
+      : "";
     const ok = await confirm(
-      `${formatCount(chosen.length)} itens (${formatBytes(chosenSize)}) vão para a Lixeira.${keep}${ignored}`,
+      `${formatCount(chosen.length)} itens (${formatBytes(chosenSize)}) vão para a Lixeira.${keep}${localText}${lostText}${ignored}`,
       {
         title: "Remover repositórios e worktrees?",
         kind: "warning",
@@ -128,11 +154,15 @@ export function WorktreesPanel({
       },
     );
     if (!ok) return;
+    const optIn = optInFor(chosen);
     let removed: string[] = [];
     swallow(
       chosen.map((w) => w.path),
       async () => {
-        const report = await api.deleteWorktrees(chosen.map((w) => w.path));
+        const report = await api.deleteWorktrees(
+          chosen.map((w) => w.path),
+          optIn,
+        );
         removed = report.removed;
         setNotice(report.warnings.join(" "));
         return { freed: report.freed, failed: report.failed.length, reason: report.failed[0]?.error };
@@ -150,9 +180,10 @@ export function WorktreesPanel({
         <p className="text-[11px] font-bold tracking-widest text-amber-400 uppercase">Higiene do repositório</p>
         <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">Repositórios e worktrees</h1>
         <p className="mt-1 text-sm text-slate-400">
-          Clones e worktrees (<code className="font-mono text-slate-300">git worktree add</code>). Só entram na seleção
-          os que já têm todas as branches, tags e commits no remoto, sem stash nem alteração local; o resto aparece
-          bloqueado com o motivo.
+          Clones e worktrees (<code className="font-mono text-slate-300">git worktree add</code>). Entram na seleção os
+          que já têm todas as branches, tags e commits no remoto; o resto aparece com o motivo e continua removível —
+          trabalho local vira uma confirmação explícita, e só o que existe em outro lugar nenhum pede o aviso de perda
+          definitiva.
         </p>
       </div>
 
@@ -192,8 +223,23 @@ export function WorktreesPanel({
             onClick={toggleAll}
             className="cursor-pointer rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-200 transition-colors hover:bg-slate-750"
           >
-            {picked.size === pickable.length ? "Desmarcar sincronizadas" : "Marcar sincronizadas"}
+            {picked.size === pickable.length ? "Desmarcar todos" : "Marcar todos os elegíveis"}
           </button>
+        )}
+
+        {!!definitive.length && (
+          <label
+            className="flex cursor-pointer items-center gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 px-3.5 py-2 text-xs font-semibold text-rose-200"
+            title="Casos em que os commits não existem em outro lugar: HEAD destacado e submódulos inicializados."
+          >
+            <input
+              type="checkbox"
+              checked={damage}
+              onChange={toggleDamage}
+              className="h-4 w-4 cursor-pointer rounded border-rose-400 accent-rose-500"
+            />
+            Incluir {formatCount(definitive.length)} com perda definitiva
+          </label>
         )}
 
         {!!picked.size && onOrbit && (
@@ -220,7 +266,8 @@ export function WorktreesPanel({
         <span>
           A conferência usa o <code className="font-mono text-slate-300">git</code> instalado no PATH e os refs remotos
           do último fetch — nada é enviado à rede. Pastas ignoradas (build, dependências, <code>.env</code>) vão junto
-          com o checkout; a Lixeira continua sendo o caminho de volta.
+          com o checkout e a Lixeira continua sendo o caminho de volta; só commits de HEAD destacado e de submódulos não
+          existem em outro lugar.
         </span>
       </p>
 
@@ -261,23 +308,25 @@ export function WorktreesPanel({
 
       {!!items?.length && (
         <p className="text-xs font-medium text-slate-400" role="status">
-          {formatCount(items.length)} itens · {formatBytes(found)} no total · {formatCount(pickable.length)} já
-          sincronizadas
+          {formatCount(items.length)} itens · {formatBytes(found)} no total · {formatCount(synced)} sincronizados ·{" "}
+          {formatCount(local)} com trabalho local
         </p>
       )}
 
       <ul className="flex flex-col gap-2">
         {items?.slice(0, shown).map((w) => {
-          const disabled = !w.synced;
+          const disabled = !canPick(w, damage);
           return (
             <li key={w.path}>
               <label
                 data-path={w.path}
-                data-color={disabled ? "#8b5cd6" : "#e3b341"}
+                data-color={w.allowance === "never" ? "#8b5cd6" : w.allowance === "definitive" ? "#f0647a" : "#e3b341"}
                 className={`group flex cursor-pointer items-start gap-3.5 rounded-xl border p-3 shadow-xs transition-colors ${
                   disabled
                     ? "cursor-not-allowed border-slate-800/60 bg-slate-950/30 opacity-70"
-                    : "border-slate-800/70 bg-slate-900/50 hover:border-slate-700 hover:bg-slate-850/60"
+                    : w.allowance === "definitive"
+                      ? "border-rose-500/30 bg-rose-500/5 hover:border-rose-500/50"
+                      : "border-slate-800/70 bg-slate-900/50 hover:border-slate-700 hover:bg-slate-850/60"
                 }`}
               >
                 <input
@@ -304,15 +353,43 @@ export function WorktreesPanel({
                     <span>{formatBytes(w.size)}</span>
                     <span>{formatCount(w.files)} arquivos</span>
                     {!!w.ignored && <span>{formatCount(w.ignored)} ignorados</span>}
+                    {!!w.ahead && <span>{formatCount(w.ahead)} fora do remoto</span>}
+                    {!!w.changes && (
+                      <span>
+                        {formatCount(w.changes)} {w.changes === 1 ? "alteração" : "alterações"}
+                      </span>
+                    )}
                     <span>último commit {formatAge(w.modified)}</span>
                   </span>
-                  {w.synced ? (
+                  {w.allowance === "synced" ? (
                     <span className="w-fit rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold tracking-wider text-emerald-400 uppercase">
                       tudo no remoto · pode remover
                     </span>
                   ) : (
-                    <span className="w-fit text-[11px] font-medium break-words text-amber-400">
-                      Mantido: {w.reason ?? "trabalho local"}
+                    <span
+                      className={`w-fit rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase ${
+                        w.allowance === "never"
+                          ? "border-slate-600 bg-slate-800/60 text-slate-300"
+                          : w.allowance === "definitive"
+                            ? "border-rose-500/40 bg-rose-500/10 text-rose-300"
+                            : "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                      }`}
+                    >
+                      {w.allowance === "never"
+                        ? "não removível"
+                        : w.allowance === "definitive"
+                          ? "só com perda definitiva"
+                          : "trabalho local · confirmar"}
+                    </span>
+                  )}
+                  {w.allowance !== "synced" && !!w.reason && (
+                    <span
+                      className={`w-fit text-[11px] font-medium break-words ${
+                        w.allowance === "never" ? "text-slate-400" : "text-amber-400"
+                      }`}
+                    >
+                      {w.allowance === "never" ? "Mantido: " : ""}
+                      {w.reason}
                     </span>
                   )}
                 </span>

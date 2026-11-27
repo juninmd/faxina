@@ -1,7 +1,15 @@
-//! Linked Git worktrees whose work already lives on the remote. Discovery only follows a `.git`
-//! *file* that points into `<repo>/.git/worktrees/<id>` (submodules use `modules/`, main checkouts
-//! use a `.git` directory); the "safe to remove" verdict comes from git itself, never from a
-//! folder name: clean tree, no commit outside a remote-tracking ref and no lock.
+//! Linked Git worktrees, with a verdict that comes from git itself and never from a folder name:
+//! clean tree, no commit outside a remote-tracking ref and no lock. Discovery only follows a
+//! `.git` *file* that points into `<repo>/.git/worktrees/<id>` (submodules use `modules/`, main
+//! checkouts use a `.git` directory).
+//!
+//! Not every reason to hold a checkout back is the same, so the screen offers two explicit
+//! opt-ins instead of a single yes/no. Local work — uncommitted files, commits outside the remote,
+//! a stash — is *recoverable*: the checkout goes to the trash and the commits stay in the shared
+//! repository. A detached HEAD with commits outside the remote, initialized submodules or a
+//! repository whose linked worktrees would lose their metadata need the *definitive* opt-in,
+//! because that work exists nowhere else. A lock, a repository-declared filter and metadata that
+//! does not belong to the expected repository are refused for good: no opt-in passes them.
 //!
 //! Git runs with a cleared environment and `core.fsmonitor` off, and a repository that declares a
 //! local clean/process filter is refused instead of inspected: running `git status` there would
@@ -22,7 +30,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use rayon::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::guard::Protection;
 use crate::scan::{is_link, MAX_DEPTH};
@@ -73,6 +81,55 @@ const SKIP_DIRS: &[&str] = &[
     "config.msi",
 ];
 
+/// What a checkout needs before it may leave the disk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Allowance {
+    /// Git confirms every commit is on a remote-tracking ref: removable right away.
+    Synced,
+    /// Removable with an explicit opt-in: the files land in the trash and the commits stay in the
+    /// shared repository.
+    Recoverable,
+    /// Removable only with the "definitive loss" opt-in: something exists nowhere else.
+    Definitive,
+    /// No opt-in takes it: git or the layout refuses the removal.
+    Never,
+}
+
+/// How much the user allowed when asking for a removal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OptIn {
+    /// Only what git confirms.
+    Synced,
+    /// Also local work that stays recoverable.
+    Local,
+    /// Also work that exists nowhere else.
+    Definitive,
+}
+
+impl Allowance {
+    /// The least opt-in that permits this checkout; `None` when none does.
+    fn requires(self) -> Option<OptIn> {
+        match self {
+            Self::Synced => Some(OptIn::Synced),
+            Self::Recoverable => Some(OptIn::Local),
+            Self::Definitive => Some(OptIn::Definitive),
+            Self::Never => None,
+        }
+    }
+}
+
+/// Refuses the removal unless the user allowed this much; `reason` is the text shown on screen.
+fn permitted(allowance: Allowance, opt_in: OptIn, reason: Option<&str>) -> Result<(), String> {
+    match allowance.requires() {
+        Some(needed) if opt_in >= needed => Ok(()),
+        _ => Err(reason
+            .unwrap_or("esta worktree não pode ser removida")
+            .to_string()),
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Worktree {
@@ -88,11 +145,14 @@ pub struct Worktree {
     /// Ignored entries that would leave with the checkout (build output, dependencies, `.env`).
     /// They are not part of the remote history, but they are what the trash is for.
     pub ignored: u64,
-    /// Every commit of the checkout is on a remote-tracking ref, nothing tracked would be lost and
-    /// the worktree is not locked: it can be removed.
-    pub synced: bool,
-    /// Why it cannot be removed; `None` when `synced`.
+    /// How far an explicit opt-in can go; `reason` says why when it is not `synced`.
+    pub allowance: Allowance,
+    /// Why the removal is held back; `None` when the checkout is synced.
     pub reason: Option<String>,
+    /// Commits outside every remote-tracking ref.
+    pub ahead: u64,
+    /// Entries with uncommitted changes (tracked or untracked).
+    pub changes: u64,
 }
 
 /// Search progress: `walk` counts folders visited, `check` counts worktrees verified by git.
@@ -136,8 +196,8 @@ enum Kind {
     Repository,
 }
 
-/// Linked worktrees and main repositories under `root`, safe-to-remove first, then biggest. `root` itself is never
-/// listed: the screen only offers folders below the one the user chose to search.
+/// Linked worktrees and main repositories under `root`, removable-first, then biggest. `root`
+/// itself is never listed: the screen only offers folders below the one the user chose to search.
 pub fn find(root: &Path, progress: &(dyn Fn(Tick) + Sync)) -> Vec<Worktree> {
     let protection = Protection::new();
     let visited = AtomicU64::new(0);
@@ -176,8 +236,8 @@ pub fn find(root: &Path, progress: &(dyn Fn(Tick) + Sync)) -> Vec<Worktree> {
         Err(_) => paths.iter().map(check).collect(),
     };
     trees.sort_unstable_by(|a, b| {
-        b.synced
-            .cmp(&a.synced)
+        a.allowance
+            .cmp(&b.allowance)
             .then_with(|| b.size.cmp(&a.size))
             .then_with(|| a.path.cmp(&b.path))
     });
@@ -354,29 +414,99 @@ struct State {
     head: String,
     modified: u64,
     ignored: u64,
+    /// Commits outside every remote-tracking ref.
+    ahead: u64,
+    /// Entries git reports as changed (tracked or untracked); ignored ones are counted apart.
+    changes: u64,
+    /// The checkout sits on a detached HEAD, so only its admin dir names those commits.
+    detached: bool,
     /// Why the checkout may not be removed; `None` when every check passed.
-    blocked: Option<String>,
+    block: Option<Block>,
+}
+
+/// One reason a checkout stays on the disk, with how far an explicit opt-in may go against it.
+enum Block {
+    /// Nothing on this screen overrides it: git or the layout refuses the removal.
+    Never(String),
+    /// The checkout goes to the trash and the commits stay in the shared repository.
+    Recoverable(String),
+    /// Something exists nowhere else (a detached HEAD's commits, the submodule history kept in the
+    /// admin dir): only the "definitive loss" opt-in may take it.
+    Definitive(String),
+}
+
+impl Block {
+    fn text(&self) -> &str {
+        match self {
+            Self::Never(text) | Self::Recoverable(text) | Self::Definitive(text) => text,
+        }
+    }
+
+    fn allowance(&self) -> Allowance {
+        match self {
+            Self::Never(_) => Allowance::Never,
+            Self::Recoverable(_) => Allowance::Recoverable,
+            Self::Definitive(_) => Allowance::Definitive,
+        }
+    }
+
+    /// A harder reason always wins the one line shown on screen.
+    fn severity(&self) -> u8 {
+        match self {
+            Self::Recoverable(_) => 1,
+            Self::Definitive(_) => 2,
+            Self::Never(_) => 3,
+        }
+    }
+}
+
+impl State {
+    /// Keeps the hardest reason; an equal one loses, so the checks below decide the rest of the
+    /// order — the most immediate thing to fix comes first.
+    fn hold(&mut self, block: Block) {
+        let harder = self
+            .block
+            .as_ref()
+            .is_none_or(|current| block.severity() > current.severity());
+        if harder {
+            self.block = Some(block);
+        }
+    }
+
+    fn allowance(&self) -> Allowance {
+        self.block
+            .as_ref()
+            .map_or(Allowance::Synced, Block::allowance)
+    }
+}
+
+/// A checkout whose state could not be established at all: no opt-in may guess it.
+fn refused(reason: String) -> State {
+    State {
+        block: Some(Block::Never(reason)),
+        ..State::default()
+    }
 }
 
 fn inspect(path: &Path) -> Worktree {
     let admin = linked_worktree_admin(path);
     let main = admin.is_none() && main_git_dir(path).is_some();
-    let state = match (admin.as_deref(), main) {
+    let mut state = match (admin.as_deref(), main) {
         (Some(admin), _) => read_state(path, Some(admin)),
         (None, true) => read_state(path, None),
-        (None, false) => State {
-            blocked: Some("não é mais um checkout Git".into()),
-            ..State::default()
-        },
+        (None, false) => refused("não é mais um checkout Git".into()),
     };
-    // The lock is the one blocker git will not undo on its own; keep it first so the reason tells
-    // the user exactly what to run.
-    let reason = match admin.as_deref() {
-        Some(admin) if admin.join("locked").exists() => {
-            Some("worktree travada (use `git worktree unlock`)".to_string())
+    // The lock is the one blocker git will not undo on its own; it outranks everything so the
+    // reason tells the user exactly what to run.
+    if let Some(admin) = admin.as_deref() {
+        if admin.join("locked").exists() {
+            state.block = Some(Block::Never(
+                "worktree travada (use `git worktree unlock`)".to_string(),
+            ));
         }
-        _ => state.blocked,
-    };
+    }
+    let allowance = state.allowance();
+    let reason = state.block.as_ref().map(|block| block.text().to_string());
     let (size, files) = crate::junk::dir_size(path);
     Worktree {
         path: path.to_string_lossy().into_owned(),
@@ -387,17 +517,20 @@ fn inspect(path: &Path) -> Worktree {
         size,
         files,
         ignored: state.ignored,
-        synced: reason.is_none(),
+        allowance,
         reason,
+        ahead: state.ahead,
+        changes: state.changes,
     }
 }
 
-/// Removes one worktree that still passes every check and takes its now-empty admin directory to
-/// the same destination, so a restore from the Recycle Bin keeps the pair usable. This screen has
-/// no permanent-delete option: both halves always go to the trash.
-pub fn remove(path: &Path) -> Result<Outcome, String> {
+/// Removes one worktree the user allowed this much (`opt_in`), taking the checkout and its git
+/// metadata to the same destination so a restore from the Recycle Bin keeps the pair usable. A
+/// forced removal is still a trash move: the files sit in the Recycle Bin and, for a checkout on a
+/// branch, the commits stay in the shared repository. This screen has no permanent-delete option.
+pub fn remove(path: &Path, opt_in: OptIn) -> Result<Outcome, String> {
     let Some(admin) = linked_worktree_admin(path) else {
-        return remove_repository(path);
+        return remove_repository(path, opt_in);
     };
     if admin.join("locked").exists() {
         return Err("worktree travada: rode `git worktree unlock` antes".into());
@@ -407,10 +540,14 @@ pub fn remove(path: &Path) -> Result<Outcome, String> {
     if !admin_under_common(&admin, &common) {
         return Err("os metadados desta worktree não estão no repositório esperado".into());
     }
-    // Re-checked here, not only at search time: a commit or a local edit may have appeared since.
-    if let Some(reason) = read_state(path, Some(&admin)).blocked {
-        return Err(reason);
-    }
+    // Re-checked here, not only at search time: a commit or a local edit may have appeared since,
+    // and the opt-in only travels as far as the user actually granted.
+    let state = read_state(path, Some(&admin));
+    permitted(
+        state.allowance(),
+        opt_in,
+        state.block.as_ref().map(Block::text),
+    )?;
     let (size, _) = crate::junk::dir_size(path);
     let targets = [path.to_path_buf()];
     let removal = crate::remove::remove_all(&targets, false)
@@ -447,13 +584,17 @@ pub fn remove(path: &Path) -> Result<Outcome, String> {
     })
 }
 
-/// Removes a main checkout (its `.git` included) to the trash once git confirms, again, that
-/// every branch, tag and stash is on a remote-tracking ref and nothing local would be lost.
-fn remove_repository(path: &Path) -> Result<Outcome, String> {
+/// Removes a main checkout (its `.git` included) to the trash once the user allowed what git
+/// reports, again, would be lost. The whole folder moves together, so branches, tags and the stash
+/// come back with a restore of the Recycle Bin.
+fn remove_repository(path: &Path, opt_in: OptIn) -> Result<Outcome, String> {
     main_git_dir(path).ok_or("não é mais um checkout Git")?;
-    if let Some(reason) = read_state(path, None).blocked {
-        return Err(reason);
-    }
+    let state = read_state(path, None);
+    permitted(
+        state.allowance(),
+        opt_in,
+        state.block.as_ref().map(Block::text),
+    )?;
     let (size, _) = crate::junk::dir_size(path);
     let targets = [path.to_path_buf()];
     crate::remove::remove_all(&targets, false)
@@ -467,49 +608,37 @@ fn remove_repository(path: &Path) -> Result<Outcome, String> {
 }
 
 /// Everything git has to confirm before a checkout may leave the disk. The reasons are shown in
-/// the UI, so they say what to do next; branch and head are filled even when a check blocks the
-/// removal, so a kept worktree is still identified on screen.
+/// the UI, so they say what to do next; branch, head and the counters are filled even when a check
+/// holds the removal back, so a kept worktree is still identified on screen.
 fn read_state(path: &Path, admin: Option<&Path>) -> State {
     let top = match git(path, &["rev-parse", "--show-toplevel"]) {
         Ok(top) => top,
-        Err(reason) => {
-            return State {
-                blocked: Some(reason),
-                ..State::default()
-            }
-        }
+        Err(reason) => return refused(reason),
     };
     let mut state = State::default();
     if !same_path(Path::new(top.trim()), path) {
-        state.blocked = Some("o .git aponta para outro checkout".into());
-        return state;
+        return refused("o .git aponta para outro checkout".into());
     }
     let Some(common) = common_dir(path) else {
-        state.blocked = Some("não foi possível localizar o repositório desta worktree".into());
-        return state;
+        return refused("não foi possível localizar o repositório desta worktree".into());
     };
     let consistent = match admin {
         Some(admin) => admin_under_common(admin, &common),
         None => same_path(&common, &path.join(".git")),
     };
     if !consistent {
-        state.blocked =
-            Some("os metadados deste checkout não estão no repositório esperado".into());
-        return state;
+        return refused("os metadados deste checkout não estão no repositório esperado".into());
     }
     // A filter declared by the repository would run as a command during `git status`; refuse
     // before any command that converts file contents.
     match git(path, &["config", "--list", "--show-scope"]) {
         Ok(list) if declares_filter(&list) => {
-            state.blocked =
-                Some("o repositório define filtros Git (filter.*): confira à mão antes".into());
-            return state;
+            return refused(
+                "o repositório define filtros Git (filter.*): confira à mão antes".into(),
+            );
         }
         Ok(_) => {}
-        Err(reason) => {
-            state.blocked = Some(reason);
-            return state;
-        }
+        Err(reason) => return refused(reason),
     }
     let status = match git(
         path,
@@ -522,15 +651,16 @@ fn read_state(path: &Path, admin: Option<&Path>) -> State {
         ],
     ) {
         Ok(status) => status,
-        Err(reason) => {
-            state.blocked = Some(reason);
-            return state;
-        }
+        Err(reason) => return refused(reason),
     };
-    let mut dirty = false;
     for line in status.lines() {
         if let Some(value) = line.strip_prefix("# branch.head ") {
-            state.branch = value.to_string();
+            state.detached = value == "(detached)";
+            state.branch = if state.detached {
+                "HEAD destacado".to_string()
+            } else {
+                value.to_string()
+            };
         } else if let Some(value) = line.strip_prefix("# branch.oid ") {
             if value != "(initial)" {
                 state.head = value.chars().take(8).collect();
@@ -539,38 +669,48 @@ fn read_state(path: &Path, admin: Option<&Path>) -> State {
             // Porcelain v2 marks ignored entries with `! <path>` (`!!` is v1).
             state.ignored += 1;
         } else if !line.starts_with('#') && !line.trim().is_empty() {
-            dirty = true;
+            state.changes += 1;
         }
     }
     if let Ok(last) = git(path, &["log", "-1", "--format=%ct"]) {
         state.modified = last.trim().parse().unwrap_or(0);
     }
-    if dirty {
-        state.blocked = Some("tem alterações locais (não commitadas)".into());
-        return state;
+    // Uncommitted files come first: they only exist in this checkout until someone commits them,
+    // and the trash is where they end up.
+    if state.changes > 0 {
+        state.hold(Block::Recoverable(if state.changes == 1 {
+            "tem 1 alteração local (não commitada)".to_string()
+        } else {
+            format!("tem {} alterações locais (não commitadas)", state.changes)
+        }));
     }
-    if state.head.is_empty() {
-        state.blocked = Some("o repositório ainda não tem commits".into());
-        return state;
-    }
-    // For a linked worktree, submodule git dirs live below its admin dir; moving that dir would
-    // destroy commits that only exist there (git itself refuses such checkouts too).
+    // For a linked worktree, submodule git dirs live below its admin dir; moving that dir takes
+    // commits that only exist there. A main checkout carries its own `.git`, so a restore of the
+    // trash brings the whole thing back.
     let modules = admin.unwrap_or(&common).join("modules");
     if modules.is_dir() {
-        state.blocked =
-            Some("tem submódulos inicializados: confira com `git status` no checkout".into());
-        return state;
+        state.hold(if admin.is_some() {
+            Block::Definitive(
+                "tem submódulos inicializados: o histórico deles existe só nos metadados desta worktree"
+                    .to_string(),
+            )
+        } else {
+            Block::Recoverable(
+                "tem submódulos inicializados: o histórico deles vai junto para a Lixeira".to_string(),
+            )
+        });
     }
     if admin.is_none() {
         let linked = fs::read_dir(common.join("worktrees")).is_ok_and(|mut d| d.next().is_some());
         if linked {
-            state.blocked =
-                Some("tem worktrees vinculadas: remova-as primeiro (`git worktree list`)".into());
-            return state;
+            state.hold(Block::Definitive(
+                "tem worktrees vinculadas: elas perdem os metadados (`git worktree list`)".into(),
+            ));
         }
         if git(path, &["rev-parse", "--verify", "--quiet", "refs/stash"]).is_ok() {
-            state.blocked = Some("tem alterações guardadas no stash".into());
-            return state;
+            state.hold(Block::Recoverable(
+                "tem alterações guardadas no stash (saem junto com o .git, para a Lixeira)".into(),
+            ));
         }
     }
     match git(
@@ -582,13 +722,16 @@ fn read_state(path: &Path, admin: Option<&Path>) -> State {
             "refs/remotes",
         ],
     ) {
-        Ok(remotes) if remotes.trim().is_empty() => {
-            state.blocked = Some("sem referência remota: nenhum fetch foi feito".into());
-        }
+        Ok(remotes) if remotes.trim().is_empty() => state.hold(Block::Recoverable(
+            "sem referência remota: nenhum fetch foi feito".into(),
+        )),
         Ok(_) => {}
-        Err(reason) => state.blocked = Some(reason),
+        Err(reason) => state.hold(Block::Never(reason)),
     }
-    if state.blocked.is_some() {
+    if state.head.is_empty() {
+        state.hold(Block::Recoverable(
+            "o repositório ainda não tem commits".into(),
+        ));
         return state;
     }
     // A main checkout owns every branch and tag, so all of them must be on the remote; a linked
@@ -596,12 +739,25 @@ fn read_state(path: &Path, admin: Option<&Path>) -> State {
     let scope = if admin.is_none() { "--all" } else { "HEAD" };
     match git(path, &["rev-list", "--count", scope, "--not", "--remotes"]) {
         Ok(ahead) => match ahead.trim().parse::<u64>() {
-            Ok(0) => {}
-            Ok(1) => state.blocked = Some("1 commit local fora do remoto".into()),
-            Ok(n) => state.blocked = Some(format!("{n} commits locais fora do remoto")),
-            Err(_) => state.blocked = Some("git devolveu uma contagem inesperada".into()),
+            Ok(count) => {
+                state.ahead = count;
+                if count > 0 {
+                    // Without a branch, the admin dir is the only thing naming these commits: once
+                    // it leaves, nothing local reaches them again until git collects them.
+                    state.hold(if state.detached {
+                        Block::Definitive(format!(
+                            "HEAD destacado: {count} commit(s) fora do remoto sem branch apontando para eles"
+                        ))
+                    } else if count == 1 {
+                        Block::Recoverable("1 commit local fora do remoto".into())
+                    } else {
+                        Block::Recoverable(format!("{count} commits locais fora do remoto"))
+                    });
+                }
+            }
+            Err(_) => state.hold(Block::Never("git devolveu uma contagem inesperada".into())),
         },
-        Err(reason) => state.blocked = Some(reason),
+        Err(reason) => state.hold(Block::Never(reason)),
     }
     state
 }
@@ -808,7 +964,7 @@ mod tests {
     }
 
     #[test]
-    fn only_checkouts_with_every_commit_on_the_remote_are_synced() {
+    fn each_reason_to_hold_a_checkout_back_gets_its_own_opt_in() {
         if !available() {
             return;
         }
@@ -840,6 +996,14 @@ mod tests {
         fs::write(stashed.join("README.md"), "changed\n").unwrap();
         git_ok(&stashed, &["stash", "push", "-m", "wip"]);
 
+        // The commit is made *while* detached, so only the admin dir names it.
+        let detached = volume.path().join("detached");
+        worktree(&repo, &detached, "feature/detached");
+        git_ok(&detached, &["checkout", "--detach"]);
+        fs::write(detached.join("loose.txt"), "nowhere else\n").unwrap();
+        git_ok(&detached, &["add", "."]);
+        git_ok(&detached, &["commit", "-m", "detached work"]);
+
         // A repo with no remote at all must not look synced just because `--not --remotes` is 0.
         let local = volume.path().join("local");
         git_ok(volume.path(), &["init", local.to_str().unwrap()]);
@@ -851,17 +1015,19 @@ mod tests {
 
         let found = find(volume.path(), &|_| {});
         let ok = by_name(&found, "synced");
-        assert!(ok.synced, "{}", ok.reason.as_deref().unwrap_or(""));
+        assert_eq!(ok.allowance, Allowance::Synced, "{:?}", ok.reason);
+        assert!(ok.reason.is_none());
         assert_eq!(ok.branch, "feature/synced");
         assert!(!ok.head.is_empty() && ok.modified > 0);
         assert!(ok.size > 0 && ok.files > 0);
         assert_eq!(ok.ignored, 1, "the ignored .env is reported");
+        assert_eq!((ok.ahead, ok.changes), (0, 0));
 
-        // Stashes live in the common git dir and survive the removal: they do not block it.
-        assert!(by_name(&found, "stashed").synced);
+        // Stashes live in the common git dir and survive the removal: they do not hold it back.
+        assert_eq!(by_name(&found, "stashed").allowance, Allowance::Synced);
 
         let blocked = by_name(&found, "lonely");
-        assert!(!blocked.synced);
+        assert_eq!(blocked.allowance, Allowance::Recoverable);
         assert!(blocked
             .reason
             .as_deref()
@@ -869,28 +1035,35 @@ mod tests {
             .contains("sem referência remota"));
 
         let blocked = by_name(&found, "pending");
-        assert!(!blocked.synced);
+        assert_eq!(blocked.allowance, Allowance::Recoverable);
+        assert_eq!(blocked.ahead, 1);
         assert!(blocked
             .reason
             .as_deref()
             .unwrap()
             .contains("fora do remoto"));
-        // A blocked checkout is still identified on screen.
+        // A held-back checkout is still identified on screen.
         assert_eq!(blocked.branch, "feature/pending");
         assert!(!blocked.head.is_empty());
 
         let blocked = by_name(&found, "dirty");
-        assert!(!blocked.synced);
+        assert_eq!(blocked.allowance, Allowance::Recoverable);
+        assert_eq!(blocked.changes, 1);
         assert!(blocked
             .reason
             .as_deref()
             .unwrap()
-            .contains("alterações locais"));
+            .contains("alteração local"));
 
-        // The main checkout is listed as a repository, and it is held back by its linked worktrees.
+        let blocked = by_name(&found, "detached");
+        assert_eq!(blocked.allowance, Allowance::Definitive);
+        assert_eq!(blocked.ahead, 1);
+        assert!(blocked.reason.as_deref().unwrap().contains("destacado"));
+
+        // The main checkout is listed as a repository, and its linked worktrees hold it back.
         let main = by_name(&found, "repo");
         assert_eq!(main.kind, "repository");
-        assert!(!main.synced);
+        assert_eq!(main.allowance, Allowance::Definitive);
         assert!(main
             .reason
             .as_deref()
@@ -898,6 +1071,81 @@ mod tests {
             .contains("worktrees vinculadas"));
         // Searching from inside a worktree never offers that same folder for deletion.
         assert!(find(&synced, &|_| {}).is_empty());
+    }
+
+    #[test]
+    fn a_local_opt_in_takes_unpushed_work_and_keeps_the_branch_in_the_repository() {
+        if !available() {
+            return;
+        }
+        let volume = tempfile::tempdir().unwrap();
+        let repo = repo_with_remote(volume.path());
+        let pending = volume.path().join("pending");
+        worktree(&repo, &pending, "feature/pending");
+        fs::write(pending.join("work.txt"), "later\n").unwrap();
+        git_ok(&pending, &["add", "."]);
+        git_ok(&pending, &["commit", "-m", "not pushed"]);
+        let admin = linked_worktree_admin(&pending).unwrap();
+
+        let refused = remove(&pending, OptIn::Synced).unwrap_err();
+        assert!(refused.contains("fora do remoto"), "{refused}");
+        assert!(
+            pending.exists() && admin.exists(),
+            "a refusal removes nothing"
+        );
+
+        let outcome = remove(&pending, OptIn::Local).unwrap();
+        assert!(outcome.freed > 0);
+        assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
+        assert!(!pending.exists() && !admin.exists());
+        // The branch and its commit stay in the shared repository: only the checkout left.
+        let kept = git_ok(&repo, &["log", "-1", "--format=%s", "feature/pending"]);
+        assert_eq!(kept.trim(), "not pushed");
+    }
+
+    #[test]
+    fn uncommitted_files_leave_only_with_the_opt_in() {
+        if !available() {
+            return;
+        }
+        let volume = tempfile::tempdir().unwrap();
+        let repo = repo_with_remote(volume.path());
+        let checkout = volume.path().join("dirty");
+        worktree(&repo, &checkout, "feature/dirty");
+        fs::write(checkout.join("scratch.txt"), "unsaved\n").unwrap();
+
+        let refused = remove(&checkout, OptIn::Synced).unwrap_err();
+        assert!(refused.contains("alteração local"), "{refused}");
+        assert!(checkout.exists(), "a refusal removes nothing");
+
+        assert!(remove(&checkout, OptIn::Local).unwrap().freed > 0);
+        assert!(!checkout.exists());
+    }
+
+    #[test]
+    fn work_that_exists_nowhere_else_needs_the_definitive_opt_in() {
+        if !available() {
+            return;
+        }
+        let volume = tempfile::tempdir().unwrap();
+        let repo = repo_with_remote(volume.path());
+        let checkout = volume.path().join("detached");
+        worktree(&repo, &checkout, "feature/detached");
+        git_ok(&checkout, &["checkout", "--detach"]);
+        fs::write(checkout.join("loose.txt"), "nowhere else\n").unwrap();
+        git_ok(&checkout, &["add", "."]);
+        git_ok(&checkout, &["commit", "-m", "detached work"]);
+
+        assert_eq!(
+            by_name(&find(volume.path(), &|_| {}), "detached").allowance,
+            Allowance::Definitive
+        );
+        let refused = remove(&checkout, OptIn::Local).unwrap_err();
+        assert!(refused.contains("destacado"), "{refused}");
+        assert!(checkout.exists(), "a refusal removes nothing");
+
+        assert!(remove(&checkout, OptIn::Definitive).unwrap().freed > 0);
+        assert!(!checkout.exists());
     }
 
     #[test]
@@ -917,14 +1165,15 @@ mod tests {
         let admin = linked_worktree_admin(&checkout).unwrap();
         assert!(admin.is_dir());
 
-        // A new local file after the scan is exactly what the second check must catch.
+        // A new local file after the scan is exactly what the second check must catch: the opt-in
+        // travels with the request, it never becomes a blanket permission.
         fs::write(checkout.join("late.txt"), "not committed\n").unwrap();
-        let refused = remove(&checkout).unwrap_err();
-        assert!(refused.contains("alterações locais"), "{refused}");
+        let refused = remove(&checkout, OptIn::Synced).unwrap_err();
+        assert!(refused.contains("alteração local"), "{refused}");
         assert!(checkout.exists(), "nothing may be removed on a refusal");
 
         fs::remove_file(checkout.join("late.txt")).unwrap();
-        let outcome = remove(&checkout).unwrap();
+        let outcome = remove(&checkout, OptIn::Synced).unwrap();
         assert!(outcome.freed > 0);
         assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
         assert!(!checkout.exists());
@@ -949,14 +1198,15 @@ mod tests {
 
         let found = find(volume.path(), &|_| {});
         let item = by_name(&found, "locked");
-        assert!(!item.synced);
+        assert_eq!(item.allowance, Allowance::Never);
         assert!(item.reason.as_deref().unwrap().contains("travada"));
-        assert!(remove(&checkout).is_err());
+        // A lock is git's own refusal: no opt-in passes it.
+        assert!(remove(&checkout, OptIn::Definitive).is_err());
         assert!(checkout.exists());
     }
 
     #[test]
-    fn worktrees_with_initialized_submodules_are_kept() {
+    fn worktrees_with_initialized_submodules_need_the_definitive_opt_in() {
         if !available() {
             return;
         }
@@ -971,10 +1221,14 @@ mod tests {
 
         let found = find(volume.path(), &|_| {});
         let item = by_name(&found, "with-submodule");
-        assert!(!item.synced);
+        assert_eq!(item.allowance, Allowance::Definitive);
         assert!(item.reason.as_deref().unwrap().contains("submódulos"));
-        assert!(remove(&checkout).is_err());
+        let refused = remove(&checkout, OptIn::Local).unwrap_err();
+        assert!(refused.contains("submódulos"), "{refused}");
         assert!(checkout.exists() && admin.join("modules/lib").exists());
+
+        assert!(remove(&checkout, OptIn::Definitive).unwrap().freed > 0);
+        assert!(!checkout.exists());
     }
 
     #[test]
@@ -1019,8 +1273,10 @@ mod tests {
 
         let found = find(volume.path(), &|_| {});
         let item = by_name(&found, "filtered");
-        assert!(!item.synced);
+        assert_eq!(item.allowance, Allowance::Never);
         assert!(item.reason.as_deref().unwrap().contains("filtros"));
+        // The filter would run during the removal check, so no opt-in may reach it.
+        assert!(remove(&checkout, OptIn::Definitive).is_err());
         assert!(!marker.exists(), "the filter command must never run");
     }
 
@@ -1035,7 +1291,7 @@ mod tests {
         worktree(&repo, &checkout, "feature/trash");
         let admin = linked_worktree_admin(&checkout).unwrap();
 
-        let outcome = remove(&checkout).unwrap();
+        let outcome = remove(&checkout, OptIn::Synced).unwrap();
         assert!(outcome.freed > 0);
         assert!(!checkout.exists(), "the checkout must leave the disk");
         assert!(!admin.exists(), "the git entry must not stay as a ghost");
@@ -1137,11 +1393,14 @@ mod tests {
 
         let found = find(volume.path(), &|_| {});
         assert!(found.iter().all(|w| w.kind != "worktree"), "{found:?}");
-        assert!(found.iter().all(|w| !w.synced), "{found:?}");
+        assert!(
+            found.iter().all(|w| w.allowance != Allowance::Synced),
+            "{found:?}"
+        );
     }
 
     #[test]
-    fn a_repository_is_removable_only_when_everything_is_on_the_remote() {
+    fn a_repository_is_offered_with_an_opt_in_when_a_branch_is_not_on_the_remote() {
         if !available() {
             return;
         }
@@ -1153,9 +1412,10 @@ mod tests {
         let found = find(&work, &|_| {});
         let listed = by_name(&found, "repo");
         assert_eq!(listed.kind, "repository");
-        assert!(listed.synced, "{listed:?}");
+        assert_eq!(listed.allowance, Allowance::Synced, "{listed:?}");
 
-        // A local branch that was never pushed is work that would be lost.
+        // A local branch that was never pushed: the whole `.git` goes to the trash on removal, so
+        // a restore brings the branch back.
         git_ok(&repo, &["checkout", "-b", "wip"]);
         fs::write(repo.join("wip.txt"), "x\n").unwrap();
         git_ok(&repo, &["add", "."]);
@@ -1163,18 +1423,24 @@ mod tests {
         git_ok(&repo, &["checkout", "main"]);
         let found = find(&work, &|_| {});
         let listed = by_name(&found, "repo");
-        assert!(!listed.synced);
+        assert_eq!(listed.allowance, Allowance::Recoverable);
+        assert_eq!(listed.ahead, 1);
         assert!(listed.reason.as_deref().unwrap().contains("fora do remoto"));
-        assert!(remove(&repo).is_err());
+        assert!(remove(&repo, OptIn::Synced).is_err());
         assert!(repo.exists());
 
-        // Pushed again, it is removable; untracked files block it.
-        git_ok(&repo, &["push", "origin", "wip"]);
+        // Untracked files are the first thing the reason mentions, and are still recoverable.
         fs::write(repo.join("scratch.txt"), "x\n").unwrap();
-        assert!(remove(&repo).unwrap_err().contains("alterações locais"));
+        let found = find(&work, &|_| {});
+        assert!(by_name(&found, "repo")
+            .reason
+            .as_deref()
+            .unwrap()
+            .contains("alteração local"));
+        assert!(remove(&repo, OptIn::Synced).is_err());
         fs::remove_file(repo.join("scratch.txt")).unwrap();
 
-        let outcome = remove(&repo).unwrap();
+        let outcome = remove(&repo, OptIn::Local).unwrap();
         assert!(outcome.freed > 0);
         assert!(!repo.exists(), "the repository must leave the disk");
     }

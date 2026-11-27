@@ -107,6 +107,15 @@ export interface EmptyItem {
   kind: "folder" | "link";
 }
 
+/** How far an explicit opt-in can go for one checkout. */
+export type WorktreeAllowance = "synced" | "recoverable" | "definitive" | "never";
+
+/**
+ * What the user allowed when asking for a removal: only what git confirms (`synced`), also local
+ * work that stays recoverable (`local`), or also work that exists nowhere else (`definitive`).
+ */
+export type WorktreeOptIn = "synced" | "local" | "definitive";
+
 export interface Worktree {
   path: string;
   /** Linked worktree, or a main repository checkout with its own `.git`. */
@@ -119,10 +128,14 @@ export interface Worktree {
   files: number;
   /** Ignored entries that leave with the checkout (build output, dependencies, `.env`). */
   ignored: number;
-  /** Everything is on the remote: safe to remove. */
-  synced: boolean;
-  /** Why the worktree is blocked from removal; null when synced. */
+  /** How far an opt-in can go; `reason` says why when it is not `synced`. */
+  allowance: WorktreeAllowance;
+  /** Why the worktree is held back from removal; null when synced. */
   reason?: string | null;
+  /** Commits outside every remote-tracking ref. */
+  ahead: number;
+  /** Entries with uncommitted changes. */
+  changes: number;
 }
 
 export interface WorktreeReport {
@@ -178,7 +191,8 @@ export const api = {
   findEmpty: (path: string) => invoke<EmptyItem[]>("find_empty", { path }),
   deleteBrokenLinks: (paths: string[]) => invoke<DeleteReport>("delete_broken_links", { paths }),
   findWorktrees: (path: string) => invoke<Worktree[]>("find_worktrees", { path }),
-  deleteWorktrees: (paths: string[]) => invoke<WorktreeReport>("delete_worktrees", { paths }),
+  deleteWorktrees: (paths: string[], optIn: WorktreeOptIn = "synced") =>
+    invoke<WorktreeReport>("delete_worktrees", { paths, optIn }),
   cancelDuplicates: () => invoke<void>("cancel_duplicates"),
   diskInfo: (path: string) => invoke<DiskInfo | null>("disk_info", { path }),
   listDisks: () => invoke<DiskInfo[]>("list_disks"),
