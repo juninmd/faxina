@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.33.0](https://github.com/juninmd/faxina/compare/v1.32.2...v1.33.0) (2026-11-27)
+
+
+### Features
+
+* **worktrees:** remove held-back checkouts through explicit opt-ins ([#131](https://github.com/juninmd/faxina/issues/131)) ([7a7e084](https://github.com/juninmd/faxina/commit/7a7e08498c284e0145121f8317f3c1ee52329ea0))
+
 ## [1.32.2](https://github.com/juninmd/faxina/compare/v1.32.1...v1.32.2) (2026-11-22)
 
 
