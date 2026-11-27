@@ -1,3 +1,5 @@
+import type { WorktreeOptIn } from "./api";
+
 /** How an item leaves the disk: each route keeps its own backend command and checks. */
 export type OrbitRoute = "path" | "link" | "worktree";
 
@@ -11,6 +13,8 @@ export interface OrbitItem {
   route: OrbitRoute;
   /** The panel it came from, shown as the group title in the tray. */
   source: string;
+  /** Worktree route only: how far the removal may override git's verdict. */
+  optIn?: WorktreeOptIn;
 }
 
 export interface OrbitPlan {
@@ -18,18 +22,21 @@ export interface OrbitPlan {
   paths: string[];
   /** Through `delete_broken_links` (`guard::check_dangling_link`). */
   links: string[];
-  /** Through `delete_worktrees`, which re-checks git and always uses the trash. */
-  worktrees: string[];
+  /**
+   * Through `delete_worktrees`, which re-checks git and always uses the trash. The level travels
+   * with the path, so a forced removal keeps the opt-in the user granted in the panel.
+   */
+  worktrees: { path: string; optIn: WorktreeOptIn }[];
 }
 
 /** Splits what waits in the Órbita by the command that is allowed to remove it. */
 export function planOrbit(marks: Iterable<string>, items: Iterable<OrbitItem>): OrbitPlan {
   const paths = new Set(marks);
   const links: string[] = [];
-  const worktrees: string[] = [];
+  const worktrees: OrbitPlan["worktrees"] = [];
   for (const it of items) {
     if (it.route === "link") links.push(it.path);
-    else if (it.route === "worktree") worktrees.push(it.path);
+    else if (it.route === "worktree") worktrees.push({ path: it.path, optIn: it.optIn ?? "synced" });
     else paths.add(it.path);
   }
   return { paths: [...paths], links, worktrees };

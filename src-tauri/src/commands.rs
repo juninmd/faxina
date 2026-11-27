@@ -577,19 +577,22 @@ fn shown_root<'a>(
 
 /// Removes worktrees from the list last shown. Each path must be one of them, and each one is
 /// re-checked by git first: a checkout that gained a local edit, a lock or a commit outside the
-/// remote stays where it is. Removal goes to the OS trash; this screen never deletes for good.
+/// remote stays where it is unless the caller granted exactly that much (`opt_in`). Removal goes
+/// to the OS trash; this screen never deletes for good.
 #[tauri::command]
 pub async fn delete_worktrees(
     state: State<'_, AppState>,
     paths: Vec<String>,
+    opt_in: Option<worktrees::OptIn>,
 ) -> Result<worktrees::Removed, String> {
+    let opt_in = opt_in.unwrap_or(worktrees::OptIn::Synced);
     let list = lock(&state.worktree_list).clone();
     let report = tauri::async_runtime::spawn_blocking(move || {
         let mut report = worktrees::Removed::default();
         for raw in paths {
             let outcome = match shown_root(list.as_ref(), &raw) {
                 Ok(root) => guard::check(Path::new(&raw), std::slice::from_ref(root))
-                    .and_then(|p| worktrees::remove(&p)),
+                    .and_then(|p| worktrees::remove(&p, opt_in)),
                 Err(error) => Err(error),
             };
             match outcome {
